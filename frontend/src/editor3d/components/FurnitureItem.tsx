@@ -14,12 +14,22 @@ interface GLTFModelProps {
   color: string;
   roughness: number;
   metalness: number;
+  height: number;
 }
 
-const GLTFModel: React.FC<GLTFModelProps> = ({ url, color, roughness, metalness }) => {
+const GLTFModel: React.FC<GLTFModelProps> = ({ url, color, roughness, metalness, height }) => {
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => {
     const clone = scene.clone(true);
+
+    // Floor alignment compensation:
+    // In FurnitureItem local group space (where group origin is at world Y = height / 2),
+    // the floor plane is at local Y = -height / 2.
+    // Align the loaded model so that its lowest geometry point (bbox.min.y) sits flush at local Y = -height / 2.
+    const bbox = new THREE.Box3().setFromObject(clone);
+    const yOffset = -bbox.min.y - (height / 2);
+    clone.position.y += yOffset;
+
     clone.traverse((child: any) => {
       if (child.isMesh && child.material) {
         child.castShadow = true;
@@ -31,7 +41,7 @@ const GLTFModel: React.FC<GLTFModelProps> = ({ url, color, roughness, metalness 
       }
     });
     return clone;
-  }, [scene, color, roughness, metalness]);
+  }, [scene, color, roughness, metalness, height]);
 
   return <primitive object={cloned} />;
 };
@@ -239,6 +249,7 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
               color={color}
               roughness={roughness}
               metalness={metalness}
+              height={height}
             />
           </Suspense>
         </ModelErrorBoundary>

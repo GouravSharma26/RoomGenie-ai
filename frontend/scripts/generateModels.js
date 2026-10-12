@@ -32,7 +32,22 @@ if (!fs.existsSync(outputDir)) {
 const exporter = new GLTFExporter();
 
 async function exportGLB(group, filename) {
-  const glb = await exporter.parseAsync(group, { binary: true });
+  // Center group bounding box at origin (0, 0, 0)
+  // This ensures the model's base sits at Y = -height / 2 and top sits at Y = +height / 2
+  const bboxBefore = new THREE.Box3().setFromObject(group);
+  const center = new THREE.Vector3();
+  bboxBefore.getCenter(center);
+
+  // Shift group so that its geometric center is at (0, 0, 0)
+  group.position.set(-center.x, -center.y, -center.z);
+
+  const container = new THREE.Group();
+  container.add(group);
+
+  const bboxAfter = new THREE.Box3().setFromObject(container);
+  console.log(`${filename} bounds: Y min = ${bboxAfter.min.y.toFixed(3)}, Y max = ${bboxAfter.max.y.toFixed(3)}, height = ${(bboxAfter.max.y - bboxAfter.min.y).toFixed(3)}m`);
+
+  const glb = await exporter.parseAsync(container, { binary: true });
   const filePath = path.join(outputDir, filename);
   fs.writeFileSync(filePath, Buffer.from(glb));
   console.log(`Generated: ${filename} (${glb.byteLength} bytes)`);
