@@ -18,6 +18,7 @@ import { EditorHeader } from './components/editor/EditorHeader';
 import { FurniturePalette } from './components/editor/FurniturePalette';
 import { PropertiesPanel } from './components/editor/PropertiesPanel';
 import { ControlsHelpModal } from './components/editor/ControlsHelpModal';
+import { DesignPersistenceModal } from './components/editor/DesignPersistenceModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -25,6 +26,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
+  const [isSaveLoadOpen, setIsSaveLoadOpen] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -62,7 +64,7 @@ export default function App() {
                 RoomGenie AI
               </span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                Phase 1 Active
+                Phase 2 Active
               </span>
             </div>
           </div>
@@ -106,7 +108,10 @@ export default function App() {
       {activeTab === 'editor' ? (
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {/* Editor Header Bar with room dimensions & reset controls */}
-          <EditorHeader onOpenHelp={() => setIsHelpOpen(true)} />
+          <EditorHeader 
+            onOpenHelp={() => setIsHelpOpen(true)} 
+            onOpenSaveLoad={() => setIsSaveLoadOpen(true)}
+          />
 
           {/* 3D Viewport with Left and Right Toolbars */}
           <div className="flex-1 flex overflow-hidden relative">
@@ -118,6 +123,7 @@ export default function App() {
           </div>
 
           <ControlsHelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+          <DesignPersistenceModal isOpen={isSaveLoadOpen} onClose={() => setIsSaveLoadOpen(false)} />
         </div>
       ) : (
         /* System Status Dashboard View */

@@ -18,16 +18,16 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] Add/select/move/rotate/scale/delete/duplicate actions work.
 - [x] Camera controls work without preventing furniture selection.
 - [x] Bad transforms are rejected or clamped (non-positive dimensions rejected in canonical schema).
-- [ ] Full backend scene save/reload via API (deferred to Phase 2; canonical JSON schema serialization and validation tested in frontend).
+- [x] Full backend scene save/reload via API (Phase 2 implemented with DRF /api/v1/designs/ and PostgreSQL 17 persistence).
 - [x] UI provides clear empty/loading/error states.
 
 ## API and persistence
 
-- [ ] All private resources enforce ownership.
-- [ ] Serializers validate input and return useful error messages.
-- [ ] Migrations apply cleanly from an empty development database.
-- [ ] Relevant Django tests pass.
-- [ ] Frontend TypeScript/build checks pass.
+- [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404).
+- [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, transforms).
+- [x] Migrations apply cleanly from an empty development database (authtoken, rooms, furniture, designs initial migrations).
+- [x] Relevant Django tests pass (32/32 tests pass across accounts, rooms, furniture, designs).
+- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 21 Vitest tests pass).
 
 ## Catalogue and budget
 

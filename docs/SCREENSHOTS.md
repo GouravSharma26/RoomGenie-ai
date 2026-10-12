@@ -36,3 +36,10 @@ Multiple furniture items placed within the room boundaries. The counter dynamica
 Real binary glTF 2.0 assets (`sofa.glb`, `coffee_table.glb`, `desk.glb`) loaded via React Three Fiber / Drei (`useGLTF`) with material overrides and selection indicators.
 
 ![Three GLB Architectural Models Loaded](./screenshots/05_glb_models_verified.png)
+
+---
+
+## 6. Phase 2 Room Design Persistence (PostgreSQL 17 & DRF)
+Cloud persistence modal integrating the Django REST Framework `/api/v1/designs/` API with PostgreSQL 17. Users can save active 3D scenes, update snapshots, duplicate plans, and load previously saved designs with full object transform recovery.
+
+![Phase 2 Room Design Persistence Modal](./screenshots/06_phase2_persistence_modal.png)

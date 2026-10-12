@@ -3,7 +3,7 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)  
-> **Status:** Phase 1 (Interactive 3D Room Editor) Verified & Corrected; Phase 2 Review Pending  
+> **Status:** Phase 2 (Django API & Persistence) Implemented & Verified; Review Pending  
 > **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots.
 
 ---
@@ -12,7 +12,7 @@ An AI-Agent-Assisted Interior Design System combining interactive 3D furniture p
 
 - **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS v4
 - **3D Engine:** Three.js + React Three Fiber + Drei (Phase 1)
-- **Backend:** Python 3.12 + Django 5.2 LTS + Django REST Framework + CORS Headers
+- **Backend:** Python 3.12 + Django 5.2 LTS + Django REST Framework + CORS Headers (Phase 2)
 - **Database:** PostgreSQL 17 (authoritative relational & scene persistence)
 - **AI Baselines:** 
   - LLM & Vision: Google Gemini API (`gemini-3.8-flash`), default mock adapter in dev/tests
@@ -43,17 +43,24 @@ roomgenie-ai/
 │   └── screenshots/            # Verified browser screenshots
 ├── frontend/                   # React + TypeScript + Vite client
 │   ├── src/
-│   │   ├── services/           # Typed API clients (health check, etc.)
-│   │   ├── App.tsx             # System dashboard & milestone preview
+│   │   ├── services/           # Typed API clients (health check, designApi, etc.)
+│   │   ├── components/editor/  # Viewport headers, palettes, persistence modals
+│   │   ├── editor3d/           # Three.js Canvas, Zustand store, scene validation
+│   │   ├── App.tsx             # System dashboard & 3D Editor
 │   │   └── App.test.tsx        # Vitest & React Testing Library test suite
 │   ├── package.json
 │   └── vite.config.ts
 └── backend/                    # Django REST Framework backend
     ├── config/                 # Project configuration (settings, urls, views, tests)
     │   ├── settings.py         # Environment-based PostgreSQL settings
-    │   ├── urls.py             # API routing (/api/v1/health/)
+    │   ├── urls.py             # API routing (/api/v1/health/, /auth/, /rooms/, /furniture/, /designs/)
     │   ├── views.py            # Health check endpoint
     │   └── tests.py            # DRF APIClient health tests
+    ├── apps/                   # Modular monolith Django applications
+    │   ├── accounts/           # Token authentication, registration, demo user auth
+    │   ├── rooms/              # Room envelope models, serializers, CRUD viewsets
+    │   ├── furniture/          # Catalogue models, seed data command, search viewsets
+    │   └── designs/            # Scene JSON persistence, canonical schema validation, CRUD
     ├── manage.py
     └── requirements.txt        # Pinned Python dependencies
 ```
@@ -112,7 +119,8 @@ pip install -r requirements.txt
 Run checks and tests:
 ```powershell
 python manage.py check               # Django system checks
-python manage.py test config.tests  # Run health endpoint tests
+python manage.py test                # Run full Django test suite (32 tests across accounts, rooms, furniture, designs)
+python manage.py seed_furniture      # Seed initial 5 CC0 architectural furniture catalogue assets
 ```
 
 Run database migrations (requires configured PostgreSQL):
@@ -125,6 +133,10 @@ Start the development server:
 python manage.py runserver 127.0.0.1:8000
 ```
 - Health endpoint: `http://127.0.0.1:8000/api/v1/health/`
+- Auth endpoints: `http://127.0.0.1:8000/api/v1/auth/` (`register/`, `login/`, `me/`, `demo/`)
+- Room envelopes CRUD: `http://127.0.0.1:8000/api/v1/rooms/`
+- Furniture catalogue: `http://127.0.0.1:8000/api/v1/furniture/`
+- Room designs persistence: `http://127.0.0.1:8000/api/v1/designs/` (`{id}/duplicate/`)
 
 ### 4. Running Database with Docker Compose (Recommended Alternative)
 
@@ -155,7 +167,15 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Real-time room boundary clamping preventing out-of-bounds clipping and non-positive dimension rejection
   - Material swatch color customization with preserved roughness and metalness overrides
   - Keyboard shortcuts (Delete, Backspace, Esc) and comprehensive navigation guide modal
-- [ ] **Phase 2 — Django API and persistence**
+- [x] **Phase 2 — Django API and persistence**
+  - Modular monolith Django apps: `accounts`, `rooms`, `furniture`, `designs`
+  - Relational models on PostgreSQL 17: `User`, `Room`, `FurnitureAsset`, `Design`
+  - DRF Token & Session Authentication with strict user-level ownership isolation (404 on cross-user queries)
+  - Authoritative canonical scene schema validation (`schemaVersion`, metric units, room dimensions, object transforms, bounds clamping)
+  - Full CRUD endpoints: `/api/v1/rooms/`, `/api/v1/furniture/`, `/api/v1/designs/` with design cloning (`duplicate`)
+  - Initial catalogue seed command (`seed_furniture`)
+  - Frontend persistence service ([`frontend/src/services/designApi.ts`](frontend/src/services/designApi.ts)) & Save/Load UI modal
+  - Comprehensive automated test suite: 32 Django tests, 21 frontend Vitest tests, 0 lint warnings
 - [ ] **Phase 3 — Furniture catalogue and budget**
 - [ ] **Phase 4 — AI interior-design agent**
 - [ ] **Phase 5 — Room photo analysis**

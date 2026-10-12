@@ -4,16 +4,18 @@ import {
   Trash2, 
   HelpCircle, 
   Compass, 
-  Layers 
+  Layers,
+  Cloud
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
 
 interface EditorHeaderProps {
   onOpenHelp: () => void;
+  onOpenSaveLoad: () => void;
 }
 
-export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp }) => {
+export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp, onOpenSaveLoad }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
   const setRoomDimensions = useEditorStore((state) => state.setRoomDimensions);
@@ -122,6 +124,16 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp }) => {
         >
           <Compass className="w-3.5 h-3.5 text-indigo-400" />
           <span>{viewMode === 'perspective' ? 'Top View' : '3D View'}</span>
+        </button>
+
+        {/* Save & Load Designs Button */}
+        <button
+          onClick={onOpenSaveLoad}
+          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-sm flex items-center gap-1.5 transition active:scale-95 border border-indigo-500/50"
+          title="Save or Load room design snapshots to backend database"
+        >
+          <Cloud className="w-3.5 h-3.5" />
+          <span>Save &amp; Load</span>
         </button>
 
         {/* Clear Scene Button */}

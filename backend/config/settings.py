@@ -43,6 +43,12 @@ INSTALLED_APPS = [
     # Third-party apps
     'corsheaders',
     'rest_framework',
+    'rest_framework.authtoken',
+    # RoomGenie modular monolith apps
+    'apps.accounts',
+    'apps.rooms',
+    'apps.furniture',
+    'apps.designs',
 ]
 
 MIDDLEWARE = [
@@ -120,8 +126,12 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Django REST Framework default permissions (authenticated by default, public endpoints explicit)
+# Django REST Framework default configuration
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
