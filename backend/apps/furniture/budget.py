@@ -1,8 +1,98 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 from django.core.exceptions import ValidationError
+from rest_framework import serializers
 from apps.furniture.models import FurnitureAsset
-from apps.designs.validators import compute_transformed_aabb_extents, validate_vector3
+from apps.designs.validators import (
+    compute_transformed_aabb_extents,
+    is_finite_number,
+    validate_vector3,
+)
+
+
+def validate_budget_scene_data(scene_data: dict[str, Any]) -> tuple[float, float, float, list[dict[str, Any]]]:
+    """
+    Validates budget scene inputs to ensure malformed data cannot produce
+    a normal-looking estimate through permissive defaults.
+    """
+    if not isinstance(scene_data, dict):
+        raise serializers.ValidationError("Scene payload must be a JSON object.")
+
+    room = scene_data.get('room')
+    if not isinstance(room, dict):
+        raise serializers.ValidationError(
+            "Scene must define a 'room' dictionary with 'width', 'length', and 'height'."
+        )
+
+    for dim_key in ('width', 'length', 'height'):
+        if dim_key not in room:
+            raise serializers.ValidationError(f"room.{dim_key} is required.")
+        val = room[dim_key]
+        if not is_finite_number(val) or float(val) <= 0.0:
+            raise serializers.ValidationError(
+                f"room.{dim_key} must be a positive finite number, received: {val}."
+            )
+
+    room_w = float(room['width'])
+    room_l = float(room['length'])
+    room_h = float(room['height'])
+
+    raw_objects = scene_data.get('objects')
+    if not isinstance(raw_objects, list):
+        raise serializers.ValidationError("Scene 'objects' must be a list.")
+
+    validated_objects = []
+    for idx, obj in enumerate(raw_objects):
+        if not isinstance(obj, dict):
+            raise serializers.ValidationError(f"objects[{idx}] must be a dictionary.")
+
+        placement_id = obj.get('id', f'item-{idx}')
+        if not isinstance(placement_id, str):
+            placement_id = str(placement_id)
+
+        asset_id = obj.get('assetId')
+        if asset_id is not None and not isinstance(asset_id, str):
+            raise serializers.ValidationError(f"objects[{idx}].assetId must be a string or null.")
+
+        name = obj.get('name', 'Furniture Item')
+        if not isinstance(name, str):
+            name = str(name)
+
+        # Validate dimensions if provided
+        if 'dimensions' in obj:
+            dims = validate_vector3(obj['dimensions'], f"objects[{idx}].dimensions", min_val=0.01)
+        else:
+            dims = None
+
+        # Validate position if provided
+        if 'position' in obj:
+            pos = validate_vector3(obj['position'], f"objects[{idx}].position")
+        else:
+            pos = [0.0, 0.0, 0.0]
+
+        # Validate scale if provided
+        if 'scale' in obj:
+            scale = validate_vector3(obj['scale'], f"objects[{idx}].scale", min_val=0.01)
+        else:
+            scale = [1.0, 1.0, 1.0]
+
+        # Validate rotationEuler if provided
+        if 'rotationEuler' in obj:
+            rot = validate_vector3(obj['rotationEuler'], f"objects[{idx}].rotationEuler")
+        else:
+            rot = [0.0, 0.0, 0.0]
+
+        validated_objects.append({
+            'id': placement_id,
+            'assetId': asset_id,
+            'name': name,
+            'dimensions': dims,
+            'position': pos,
+            'scale': scale,
+            'rotationEuler': rot,
+        })
+
+    return room_w, room_l, room_h, validated_objects
 
 
 def calculate_scene_budget(
@@ -15,17 +105,7 @@ def calculate_scene_budget(
     - Unpriced or unregistered assets are labeled 'unpriced'/'unregistered' and NOT invented.
     - Room containment constraints are evaluated against the canonical room dimensions.
     """
-    if not isinstance(scene_data, dict):
-        raise ValidationError("Invalid scene data format. Expected a dictionary.")
-
-    room = scene_data.get('room', {})
-    room_w = float(room.get('width', 5.0))
-    room_l = float(room.get('length', 4.0))
-    room_h = float(room.get('height', 2.8))
-
-    raw_objects = scene_data.get('objects', [])
-    if not isinstance(raw_objects, list):
-        raw_objects = []
+    room_w, room_l, room_h, raw_objects = validate_budget_scene_data(scene_data)
 
     # Pre-fetch catalogue assets for all asset IDs in the scene
     asset_ids = {obj.get('assetId') for obj in raw_objects if obj.get('assetId')}
@@ -51,12 +131,17 @@ def calculate_scene_budget(
         placement_id = obj.get('id', f'item-{idx}')
         asset_id = obj.get('assetId')
         item_name = obj.get('name', 'Furniture Item')
-        dimensions = obj.get('dimensions', [1.0, 1.0, 1.0])
+        dimensions = obj.get('dimensions')
+        asset = assets_by_id.get(asset_id) if asset_id else None
+        if dimensions is None:
+            if asset:
+                dimensions = [float(asset.width), float(asset.height), float(asset.depth)]
+            else:
+                dimensions = [1.0, 1.0, 1.0]
+
         position = obj.get('position', [0.0, 0.0, 0.0])
         rotation = obj.get('rotationEuler', [0.0, 0.0, 0.0])
         scale = obj.get('scale', [1.0, 1.0, 1.0])
-
-        asset = assets_by_id.get(asset_id) if asset_id else None
 
         # 1. Price evaluation
         if asset and asset.price_paise is not None:

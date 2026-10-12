@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
+from django.core.exceptions import ValidationError
 from django.db.models import Q
-from rest_framework import permissions, status, viewsets
+from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from apps.furniture.models import FurnitureAsset
@@ -115,41 +116,87 @@ class BudgetEstimateView(APIView):
     POST /api/v1/budgets/estimate/
     Authoritative, deterministic budget calculation for 3D room scenes.
     Accepts:
-      - { "scene_json": { ... } } (direct canonical scene dictionary)
-      - { "design_id": "uuid" } (persisted design ID belonging to authenticated user)
-      - { "items": [ { "assetId": "..." } ] } (simplified array of placed assets)
+      - { "scene_json": { ... } } (direct canonical scene dictionary; anonymous allowed)
+      - { "design_id": "uuid" } (persisted design ID; strictly requires authentication & ownership)
+      - { "items": [ { "assetId": "..." } ], "room": { ... } } (simplified array of placed assets; anonymous allowed)
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        design_id = request.data.get('design_id')
-        scene_json = request.data.get('scene_json')
-        items = request.data.get('items')
+        data = request.data
+        if not isinstance(data, dict):
+            return Response(
+                {"detail": "Request body must be a JSON object."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         design_title = None
 
-        if design_id:
-            from apps.designs.models import Design
-            # Verify design ownership if user is authenticated
-            if request.user and request.user.is_authenticated:
-                design = Design.objects.filter(id=design_id, owner=request.user).first()
-            else:
-                design = Design.objects.filter(id=design_id).first()
+        if 'design_id' in data:
+            design_id = data.get('design_id')
+            if not design_id or not isinstance(design_id, str):
+                return Response(
+                    {"detail": "'design_id' must be a non-empty string."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            # 1. Require authentication for all budget-estimation requests that use design_id
+            if not request.user or not request.user.is_authenticated:
+                return Response(
+                    {"detail": "Authentication credentials were not provided."},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
+            # 2. Enforce strict ownership on every saved-design lookup (never retrieve another user's design)
+            from apps.designs.models import Design
+            design = Design.objects.filter(id=design_id, owner=request.user).first()
             if not design:
                 return Response(
-                    {"detail": f"Design '{design_id}' not found or access denied."},
+                    {"detail": f"Design '{design_id}' not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
+
             scene_data = design.scene_json
             design_title = design.title
-        elif isinstance(scene_json, dict):
+
+        elif 'scene_json' in data:
+            # 3. Preserve anonymous estimation for direct scene_json payloads (separate from saved-design flow)
+            scene_json = data.get('scene_json')
+            if not isinstance(scene_json, dict) or not scene_json:
+                return Response(
+                    {"detail": "'scene_json' must be a non-empty JSON object."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             scene_data = scene_json
-            design_title = request.data.get('title')
-        elif isinstance(items, list):
-            scene_data = {
-                'room': request.data.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}),
-                'objects': items,
-            }
+            design_title = data.get('title')
+
+        elif 'items' in data:
+            # 3b. Preserve anonymous estimation for direct simplified items payloads
+            items = data.get('items')
+            if not isinstance(items, list):
+                return Response(
+                    {"detail": "'items' must be a list of placed furniture objects."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            room_payload = data.get('room')
+            if room_payload is not None:
+                if not isinstance(room_payload, dict):
+                    return Response(
+                        {"detail": "'room' must be a JSON object with 'width', 'length', and 'height'."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                scene_data = {
+                    'room': room_payload,
+                    'objects': items,
+                }
+            else:
+                scene_data = {
+                    'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                    'objects': items,
+                }
+            design_title = data.get('title')
+
         else:
             return Response(
                 {"detail": "Must provide either 'scene_json', 'design_id', or 'items'."},
@@ -159,9 +206,12 @@ class BudgetEstimateView(APIView):
         try:
             estimate = calculate_scene_budget(scene_data, design_title=design_title)
             return Response(estimate, status=status.HTTP_200_OK)
-        except Exception as e:
+        except (ValidationError, serializers.ValidationError) as exc:
+            msg = exc.detail if hasattr(exc, 'detail') else (exc.messages if hasattr(exc, 'messages') else str(exc))
+            return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
             return Response(
-                {"detail": f"Failed to calculate budget: {str(e)}"},
+                {"detail": f"Failed to calculate budget: {str(exc)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

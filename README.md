@@ -119,7 +119,7 @@ pip install -r requirements.txt
 Run checks and tests:
 ```powershell
 python manage.py check               # Django system checks
-python manage.py test                # Run full Django test suite (48 tests across accounts, rooms, furniture, designs)
+python manage.py test                # Run full Django test suite (53 tests across accounts, rooms, furniture, designs)
 python manage.py seed_furniture      # Seed 10 architectural CC0 furniture catalogue assets
 ```
 
@@ -187,7 +187,7 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Full transformed 3D room containment validation in budget estimates to detect out-of-bounds furniture
   - Enhanced frontend `FurniturePalette.tsx` with live search, category tabs, style filter pills, budget slider, and API fallback
   - Interactive `BudgetBreakdownModal.tsx` showing authoritative calculation, category subtotals, and room envelope compliance
-  - Full automated tests passing: 48 Django tests, 27 frontend Vitest tests, 0 lint warnings
+  - Full automated tests passing: 53 Django tests, 27 frontend Vitest tests, 0 lint warnings
 - [ ] **Phase 4 — AI interior-design agent**
 - [ ] **Phase 5 — Room photo analysis**
 - [ ] **Phase 6 — Photo-to-3D furniture approximation**

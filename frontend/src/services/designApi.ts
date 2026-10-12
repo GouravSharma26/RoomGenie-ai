@@ -245,11 +245,24 @@ export async function estimateBudget(payload: {
   design_id?: string;
   items?: any[];
 }): Promise<BudgetEstimateResponse> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+
+  if (payload.design_id) {
+    const token = await ensureAuthenticated();
+    headers['Authorization'] = `Token ${token}`;
+  } else {
+    const existing = getAuthToken();
+    if (existing) {
+      headers['Authorization'] = `Token ${existing}`;
+    }
+  }
+
   const res = await fetch(`${API_BASE_URL}/api/v1/budgets/estimate/`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 

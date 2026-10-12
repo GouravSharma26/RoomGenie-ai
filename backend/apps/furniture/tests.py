@@ -135,6 +135,11 @@ class BudgetEstimateTests(APITestCase):
             username='budget.tester@roomgenie.local',
             password='TestPassword123!'
         )
+        self.other_user = User.objects.create_user(
+            email='other.budget.tester@roomgenie.local',
+            username='other.budget.tester@roomgenie.local',
+            password='TestPassword123!'
+        )
         self.asset_sofa = FurnitureAsset.objects.create(
             id='sofa-modern-3seater',
             name='Modern 3-Seater Sofa',
@@ -260,7 +265,7 @@ class BudgetEstimateTests(APITestCase):
         self.assertIsNone(data['items'][2]['price_paise'])
         self.assertFalse(data['items'][2]['is_known_price'])
 
-    def test_budget_estimate_via_persisted_design_id(self):
+    def test_budget_estimate_via_persisted_design_id_owner_access(self):
         self.client.force_authenticate(user=self.user)
         design = Design.objects.create(
             owner=self.user,
@@ -285,6 +290,159 @@ class BudgetEstimateTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['design_title'], 'Executive Suite')
         self.assertEqual(response.data['total_inr'], '8499.00')
+
+    def test_anonymous_saved_design_access_is_rejected_401(self):
+        design = Design.objects.create(
+            owner=self.user,
+            title='Confidential Penthouse',
+            scene_json={
+                'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                'objects': [
+                    {
+                        'id': 'desk-1',
+                        'assetId': 'table-oak-coffee',
+                        'name': 'Minimalist Coffee Table',
+                        'dimensions': [1.2, 0.45, 0.6],
+                        'position': [0.0, 0.225, 0.0],
+                    }
+                ]
+            }
+        )
+        self.client.logout()
+        response = self.client.post(self.estimate_url, {'design_id': str(design.id)}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data['detail'], "Authentication credentials were not provided.")
+
+    def test_cross_user_saved_design_access_returns_404(self):
+        design = Design.objects.create(
+            owner=self.user,
+            title='User A Exclusive Room',
+            scene_json={
+                'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                'objects': [
+                    {
+                        'id': 'sofa-1',
+                        'assetId': 'sofa-modern-3seater',
+                        'name': 'Modern 3-Seater Sofa',
+                        'dimensions': [2.1, 0.85, 0.9],
+                        'position': [0.0, 0.425, 0.0],
+                    }
+                ]
+            }
+        )
+        # Authenticate as other user
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.post(self.estimate_url, {'design_id': str(design.id)}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("not found", response.data['detail'])
+
+    def test_anonymous_direct_scene_json_estimation_succeeds_200(self):
+        self.client.logout()
+        scene_json = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'anon-sofa',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern 3-Seater Sofa',
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'position': [0.0, 0.425, 0.0],
+                }
+            ]
+        }
+        response = self.client.post(self.estimate_url, {'scene_json': scene_json}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_paise'], 2999900)
+        self.assertEqual(response.data['total_inr'], '29999.00')
+
+    def test_anonymous_simplified_items_estimation_succeeds_200(self):
+        self.client.logout()
+        items_payload = {
+            'items': [
+                {'assetId': 'sofa-modern-3seater'},
+                {'assetId': 'table-oak-coffee'},
+            ]
+        }
+        response = self.client.post(self.estimate_url, items_payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_paise'], 3849800)
+        self.assertEqual(response.data['total_inr'], '38498.00')
+        self.assertEqual(response.data['total_items'], 2)
+
+    def test_malformed_scene_data_rejected_with_400(self):
+        # 1. Missing room dictionary in scene_json
+        res = self.client.post(self.estimate_url, {'scene_json': {'objects': []}}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 2. Non-positive room width
+        res = self.client.post(
+            self.estimate_url,
+            {'scene_json': {'room': {'width': -4.0, 'length': 4.0, 'height': 2.8}, 'objects': []}},
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 3. Non-numeric room height
+        res = self.client.post(
+            self.estimate_url,
+            {'scene_json': {'room': {'width': 5.0, 'length': 4.0, 'height': 'high'}, 'objects': []}},
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 4. Objects is not a list
+        res = self.client.post(
+            self.estimate_url,
+            {'scene_json': {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': 'invalid'}},
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 5. Object element is not a dict
+        res = self.client.post(
+            self.estimate_url,
+            {'scene_json': {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': ['not-a-dict']}},
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 6. Object has negative dimensions
+        res = self.client.post(
+            self.estimate_url,
+            {
+                'scene_json': {
+                    'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                    'objects': [{
+                        'id': 'bad-item',
+                        'assetId': 'sofa-modern-3seater',
+                        'dimensions': [-2.1, 0.85, 0.9]
+                    }]
+                }
+            },
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 7. Object has non-numeric position vector
+        res = self.client.post(
+            self.estimate_url,
+            {
+                'scene_json': {
+                    'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                    'objects': [{
+                        'id': 'bad-item',
+                        'assetId': 'sofa-modern-3seater',
+                        'position': [0.0, 'invalid', 0.0]
+                    }]
+                }
+            },
+            format='json'
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 8. Empty request body
+        res = self.client.post(self.estimate_url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_budget_estimate_flags_room_boundary_violations(self):
         # Sofa placed at X=2.0 in a 3m wide room (half-width 1.5m). Sofa half-width is 1.05m -> max X is 2.55m > 1.5m.
