@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'apps.rooms',
     'apps.furniture',
     'apps.designs',
+    'apps.ai_agent',
 ]
 
 MIDDLEWARE = [

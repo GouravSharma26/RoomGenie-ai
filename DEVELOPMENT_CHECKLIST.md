@@ -37,13 +37,13 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 ## AI agent and photo analysis
 
-- [ ] LLM provider is behind an adapter.
-- [ ] Mock provider is available for development/tests.
-- [ ] Tool names and parameters are allowlisted and validated.
-- [ ] No arbitrary SQL, Python, shell, or unrestricted network tool is exposed.
-- [ ] Multi-object changes are previewed and require approval.
-- [ ] Errors, timeouts, uncertainty, and invalid proposals are handled.
-- [ ] Provider secrets stay in backend environment variables.
+- [x] LLM provider is behind an adapter (`BaseDesignLLMAdapter` interface with configurable `GeminiDesignLLMAdapter` targeting `gemini-3.8-flash` and `MockDesignLLMAdapter`).
+- [x] Mock provider is available for development/tests (deterministic offline `MockDesignLLMAdapter` active by default in test suite and development).
+- [x] Tool names and parameters are allowlisted and validated (`ALLOWED_ACTION_TYPES` strictly restricted to `add_furniture`, `move_object`, `replace_furniture`, `remove_object`, `set_material`, `clear_room`).
+- [x] No arbitrary SQL, Python, shell, or unrestricted network tool is exposed (verified by automated regression test `test_tools_reject_arbitrary_or_unlisted_actions`).
+- [x] Multi-object changes are previewed and require approval (Two-phase approval workflow: `/prompt/` simulates and creates `AgentRun(status='proposed')` with candidate diff; design mutated only upon explicit user approval via `/apply/`).
+- [x] Errors, timeouts, uncertainty, and invalid proposals are handled (15s network timeout on Gemini API, validation errors/warnings surfaced in diff, mock fallback).
+- [x] Provider secrets stay in backend environment variables (`GEMINI_API_KEY` accessed solely on Django backend; never exposed to browser).
 
 ## Photo-to-3D and AR
 

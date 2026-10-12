@@ -14,5 +14,6 @@ urlpatterns = [
     path('api/v1/furniture/', include('apps.furniture.urls', namespace='furniture')),
     path('api/v1/designs/', include('apps.designs.urls', namespace='designs')),
     path('api/v1/budgets/estimate/', BudgetEstimateView.as_view(), name='budget-estimate'),
+    path('api/v1/agent/', include('apps.ai_agent.urls')),
 ]
 

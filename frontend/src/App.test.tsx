@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from './App';
 import * as api from './services/api';
+import * as agentApi from './services/agentApi';
 
 vi.mock('./services/api');
 vi.mock('./services/designApi', () => ({
@@ -36,6 +37,128 @@ vi.mock('./services/designApi', () => ({
     },
   }),
 }));
+
+vi.mock('./services/agentApi', () => ({
+  createAgentSession: vi.fn().mockResolvedValue({
+    id: 'session-uuid-1',
+    owner_username: 'demo_engineer',
+    design: null,
+    title: 'AI Interior Design Assistant',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }),
+  listAgentSessions: vi.fn().mockResolvedValue([]),
+  sendAgentPrompt: vi.fn().mockResolvedValue({
+    run: {
+      id: 'run-uuid-1',
+      session: 'session-uuid-1',
+      user_prompt: 'Add an armchair and cozy reading nook',
+      status: 'proposed',
+      ai_response_text: 'I have placed a modern armchair next to your sofa for a reading corner.',
+      proposed_actions: [
+        {
+          name: 'add_furniture',
+          parameters: {
+            asset_id: 'armchair-modern',
+            position: [1.2, 0.45, 0.5],
+            rotation: [0, 0, 0],
+          },
+        },
+      ],
+      validation_results: {
+        is_valid: true,
+        errors: [],
+        warnings: [],
+        budget_diff: {
+          before_paise: 2999900,
+          after_paise: 4499800,
+          diff_paise: 1499900,
+        },
+      },
+      provider_metadata: {
+        provider: 'mock',
+        model: 'deterministic-mock-v1',
+      },
+      created_at: new Date().toISOString(),
+    },
+    candidate_scene: {
+      schemaVersion: 1,
+      unit: 'm',
+      room: { width: 5.0, length: 4.0, height: 2.8 },
+      objects: [
+        {
+          id: 'initial-sofa',
+          assetId: 'sofa-3seater',
+          name: '3-Seater Fabric Sofa',
+          dimensions: [2.0, 0.85, 0.9],
+          position: [0, 0.425, 0],
+          rotationEuler: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+        {
+          id: 'ai-armchair-modern',
+          assetId: 'armchair-modern',
+          name: 'Modern Fabric Armchair',
+          dimensions: [0.9, 0.85, 0.85],
+          position: [1.2, 0.425, 0.5],
+          rotationEuler: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+      ],
+    },
+    budget_diff: {
+      before_paise: 2999900,
+      after_paise: 4499800,
+      diff_paise: 1499900,
+    },
+    requires_approval: true,
+  }),
+  applyAgentRun: vi.fn().mockResolvedValue({
+    detail: 'Proposal successfully approved and applied to design.',
+    run: {
+      id: 'run-uuid-1',
+      status: 'approved',
+    },
+    applied_scene: {
+      schemaVersion: 1,
+      unit: 'm',
+      room: { width: 5.0, length: 4.0, height: 2.8 },
+      objects: [
+        {
+          id: 'initial-sofa',
+          assetId: 'sofa-3seater',
+          name: '3-Seater Fabric Sofa',
+          dimensions: [2.0, 0.85, 0.9],
+          position: [0, 0.425, 0],
+          rotationEuler: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+        {
+          id: 'ai-armchair-modern',
+          assetId: 'armchair-modern',
+          name: 'Modern Fabric Armchair',
+          dimensions: [0.9, 0.85, 0.85],
+          position: [1.2, 0.425, 0.5],
+          rotationEuler: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+      ],
+    },
+    budget_diff: {
+      before_paise: 2999900,
+      after_paise: 4499800,
+      diff_paise: 1499900,
+    },
+  }),
+  rejectAgentRun: vi.fn().mockResolvedValue({
+    detail: 'Proposal rejected by user.',
+    run: {
+      id: 'run-uuid-1',
+      status: 'rejected',
+    },
+  }),
+}));
+
 vi.mock('./editor3d/components/RoomCanvas', () => ({
   RoomCanvas: () => <div data-testid="mock-room-canvas">3D Viewport Active</div>,
 }));
@@ -55,8 +178,9 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 3 Active')).toBeInTheDocument();
+    expect(screen.getByText('Phase 4 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /AI Designer/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Load/i })).toBeInTheDocument();
     expect(screen.getByTestId('mock-room-canvas')).toBeInTheDocument();
   });
@@ -90,6 +214,54 @@ describe('RoomGenie AI App Component', () => {
 
     expect(screen.getByText('Deterministic Budget & Cost Estimate')).toBeInTheDocument();
     expect(screen.getByText(/Authoritative backend calculation in integer paise/i)).toBeInTheDocument();
+  });
+
+  it('opens AI Design Assistant drawer, displays session, and supports 2-phase approval workflow', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    render(<App />);
+    const aiBtn = screen.getByRole('button', { name: /AI Designer/i });
+    expect(aiBtn).toBeInTheDocument();
+    fireEvent.click(aiBtn);
+
+    // AI Drawer opens and initializes session
+    expect(screen.getByText('AI Design Assistant')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(agentApi.createAgentSession).toHaveBeenCalled();
+      expect(screen.getByText(/Hello! I am your AI Interior Design Assistant/i)).toBeInTheDocument();
+    });
+
+    // Submit quick prompt
+    const quickPromptBtn = screen.getByText('Add an armchair and create a cozy reading corner');
+    fireEvent.click(quickPromptBtn);
+
+    // Verify model response & proposed modifications card
+    await waitFor(() => {
+      expect(agentApi.sendAgentPrompt).toHaveBeenCalled();
+      expect(screen.getByText('Proposed Modifications')).toBeInTheDocument();
+      expect(screen.getByText('Approval Required')).toBeInTheDocument();
+      expect(screen.getByText('add_furniture')).toBeInTheDocument();
+      expect(screen.getByText(/Budget Impact:/i)).toBeInTheDocument();
+    });
+
+    // Check 2-phase approval buttons
+    const approveBtn = screen.getByRole('button', { name: /Approve & Apply to 3D Scene/i });
+    const discardBtn = screen.getByRole('button', { name: /Discard/i });
+    expect(approveBtn).toBeInTheDocument();
+    expect(discardBtn).toBeInTheDocument();
+
+    // Click Approve
+    fireEvent.click(approveBtn);
+
+    await waitFor(() => {
+      expect(agentApi.applyAgentRun).toHaveBeenCalledWith('run-uuid-1', expect.anything());
+      expect(screen.getByText('Approved')).toBeInTheDocument();
+    });
   });
 
   it('switches to System Status dashboard and renders connected database state', async () => {

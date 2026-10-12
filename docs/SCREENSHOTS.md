@@ -65,4 +65,19 @@ Expanded 10-model catalogue featuring keyword search, category tabs (Seating, Ta
 
 ![Phase 3 Furniture Catalogue Search and 3D Placement](./screenshots/09_phase3_editor_palette_and_filters.png)
 
+---
+
+## 10. Phase 4 AI Design Assistant — Proposal Preview & Budget Diff
+AI Interior Design Assistant drawer (`gemini-3.8-flash` adapter with offline mock fallback) demonstrating safe, typed LLM tool generation. The assistant proposes spatial modifications (adding `chair-accent-armchair` into a reading nook) and presents a structured proposal preview card with authoritative budget impact (Before: `₹29,999`, After: `₹41,998`, Diff: `+₹11,999`). In strict accordance with security rules, the 3D room design is never mutated until explicit user approval via the two-phase approval workflow.
+
+![Phase 4 AI Design Assistant Proposal Preview and Budget Diff](./screenshots/10_phase4_ai_agent_proposal.png)
+
+---
+
+## 11. Phase 4 AI Design Assistant — Approved Application to 3D Scene
+Successful execution of the user approval action (`POST /api/v1/agent/runs/{id}/apply/`). The proposal status advances to `Approved`, the validated armchair placement is rendered in the Three.js viewport alongside the existing sofa, and the editor header budget and object count dynamically update to `2 items placed • ₹41,998`.
+
+![Phase 4 AI Design Assistant Proposal Approved and Applied](./screenshots/11_phase4_ai_agent_applied.png)
+
+
 

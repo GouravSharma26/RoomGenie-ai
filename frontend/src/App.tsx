@@ -20,6 +20,7 @@ import { PropertiesPanel } from './components/editor/PropertiesPanel';
 import { ControlsHelpModal } from './components/editor/ControlsHelpModal';
 import { DesignPersistenceModal } from './components/editor/DesignPersistenceModal';
 import { BudgetBreakdownModal } from './components/editor/BudgetBreakdownModal';
+import { AiAgentDrawer } from './components/editor/AiAgentDrawer';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -29,6 +30,7 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isSaveLoadOpen, setIsSaveLoadOpen] = useState<boolean>(false);
   const [isBudgetOpen, setIsBudgetOpen] = useState<boolean>(false);
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -66,7 +68,7 @@ export default function App() {
                 RoomGenie AI
               </span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                Phase 3 Active
+                Phase 4 Active
               </span>
             </div>
           </div>
@@ -114,6 +116,7 @@ export default function App() {
             onOpenHelp={() => setIsHelpOpen(true)} 
             onOpenSaveLoad={() => setIsSaveLoadOpen(true)}
             onOpenBudgetBreakdown={() => setIsBudgetOpen(true)}
+            onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
           />
 
           {/* 3D Viewport with Left and Right Toolbars */}
@@ -128,6 +131,7 @@ export default function App() {
           <ControlsHelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
           <DesignPersistenceModal isOpen={isSaveLoadOpen} onClose={() => setIsSaveLoadOpen(false)} />
           <BudgetBreakdownModal isOpen={isBudgetOpen} onClose={() => setIsBudgetOpen(false)} />
+          <AiAgentDrawer isOpen={isAiAssistantOpen} onClose={() => setIsAiAssistantOpen(false)} />
         </div>
       ) : (
         /* System Status Dashboard View */

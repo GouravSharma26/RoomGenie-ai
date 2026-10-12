@@ -3,7 +3,7 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)  
-> **Status:** Phase 3 (Furniture Catalogue & Deterministic Budget) Implemented & Verified; Ready for Review  
+> **Status:** Phase 4 (AI Interior-Design Agent with Two-Phase Approval) Implemented & Verified; Ready for Review  
 > **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots.
 
 ---
@@ -188,7 +188,15 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Enhanced frontend `FurniturePalette.tsx` with live search, category tabs, style filter pills, budget slider, and API fallback
   - Interactive `BudgetBreakdownModal.tsx` showing authoritative calculation, category subtotals, and room envelope compliance
   - Full automated tests passing: 53 Django tests, 27 frontend Vitest tests, 0 lint warnings
-- [ ] **Phase 4 — AI interior-design agent**
+- [x] **Phase 4 — AI interior-design agent**
+  - Modular `apps/ai_agent` application with `AgentSession` and `AgentRun` persistence
+  - Configurable adapter architecture: `BaseDesignLLMAdapter` interface with Google Gemini API adapter (`gemini-3.8-flash`) and offline deterministic `MockDesignLLMAdapter` active by default in dev/tests
+  - Strictly allowlisted typed actions (`add_furniture`, `move_object`, `replace_furniture`, `remove_object`, `set_material`, `clear_room`); zero execution of arbitrary code, SQL, shell, or unrestricted HTTP
+  - Deterministic pre-flight simulation engine (`validate_and_simulate_actions`) computing 3D room containment and integer paise budget impact before persistence
+  - Two-phase approval workflow: `/prompt/` proposes structured modifications without mutating the design; scene changes are applied only upon explicit user approval via `/apply/`
+  - Strict user-ownership isolation (sessions and runs isolated by `owner=request.user`, 404 for cross-user queries)
+  - Interactive frontend slide-out `AiAgentDrawer.tsx` with conversation history, suggested prompt chips, structured proposal preview card, authoritative budget impact, and Approve/Discard controls
+  - Automated tests passing: 64 Django tests, 28 frontend Vitest tests, 0 lint warnings, production bundle verified
 - [ ] **Phase 5 — Room photo analysis**
 - [ ] **Phase 6 — Photo-to-3D furniture approximation**
 - [ ] **Phase 7 — Real-world AR placement**

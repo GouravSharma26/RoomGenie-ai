@@ -4,9 +4,10 @@ import {
   Trash2, 
   HelpCircle, 
   Compass, 
-  Layers,
-  Cloud,
-  DollarSign
+  Layers, 
+  Cloud, 
+  DollarSign,
+  Sparkles
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
@@ -15,12 +16,14 @@ interface EditorHeaderProps {
   onOpenHelp: () => void;
   onOpenSaveLoad: () => void;
   onOpenBudgetBreakdown?: () => void;
+  onOpenAiAssistant?: () => void;
 }
 
 export const EditorHeader: React.FC<EditorHeaderProps> = ({
   onOpenHelp,
   onOpenSaveLoad,
   onOpenBudgetBreakdown,
+  onOpenAiAssistant,
 }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
@@ -152,6 +155,16 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         >
           <Compass className="w-3.5 h-3.5 text-indigo-400" />
           <span>{viewMode === 'perspective' ? 'Top View' : '3D View'}</span>
+        </button>
+
+        {/* AI Design Assistant Trigger */}
+        <button
+          onClick={onOpenAiAssistant}
+          className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-500/25 flex items-center gap-1.5 transition active:scale-95 border border-purple-400/40"
+          title="Open AI Interior Design Assistant"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+          <span>AI Designer</span>
         </button>
 
         {/* Save & Load Designs Button */}
