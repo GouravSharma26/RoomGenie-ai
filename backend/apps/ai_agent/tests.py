@@ -1,9 +1,10 @@
+import threading
 import uuid
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
 from apps.ai_agent.models import AgentSession, AgentRun
 from apps.ai_agent.adapters import get_design_llm_adapter, MockDesignLLMAdapter
 from apps.ai_agent.tools import validate_and_simulate_actions, ALLOWED_ACTION_TYPES
@@ -419,3 +420,191 @@ class AgentApiSecurityAndApprovalTests(APITestCase):
         # Design remains unchanged
         self.design_a.refresh_from_db()
         self.assertEqual(len(self.design_a.scene_json['objects']), 0)
+
+
+class AgentConcurrencyAndAtomicApplyTests(APITransactionTestCase):
+    """
+    Concurrency and data-integrity tests verifying atomic row-level locking (select_for_update)
+    and race condition prevention during apply operations.
+    """
+    def setUp(self):
+        self.user_a = User.objects.create_user(
+            email='alice_atomic@roomgenie.local',
+            username='alice_atomic@roomgenie.local',
+            password='Password123!'
+        )
+        self.asset_armchair = FurnitureAsset.objects.create(
+            id='armchair-atomic-1',
+            name='Atomic Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.88'),
+            depth=Decimal('0.85'),
+            price_paise=1199900,
+            currency='INR'
+        )
+        self.asset_sofa = FurnitureAsset.objects.create(
+            id='sofa-atomic-2',
+            name='Atomic 3-Seater Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=2999900,
+            currency='INR'
+        )
+        self.initial_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        self.design_a = Design.objects.create(
+            owner=self.user_a,
+            title='Alice Concurrency Room',
+            scene_json=self.initial_scene
+        )
+        self.session_a = AgentSession.objects.create(
+            owner=self.user_a,
+            design=self.design_a,
+            title='Alice Concurrency AI Session'
+        )
+
+    def test_concurrent_competing_apply_requests_are_atomic(self):
+        """
+        Two simultaneous apply requests for the same proposed run cannot both succeed.
+        select_for_update() row locking ensures one request acquires the lock,
+        applies the changes, and transitions status to APPROVED. The competing request
+        wakes up, detects status != PROPOSED, and is rejected with HTTP 400 Bad Request.
+        """
+        proposed_actions = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'armchair-atomic-1',
+                'position': [0.0, 0.44, 0.0],
+            }
+        ]
+        run = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Add armchair",
+            status=AgentRun.STATUS_PROPOSED,
+            ai_response_text="Adding armchair",
+            proposed_actions=proposed_actions,
+            validation_results={'is_valid': True, 'errors': [], 'warnings': []},
+            provider_metadata={'provider': 'mock', 'model': 'mock'},
+            base_scene_snapshot=self.design_a.scene_json,
+        )
+
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': str(run.id)})
+
+        client1 = APIClient()
+        client1.force_authenticate(user=self.user_a)
+
+        client2 = APIClient()
+        client2.force_authenticate(user=self.user_a)
+
+        responses = []
+
+        def worker(client):
+            try:
+                res = client.post(apply_url, {}, format='json')
+                responses.append(res)
+            finally:
+                from django.db import connections
+                connections.close_all()
+
+        t1 = threading.Thread(target=worker, args=(client1,))
+        t2 = threading.Thread(target=worker, args=(client2,))
+
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        self.assertEqual(len(responses), 2)
+        status_codes = sorted([r.status_code for r in responses])
+
+        # Exactly one request succeeded (200), the competing request was rejected (400)
+        self.assertEqual(status_codes, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
+
+        # The run in DB is approved
+        run.refresh_from_db()
+        self.assertEqual(run.status, AgentRun.STATUS_APPROVED)
+
+        # The design contains exactly 1 armchair (no double-application)
+        self.design_a.refresh_from_db()
+        self.assertEqual(len(self.design_a.scene_json['objects']), 1)
+        self.assertEqual(self.design_a.scene_json['objects'][0]['assetId'], 'armchair-atomic-1')
+
+    def test_concurrent_competing_proposals_on_same_design_lock_and_detect_stale(self):
+        """
+        If two runs are proposed against the same initial design snapshot,
+        applying run 1 updates the design scene. When run 2 acquires the lock on the Design row,
+        it rechecks the base snapshot against the locked design and rejects with 409 Conflict.
+        """
+        run1 = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Add armchair",
+            status=AgentRun.STATUS_PROPOSED,
+            ai_response_text="Adding armchair",
+            proposed_actions=[{
+                'type': 'add_furniture',
+                'asset_id': 'armchair-atomic-1',
+                'position': [-1.0, 0.44, 0.0],
+            }],
+            validation_results={'is_valid': True, 'errors': [], 'warnings': []},
+            provider_metadata={'provider': 'mock', 'model': 'mock'},
+            base_scene_snapshot=self.design_a.scene_json,
+        )
+
+        run2 = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Add sofa",
+            status=AgentRun.STATUS_PROPOSED,
+            ai_response_text="Adding sofa",
+            proposed_actions=[{
+                'type': 'add_furniture',
+                'asset_id': 'sofa-atomic-2',
+                'position': [1.0, 0.425, 0.0],
+            }],
+            validation_results={'is_valid': True, 'errors': [], 'warnings': []},
+            provider_metadata={'provider': 'mock', 'model': 'mock'},
+            base_scene_snapshot=self.design_a.scene_json,
+        )
+
+        client1 = APIClient()
+        client1.force_authenticate(user=self.user_a)
+
+        client2 = APIClient()
+        client2.force_authenticate(user=self.user_a)
+
+        apply_url_1 = reverse('agent-run-apply', kwargs={'run_id': str(run1.id)})
+        apply_url_2 = reverse('agent-run-apply', kwargs={'run_id': str(run2.id)})
+
+        responses = []
+
+        def worker(client, url):
+            try:
+                res = client.post(url, {}, format='json')
+                responses.append(res)
+            finally:
+                from django.db import connections
+                connections.close_all()
+
+        t1 = threading.Thread(target=worker, args=(client1, apply_url_1))
+        t2 = threading.Thread(target=worker, args=(client2, apply_url_2))
+
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        self.assertEqual(len(responses), 2)
+        status_codes = sorted([r.status_code for r in responses])
+
+        # Exactly one proposal succeeded (200), the competing stale proposal was rejected (409)
+        self.assertEqual(status_codes, [status.HTTP_200_OK, status.HTTP_409_CONFLICT])
+
+        # Design is valid and only has the winning proposal's item (not corrupted)
+        self.design_a.refresh_from_db()
+        self.assertEqual(len(self.design_a.scene_json['objects']), 1)

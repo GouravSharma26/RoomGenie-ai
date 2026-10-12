@@ -1,6 +1,7 @@
 from rest_framework import exceptions, permissions, serializers, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from apps.ai_agent.models import AgentSession, AgentRun
 from apps.ai_agent.serializers import (
@@ -10,6 +11,7 @@ from apps.ai_agent.serializers import (
 )
 from apps.ai_agent.adapters import get_design_llm_adapter
 from apps.ai_agent.tools import validate_and_simulate_actions
+from apps.designs.models import Design
 from apps.designs.validators import validate_canonical_scene
 from apps.furniture.models import FurnitureAsset
 
@@ -127,98 +129,137 @@ class AgentApplyRunView(APIView):
     """
     POST /api/v1/agent/runs/{run_id}/apply/
     Applies the proposed agent actions into the design scene after explicit user approval.
+    Executes inside transaction.atomic() with select_for_update() row locks on AgentRun
+    and Design to guarantee atomicity and eliminate race conditions on concurrent apply requests.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, run_id):
-        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
-
-        if run.status != AgentRun.STATUS_PROPOSED:
-            return Response(
-                {"detail": f"Agent run is in '{run.status}' state and cannot be applied."},
-                status=status.HTTP_400_BAD_REQUEST
+        with transaction.atomic():
+            # Acquire exclusive row lock on the AgentRun record
+            run = (
+                AgentRun.objects
+                .select_for_update()
+                .filter(id=run_id, session__owner=request.user)
+                .select_related('session')
+                .first()
             )
+            if not run:
+                return Response(
+                    {"detail": "Not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-        # For sessions attached to saved designs, use the authoritative saved scene as the apply base.
-        # Any client-supplied scene_json in the apply request is ignored to avoid trusting untrusted client payloads.
-        if run.session.design:
-            base_scene = run.session.design.scene_json
-            # Bind proposals to the scene version/snapshot used to generate them; reject stale proposals when design changes.
-            if run.base_scene_snapshot is not None and base_scene != run.base_scene_snapshot:
+            # Recheck status after acquiring the row lock
+            if run.status != AgentRun.STATUS_PROPOSED:
+                return Response(
+                    {"detail": f"Agent run is in '{run.status}' state and cannot be applied."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # If the session is attached to a persisted design, acquire exclusive row lock on the Design
+            design = None
+            if run.session.design_id:
+                design = (
+                    Design.objects
+                    .select_for_update()
+                    .filter(id=run.session.design_id)
+                    .first()
+                )
+
+            # For sessions attached to saved designs, use the authoritative locked saved scene as the apply base.
+            # Any client-supplied scene_json in the apply request is ignored.
+            if design:
+                base_scene = design.scene_json
+                # Recheck snapshot against locked design row to reject stale proposals when design changed concurrently
+                if run.base_scene_snapshot is not None and base_scene != run.base_scene_snapshot:
+                    return Response(
+                        {
+                            "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
+                            "code": "stale_proposal",
+                            "stale": True,
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            else:
+                base_scene = run.base_scene_snapshot or {
+                    'schemaVersion': 1,
+                    'unit': 'm',
+                    'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                    'objects': [],
+                }
+
+            sim_result = validate_and_simulate_actions(base_scene, run.proposed_actions)
+            if not sim_result['is_valid']:
+                return Response(
+                    {"detail": "Cannot apply invalid actions.", "errors": sim_result['errors']},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            applied_scene = sim_result['candidate_scene']
+
+            # Validate the final candidate with the canonical scene validator before persisting
+            try:
+                validate_canonical_scene(applied_scene)
+            except serializers.ValidationError as exc:
                 return Response(
                     {
-                        "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
-                        "code": "stale_proposal",
-                        "stale": True,
+                        "detail": "Candidate scene failed canonical scene validation.",
+                        "errors": exc.detail,
                     },
-                    status=status.HTTP_409_CONFLICT,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-        else:
-            base_scene = run.base_scene_snapshot or {
-                'schemaVersion': 1,
-                'unit': 'm',
-                'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
-                'objects': [],
-            }
 
-        sim_result = validate_and_simulate_actions(base_scene, run.proposed_actions)
-        if not sim_result['is_valid']:
-            return Response(
-                {"detail": "Cannot apply invalid actions.", "errors": sim_result['errors']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            # Persist scene onto associated design if attached within the same transaction
+            if design:
+                design.scene_json = applied_scene
+                design.save(update_fields=['scene_json', 'updated_at'])
 
-        applied_scene = sim_result['candidate_scene']
+            # Transition run to APPROVED atomically within the same transaction
+            run.status = AgentRun.STATUS_APPROVED
+            run.applied_scene_snapshot = applied_scene
+            run.save(update_fields=['status', 'applied_scene_snapshot'])
 
-        # Validate the final candidate with the canonical scene validator before persisting
-        try:
-            validate_canonical_scene(applied_scene)
-        except serializers.ValidationError as exc:
-            return Response(
-                {
-                    "detail": "Candidate scene failed canonical scene validation.",
-                    "errors": exc.detail,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Persist scene onto associated design if attached
-        if run.session.design:
-            run.session.design.scene_json = applied_scene
-            run.session.design.save(update_fields=['scene_json', 'updated_at'])
-
-        run.status = AgentRun.STATUS_APPROVED
-        run.applied_scene_snapshot = applied_scene
-        run.save(update_fields=['status', 'applied_scene_snapshot'])
-
-        return Response({
-            'detail': 'Proposal successfully approved and applied to design.',
-            'run': AgentRunSerializer(run).data,
-            'applied_scene': applied_scene,
-            'budget_diff': sim_result['budget_diff'],
-        }, status=status.HTTP_200_OK)
+            return Response({
+                'detail': 'Proposal successfully approved and applied to design.',
+                'run': AgentRunSerializer(run).data,
+                'applied_scene': applied_scene,
+                'budget_diff': sim_result['budget_diff'],
+            }, status=status.HTTP_200_OK)
 
 
 class AgentRejectRunView(APIView):
     """
     POST /api/v1/agent/runs/{run_id}/reject/
     Marks a proposed agent run as rejected without modifying any design scene state.
+    Executes inside transaction.atomic() with select_for_update() row lock.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, run_id):
-        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
-
-        if run.status != AgentRun.STATUS_PROPOSED:
-            return Response(
-                {"detail": f"Agent run is in '{run.status}' state and cannot be rejected."},
-                status=status.HTTP_400_BAD_REQUEST
+        with transaction.atomic():
+            run = (
+                AgentRun.objects
+                .select_for_update()
+                .filter(id=run_id, session__owner=request.user)
+                .first()
             )
+            if not run:
+                return Response(
+                    {"detail": "Not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-        run.status = AgentRun.STATUS_REJECTED
-        run.save(update_fields=['status'])
+            if run.status != AgentRun.STATUS_PROPOSED:
+                return Response(
+                    {"detail": f"Agent run is in '{run.status}' state and cannot be rejected."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        return Response({
-            'detail': 'Proposal rejected by user.',
-            'run': AgentRunSerializer(run).data,
-        }, status=status.HTTP_200_OK)
+            run.status = AgentRun.STATUS_REJECTED
+            run.save(update_fields=['status'])
+
+            return Response({
+                'detail': 'Proposal rejected by user.',
+                'run': AgentRunSerializer(run).data,
+            }, status=status.HTTP_200_OK)
