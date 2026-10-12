@@ -119,7 +119,7 @@ pip install -r requirements.txt
 Run checks and tests:
 ```powershell
 python manage.py check               # Django system checks
-python manage.py test                # Run full Django test suite (38 tests across accounts, rooms, furniture, designs)
+python manage.py test                # Run full Django test suite (39 tests across accounts, rooms, furniture, designs)
 python manage.py seed_furniture      # Seed initial 5 CC0 architectural furniture catalogue assets
 ```
 
@@ -177,7 +177,7 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Full CRUD endpoints: `/api/v1/rooms/`, `/api/v1/furniture/`, `/api/v1/designs/` with design cloning (`duplicate`)
   - Initial catalogue seed command (`seed_furniture`)
   - Frontend persistence service ([`frontend/src/services/designApi.ts`](frontend/src/services/designApi.ts)) & Save/Load UI modal
-  - Comprehensive automated test suite: 38 Django tests, 21 frontend Vitest tests, 0 lint warnings
+  - Comprehensive automated test suite: 39 Django tests, 22 frontend Vitest tests, 0 lint warnings
 - [ ] **Phase 3 — Furniture catalogue and budget**
 - [ ] **Phase 4 — AI interior-design agent**
 - [ ] **Phase 5 — Room photo analysis**

@@ -301,3 +301,35 @@ class DesignPersistenceTests(APITestCase):
         design.refresh_from_db()
         self.assertIsNone(design.room)
         self.assertEqual(design.title, "Design with Room")
+
+    def test_save_and_retrieve_rotated_object_near_room_boundary(self):
+        import math
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        # Room 5m x 4m x 2.8m. Sofa rotated 90 deg around Y:
+        # dims: [2.1, 0.85, 0.9]. ex=0.45m, ey=0.425m, ez=1.05m.
+        # Position [1.9, 0.425, 0.8] is near right/front boundary but strictly contained:
+        # X: [1.45, 2.35] inside [-2.5, 2.5]
+        # Z: [-0.25, 1.85] inside [-2.0, 2.0]
+        # Y: [0.0, 0.85] on floor and under ceiling
+        rotated_scene = create_sample_scene(room_w=5.0, room_l=4.0, room_h=2.8)
+        rotated_scene['objects'][0]['position'] = [1.9, 0.425, 0.8]
+        rotated_scene['objects'][0]['rotationEuler'] = [0.0, math.pi / 2, 0.0]
+
+        create_response = self.client.post(self.list_url, {
+            'title': 'Rotated Boundary Living Room',
+            'scene_json': rotated_scene
+        }, format='json')
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        design_id = create_response.data['id']
+
+        # Retrieve and verify exact transformed state preservation
+        detail_url = reverse('designs:design-detail', kwargs={'pk': design_id})
+        get_response = self.client.get(detail_url)
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+
+        retrieved_obj = get_response.data['scene_json']['objects'][0]
+        self.assertAlmostEqual(retrieved_obj['position'][0], 1.9, places=2)
+        self.assertAlmostEqual(retrieved_obj['position'][1], 0.425, places=2)
+        self.assertAlmostEqual(retrieved_obj['position'][2], 0.8, places=2)
+        self.assertAlmostEqual(retrieved_obj['rotationEuler'][1], math.pi / 2, places=4)
+

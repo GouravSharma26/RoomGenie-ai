@@ -106,7 +106,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         initialPos,
         item.dimensions,
         state.scene.room,
-        [1, 1, 1]
+        [1, 1, 1],
+        [0, 0, 0]
       );
 
       const newObject: FurniturePlacement = {
@@ -246,7 +247,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       source.position[1],
       source.position[2] + 0.3,
     ];
-    const clampedPos = clampPositionToRoom(offsetPos, source.dimensions, scene.room, source.scale);
+    const clampedPos = clampPositionToRoom(offsetPos, source.dimensions, scene.room, source.scale, source.rotationEuler);
 
     const clone: FurniturePlacement = {
       ...source,

@@ -195,6 +195,89 @@ describe('Phase 1: 3D Room Editor Scene State & Validation', () => {
       expect(overrides?.metalness).toBe(0.85);
     });
 
+    it('preserves rotation, position, and containment when serializing and reloading a rotated object near room boundary', () => {
+      // Room 5m (X: -2.5 to +2.5) x 4m (Z: -2.0 to +2.0) x 2.8m (Y: 0 to 2.8)
+      // Sofa: dims [2.1, 0.85, 0.9]. When rotated 90 deg around Y ([0, pi/2, 0]):
+      // Transformed half-extents are: ex = 0.9/2 = 0.45m, ey = 0.85/2 = 0.425m, ez = 2.1/2 = 1.05m
+      // Valid X range is [-2.05m, +2.05m]; Valid Z range is [-0.95m, +0.95m]
+      // (If unrotated, X limit would be 1.45m; placing it at X=1.9m proves rotated extents are respected)
+      const rotatedBoundaryScene: CanonicalScene = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: 2.8 },
+        objects: [
+          {
+            id: 'sofa-rotated-boundary',
+            assetId: 'sofa-modern-3seater',
+            name: 'Modern 3-Seater Sofa',
+            position: [1.9, 0.425, 0.8],
+            rotationEuler: [0, Math.PI / 2, 0],
+            scale: [1, 1, 1],
+            dimensions: [2.1, 0.85, 0.9],
+          },
+        ],
+      };
+
+      // 1. Serialize and reload via parseCanonicalScene
+      const serialized = serializeCanonicalScene(rotatedBoundaryScene);
+      const parsed = parseCanonicalScene(serialized);
+
+      expect(parsed).not.toBeNull();
+      expect(parsed?.objects).toHaveLength(1);
+      const item = parsed!.objects[0];
+
+      // Verify rotation is fully preserved
+      expect(item.rotationEuler[0]).toBeCloseTo(0, 4);
+      expect(item.rotationEuler[1]).toBeCloseTo(Math.PI / 2, 4);
+      expect(item.rotationEuler[2]).toBeCloseTo(0, 4);
+
+      // Verify position is preserved and NOT clamped to unrotated X boundary (1.45m)
+      expect(item.position[0]).toBeCloseTo(1.9, 2);
+      expect(item.position[1]).toBeCloseTo(0.425, 2); // Floor level center preserved
+      expect(item.position[2]).toBeCloseTo(0.8, 2);
+
+      // Verify containment within room boundaries
+      const minX = item.position[0] - 0.45;
+      const maxX = item.position[0] + 0.45;
+      const minZ = item.position[2] - 1.05;
+      const maxZ = item.position[2] + 1.05;
+      const minY = item.position[1] - 0.425;
+      const maxY = item.position[1] + 0.425;
+
+      expect(minX).toBeGreaterThanOrEqual(-2.5);
+      expect(maxX).toBeLessThanOrEqual(2.5);
+      expect(minZ).toBeGreaterThanOrEqual(-2.0);
+      expect(maxZ).toBeLessThanOrEqual(2.0);
+      expect(minY).toBeGreaterThanOrEqual(0.0);
+      expect(maxY).toBeLessThanOrEqual(2.8);
+
+      // 2. Load into editorStore and verify store state preserves transforms
+      useEditorStore.getState().loadScene(parsed!);
+      const loadedScene = useEditorStore.getState().scene;
+      expect(loadedScene.objects).toHaveLength(1);
+      const storeItem = loadedScene.objects[0];
+      expect(storeItem.position[0]).toBeCloseTo(1.9, 2);
+      expect(storeItem.position[1]).toBeCloseTo(0.425, 2);
+      expect(storeItem.position[2]).toBeCloseTo(0.8, 2);
+      expect(storeItem.rotationEuler[1]).toBeCloseTo(Math.PI / 2, 4);
+
+      // 3. Clamping enforcement: test that an out-of-bounds rotated object is clamped using ROTATED extents
+      // If rotated object is at Z = 1.3m (exceeds rotated Z limit 0.95m, even though unrotated would allow 1.55m):
+      const oobRotatedScene: CanonicalScene = {
+        ...rotatedBoundaryScene,
+        objects: [
+          {
+            ...rotatedBoundaryScene.objects[0],
+            position: [1.9, 0.425, 1.3],
+          },
+        ],
+      };
+      const parsedOob = parseCanonicalScene(serializeCanonicalScene(oobRotatedScene));
+      expect(parsedOob).not.toBeNull();
+      // Should be clamped to max allowable rotated Z (0.95m)
+      expect(parsedOob!.objects[0].position[2]).toBeCloseTo(0.95, 2);
+    });
+
     it('rejects unsupported schema versions explicitly', () => {
       const baseJson = {
         schemaVersion: 2, // Unsupported future schema

@@ -186,7 +186,7 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
 
       const scale: Vector3Tuple = validateScale(obj.scale);
       const rotation: Vector3Tuple = validateRotation(obj.rotationEuler);
-      const position: Vector3Tuple = clampPositionToRoom(obj.position, dims, room, scale);
+      const position: Vector3Tuple = clampPositionToRoom(obj.position, dims, room, scale, rotation);
 
       // Preserve all supported material overrides (color, roughness, metalness)
       let materialOverrides: FurniturePlacement['materialOverrides'] = undefined;
