@@ -3,7 +3,8 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)  
-> **Status:** Phase 1 (Interactive 3D Room Editor) Verified & Corrected; Phase 2 Review Pending
+> **Status:** Phase 1 (Interactive 3D Room Editor) Verified & Corrected; Phase 2 Review Pending  
+> **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots.
 
 ---
 
@@ -32,10 +33,14 @@ roomgenie-ai/
 ├── AGENTS.md                   # Autonomous agent behavior guidelines
 ├── plan.md                     # Comprehensive 14-week implementation plan
 ├── ARCHITECTURE.md             # Canonical scene schema & architectural contracts
+├── ASSET_LICENSES.md           # Verifiable CC0 1.0 Universal asset licensing
 ├── MODEL_AND_TECH_DECISIONS.md # Locked tech stack & provider decisions
 ├── HUMAN_SETUP.md              # Human-owned actions & approval boundaries
 ├── RESEARCH_PLAN.md            # Empirical research study protocol & metrics
 ├── DEVELOPMENT_CHECKLIST.md    # Milestone definition of done & verification checklist
+├── docs/                       # Verification screenshots and visual documentation
+│   ├── SCREENSHOTS.md          # Screenshot gallery with test descriptions
+│   └── screenshots/            # Verified browser screenshots
 ├── frontend/                   # React + TypeScript + Vite client
 │   ├── src/
 │   │   ├── services/           # Typed API clients (health check, etc.)
