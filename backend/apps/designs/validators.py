@@ -50,6 +50,45 @@ def validate_vector3(vec, field_name: str, min_val: float = None, max_val: float
     return cleaned
 
 
+def compute_transformed_aabb_extents(
+    dimensions: list[float],
+    scale: list[float],
+    rotation_euler: list[float]
+) -> tuple[float, float, float]:
+    """
+    Computes the world half-extents (Ex, Ey, Ez) of a 3D box oriented by
+    Euler angles (Three.js standard XYZ order in radians) and scaled by scale factors.
+    Uses the exact analytical AABB formula for oriented bounding boxes.
+    """
+    hx = (dimensions[0] * scale[0]) / 2.0
+    hy = (dimensions[1] * scale[1]) / 2.0
+    hz = (dimensions[2] * scale[2]) / 2.0
+
+    rx, ry, rz = rotation_euler
+    c1, s1 = math.cos(rx), math.sin(rx)
+    c2, s2 = math.cos(ry), math.sin(ry)
+    c3, s3 = math.cos(rz), math.sin(rz)
+
+    # Standard Three.js Euler 'XYZ' rotation matrix elements
+    r00 = c2 * c3
+    r01 = -c2 * s3
+    r02 = s2
+
+    r10 = c1 * s3 + c3 * s1 * s2
+    r11 = c1 * c3 - s1 * s2 * s3
+    r12 = -c2 * s1
+
+    r20 = s1 * s3 - c1 * c3 * s2
+    r21 = c3 * s1 + c1 * s2 * s3
+    r22 = c1 * c2
+
+    ex = abs(r00) * hx + abs(r01) * hy + abs(r02) * hz
+    ey = abs(r10) * hx + abs(r11) * hy + abs(r12) * hz
+    ez = abs(r20) * hx + abs(r21) * hy + abs(r22) * hz
+
+    return (ex, ey, ez)
+
+
 def validate_canonical_scene(data: dict) -> dict:
     """
     Authoritative backend validation for canonical scene JSON schemas.
@@ -148,26 +187,49 @@ def validate_canonical_scene(data: dict) -> dict:
             f"objects[{idx}].rotationEuler"
         )
 
-        # Position (X, Y, Z) with room boundary bounds check
-        # Room boundaries: X in [-room_w/2, +room_w/2], Z in [-room_l/2, +room_l/2]
-        # Y in [0, room_h]
-        tolerance = 0.5  # 50cm tolerance to permit boundary edge alignment
-        max_x = (room_w / 2.0) + tolerance
-        max_z = (room_l / 2.0) + tolerance
-        max_y = room_h + tolerance
-
+        # Position (X, Y, Z) and full transformed 3D footprint containment check
         pos = validate_vector3(obj.get('position', [0.0, 0.0, 0.0]), f"objects[{idx}].position")
-        if abs(pos[0]) > max_x:
+
+        # Compute exact world half-extents considering scale and 3D Euler rotation
+        ex, ey, ez = compute_transformed_aabb_extents(dims, scale, rotation)
+
+        min_x = pos[0] - ex
+        max_x = pos[0] + ex
+        min_y = pos[1] - ey
+        max_y = pos[1] + ey
+        min_z = pos[2] - ez
+        max_z = pos[2] + ez
+
+        half_room_w = room_w / 2.0
+        half_room_l = room_l / 2.0
+        tolerance = 0.01  # 1cm numerical tolerance for floating-point calculations
+
+        # 1. Room Width containment (X axis)
+        if min_x < -half_room_w - tolerance or max_x > half_room_w + tolerance:
             raise serializers.ValidationError(
-                f"objects[{idx}] position X ({pos[0]:.2f}m) exceeds room width bounds (±{room_w/2:.2f}m)."
+                f"objects[{idx}] ('{name}') extends beyond room width boundaries: "
+                f"X span [{min_x:.2f}m, {max_x:.2f}m] exceeds room limits [{-half_room_w:.2f}m, {half_room_w:.2f}m]."
             )
-        if abs(pos[2]) > max_z:
+
+        # 2. Room Length containment (Z axis)
+        if min_z < -half_room_l - tolerance or max_z > half_room_l + tolerance:
             raise serializers.ValidationError(
-                f"objects[{idx}] position Z ({pos[2]:.2f}m) exceeds room length bounds (±{room_l/2:.2f}m)."
+                f"objects[{idx}] ('{name}') extends beyond room length boundaries: "
+                f"Z span [{min_z:.2f}m, {max_z:.2f}m] exceeds room limits [{-half_room_l:.2f}m, {half_room_l:.2f}m]."
             )
-        if pos[1] < -0.1 or pos[1] > max_y:
+
+        # 3. Room Floor containment (Y axis base)
+        if min_y < 0.0 - tolerance:
             raise serializers.ValidationError(
-                f"objects[{idx}] position Y ({pos[1]:.2f}m) must be within floor level and ceiling (0 - {room_h:.2f}m)."
+                f"objects[{idx}] ('{name}') extends below floor level: "
+                f"base Y ({min_y:.2f}m) penetrates the floor plane (0.00m)."
+            )
+
+        # 4. Room Ceiling containment (Y axis top)
+        if max_y > room_h + tolerance:
+            raise serializers.ValidationError(
+                f"objects[{idx}] ('{name}') extends above room ceiling: "
+                f"top Y ({max_y:.2f}m) exceeds ceiling height ({room_h:.2f}m)."
             )
 
         # Material Overrides (optional)

@@ -119,7 +119,7 @@ pip install -r requirements.txt
 Run checks and tests:
 ```powershell
 python manage.py check               # Django system checks
-python manage.py test                # Run full Django test suite (32 tests across accounts, rooms, furniture, designs)
+python manage.py test                # Run full Django test suite (38 tests across accounts, rooms, furniture, designs)
 python manage.py seed_furniture      # Seed initial 5 CC0 architectural furniture catalogue assets
 ```
 
@@ -133,7 +133,7 @@ Start the development server:
 python manage.py runserver 127.0.0.1:8000
 ```
 - Health endpoint: `http://127.0.0.1:8000/api/v1/health/`
-- Auth endpoints: `http://127.0.0.1:8000/api/v1/auth/` (`register/`, `login/`, `me/`, `demo/`)
+- Auth endpoints: `http://127.0.0.1:8000/api/v1/auth/` (`register/`, `login/`, `me/`, `demo/` [gated by `ALLOW_DEMO_AUTH = DEBUG and ...`; 403 in production])
 - Room envelopes CRUD: `http://127.0.0.1:8000/api/v1/rooms/`
 - Furniture catalogue: `http://127.0.0.1:8000/api/v1/furniture/`
 - Room designs persistence: `http://127.0.0.1:8000/api/v1/designs/` (`{id}/duplicate/`)
@@ -167,15 +167,17 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Real-time room boundary clamping preventing out-of-bounds clipping and non-positive dimension rejection
   - Material swatch color customization with preserved roughness and metalness overrides
   - Keyboard shortcuts (Delete, Backspace, Esc) and comprehensive navigation guide modal
-- [x] **Phase 2 — Django API and persistence**
+- [x] **Phase 2 — Django API and persistence (Reviewed & Corrected)**
   - Modular monolith Django apps: `accounts`, `rooms`, `furniture`, `designs`
   - Relational models on PostgreSQL 17: `User`, `Room`, `FurnitureAsset`, `Design`
   - DRF Token & Session Authentication with strict user-level ownership isolation (404 on cross-user queries)
-  - Authoritative canonical scene schema validation (`schemaVersion`, metric units, room dimensions, object transforms, bounds clamping)
+  - Development-only demo authentication endpoint (`/api/v1/auth/demo/` gated by `ALLOW_DEMO_AUTH = DEBUG and ...`; strictly returns 403 Forbidden in production)
+  - Authoritative canonical scene schema validation (`schemaVersion`, metric units, room dimensions, object transforms)
+  - Exact 3D transformed oriented bounding box (OBB) extents containment: validates dimensions, scale, Euler XYZ rotation matrix, position, floor boundary ($Y_{min} \ge 0$), ceiling boundary ($Y_{max} \le \text{height}$), and lateral room walls
   - Full CRUD endpoints: `/api/v1/rooms/`, `/api/v1/furniture/`, `/api/v1/designs/` with design cloning (`duplicate`)
   - Initial catalogue seed command (`seed_furniture`)
   - Frontend persistence service ([`frontend/src/services/designApi.ts`](frontend/src/services/designApi.ts)) & Save/Load UI modal
-  - Comprehensive automated test suite: 32 Django tests, 21 frontend Vitest tests, 0 lint warnings
+  - Comprehensive automated test suite: 38 Django tests, 21 frontend Vitest tests, 0 lint warnings
 - [ ] **Phase 3 — Furniture catalogue and budget**
 - [ ] **Phase 4 — AI interior-design agent**
 - [ ] **Phase 5 — Room photo analysis**

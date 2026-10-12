@@ -23,8 +23,8 @@ def create_sample_scene(room_w=5.0, room_l=4.0, room_h=2.8):
                 'id': 'placement-sofa-1',
                 'assetId': 'sofa-modern-3seater',
                 'name': 'Modern 3-Seater Sofa',
-                'position': [0.5, 0.425, -0.2],
-                'rotationEuler': [0.0, 1.57, 0.0],
+                'position': [0.0, 0.425, 0.0],
+                'rotationEuler': [0.0, 0.0, 0.0],
                 'scale': [1.0, 1.0, 1.0],
                 'dimensions': [2.1, 0.85, 0.9],
                 'materialOverrides': {
@@ -119,11 +119,68 @@ class DesignPersistenceTests(APITestCase):
     def test_reject_furniture_position_outside_room_boundaries(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
         scene = create_sample_scene(room_w=5.0, room_l=4.0)
-        # Room width is 5.0m, so bounds are ±2.5m. Place object at X = 5.0m:
-        scene['objects'][0]['position'] = [5.0, 0.425, 0.0]
+        # Sofa width is 2.1m. Room width is 5.0m (limits ±2.5m). Center at 2.0m -> X max is 2.0 + 1.05 = 3.05m > 2.5m
+        scene['objects'][0]['position'] = [2.0, 0.425, 0.0]
         response = self.client.post(self.list_url, {'title': 'Out of Bounds', 'scene_json': scene}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('scene_json', response.data)
+        self.assertIn('width boundaries', str(response.data['scene_json']))
+
+    def test_reject_oversized_object_larger_than_room(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=5.0, room_l=4.0)
+        # Giant 6.0m table cannot fit in 5.0m wide room
+        scene['objects'][0]['dimensions'] = [6.0, 0.75, 1.0]
+        scene['objects'][0]['position'] = [0.0, 0.375, 0.0]
+        response = self.client.post(self.list_url, {'title': 'Oversized Table', 'scene_json': scene}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', response.data)
+        self.assertIn('width boundaries', str(response.data['scene_json']))
+
+    def test_reject_rotated_object_crossing_boundary_near_edge(self):
+        import math
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=5.0, room_l=4.0)
+        # Sofa: W=2.1, D=0.9. Room L=4.0 (half length is 2.0m).
+        # Unrotated: Z extent is 0.45m. At Z=1.5m, Z max is 1.95m <= 2.0m (fits).
+        # Rotated 90 deg (ry = pi/2): Z extent becomes 1.05m. At Z=1.5m, Z max is 2.55m > 2.0m (violates Z boundary).
+        scene['objects'][0]['position'] = [0.0, 0.425, 1.5]
+        scene['objects'][0]['rotationEuler'] = [0.0, math.pi / 2, 0.0]
+        response = self.client.post(self.list_url, {'title': 'Rotated Collision', 'scene_json': scene}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', response.data)
+        self.assertIn('length boundaries', str(response.data['scene_json']))
+
+    def test_allow_rotated_object_fully_contained(self):
+        import math
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=5.0, room_l=4.0)
+        # Sofa rotated 45 deg in room center: ex=1.06m, ez=1.06m. Fits easily inside ±2.5m and ±2.0m.
+        scene['objects'][0]['position'] = [0.0, 0.425, 0.0]
+        scene['objects'][0]['rotationEuler'] = [0.0, math.pi / 4, 0.0]
+        response = self.client.post(self.list_url, {'title': 'Valid Rotated Sofa', 'scene_json': scene}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_reject_floor_penetration_violation(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=5.0, room_l=4.0)
+        # Sofa height is 0.85m (hy=0.425m). Placing it at py=0.20m means base is at -0.225m (penetrates floor).
+        scene['objects'][0]['position'] = [0.0, 0.20, 0.0]
+        response = self.client.post(self.list_url, {'title': 'Floor Penetration', 'scene_json': scene}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', response.data)
+        self.assertIn('floor level', str(response.data['scene_json']))
+
+    def test_reject_ceiling_violation(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=5.0, room_l=4.0, room_h=2.8)
+        # Tall bookshelf height=2.2m (hy=1.1m) placed at py=2.0m -> top is at 3.10m > 2.80m ceiling.
+        scene['objects'][0]['dimensions'] = [1.0, 2.2, 0.4]
+        scene['objects'][0]['position'] = [0.0, 2.0, 0.0]
+        response = self.client.post(self.list_url, {'title': 'Ceiling Breach', 'scene_json': scene}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', response.data)
+        self.assertIn('ceiling', str(response.data['scene_json']))
 
     def test_reject_extreme_or_invalid_scale(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')

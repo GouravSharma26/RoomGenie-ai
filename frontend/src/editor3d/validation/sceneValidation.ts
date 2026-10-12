@@ -76,35 +76,67 @@ export function validateRotation(rotation: unknown): Vector3Tuple {
   ];
 }
 
+export function computeTransformedExtents(
+  dimensions: Vector3Tuple,
+  scale: Vector3Tuple = [1, 1, 1],
+  rotation: Vector3Tuple = [0, 0, 0]
+): [number, number, number] {
+  const [objW, objH, objD] = dimensions;
+  const [sX, sY, sZ] = scale;
+  const hx = Math.max(objW * sX, 0.1) / 2;
+  const hy = Math.max(objH * sY, 0.1) / 2;
+  const hz = Math.max(objD * sZ, 0.1) / 2;
+
+  const [rx, ry, rz] = rotation;
+  const c1 = Math.cos(rx), s1 = Math.sin(rx);
+  const c2 = Math.cos(ry), s2 = Math.sin(ry);
+  const c3 = Math.cos(rz), s3 = Math.sin(rz);
+
+  // Standard Three.js Euler 'XYZ' rotation matrix elements
+  const r00 = c2 * c3;
+  const r01 = -c2 * s3;
+  const r02 = s2;
+
+  const r10 = c1 * s3 + c3 * s1 * s2;
+  const r11 = c1 * c3 - s1 * s2 * s3;
+  const r12 = -c2 * s1;
+
+  const r20 = s1 * s3 - c1 * c3 * s2;
+  const r21 = c3 * s1 + c1 * s2 * s3;
+  const r22 = c1 * c2;
+
+  const ex = Math.abs(r00) * hx + Math.abs(r01) * hy + Math.abs(r02) * hz;
+  const ey = Math.abs(r10) * hx + Math.abs(r11) * hy + Math.abs(r12) * hz;
+  const ez = Math.abs(r20) * hx + Math.abs(r21) * hy + Math.abs(r22) * hz;
+
+  return [ex, ey, ez];
+}
+
 export function clampPositionToRoom(
   position: unknown,
   dimensions: Vector3Tuple,
   room: RoomDimensions,
-  scale: Vector3Tuple = [1, 1, 1]
+  scale: Vector3Tuple = [1, 1, 1],
+  rotation: Vector3Tuple = [0, 0, 0]
 ): Vector3Tuple {
   const [rawX, , rawZ] = sanitizeVector3(position, [0, 0, 0]);
-  const [objW, objH, objD] = dimensions;
-  const [sX, sY, sZ] = scale;
-
-  const effW = Math.max(objW * sX, 0.1);
-  const effH = Math.max(objH * sY, 0.1);
-  const effD = Math.max(objD * sZ, 0.1);
+  const [ex, ey, ez] = computeTransformedExtents(dimensions, scale, rotation);
 
   // Room floor extends from -width/2 to +width/2 on X, -length/2 to +length/2 on Z
   const halfRoomX = room.width / 2;
   const halfRoomZ = room.length / 2;
 
-  const minX = -halfRoomX + effW / 2;
-  const maxX = halfRoomX - effW / 2;
-  const minZ = -halfRoomZ + effD / 2;
-  const maxZ = halfRoomZ - effD / 2;
+  const minX = -halfRoomX + ex;
+  const maxX = halfRoomX - ex;
+  const minZ = -halfRoomZ + ez;
+  const maxZ = halfRoomZ - ez;
 
   // If object is larger than room, center it
   const clampedX = minX > maxX ? 0 : Math.min(Math.max(rawX, minX), maxX);
   const clampedZ = minZ > maxZ ? 0 : Math.min(Math.max(rawZ, minZ), maxZ);
 
-  // In Three.js, base of furniture is placed at Y = 0 (floor) so the center of object is at effH / 2
-  const floorCenterY = effH / 2;
+  // In Three.js, base of furniture is placed at Y = 0 (floor) so the center of object is at ey
+  const floorCenterY = ey;
 
   return [clampedX, floorCenterY, clampedZ];
 }

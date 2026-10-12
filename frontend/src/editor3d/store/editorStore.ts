@@ -78,7 +78,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp all existing objects to the new room dimensions
       const clampedObjects = state.scene.objects.map((obj) => ({
         ...obj,
-        position: clampPositionToRoom(obj.position, obj.dimensions, validatedRoom, obj.scale),
+        position: clampPositionToRoom(obj.position, obj.dimensions, validatedRoom, obj.scale, obj.rotationEuler),
       }));
 
       return {
@@ -139,7 +139,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (objIndex === -1) return state;
 
       const obj = state.scene.objects[objIndex];
-      const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale);
+      const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
@@ -163,10 +163,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const obj = state.scene.objects[objIndex];
       const validatedRot = validateRotation(rotation);
+      // Re-clamp position with new rotation so corners do not pierce room boundaries
+      const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, obj.scale, validatedRot);
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
+        position: clampedPos,
         rotationEuler: validatedRot,
       };
 
@@ -187,7 +190,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const obj = state.scene.objects[objIndex];
       const validatedS = validateScale(scale);
       // Re-clamp position with new scale to avoid boundary clipping
-      const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, validatedS);
+      const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, validatedS, obj.rotationEuler);
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {

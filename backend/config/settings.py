@@ -26,6 +26,9 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').strip().lower() in ('true', '1', 'yes')
 
+# Demo authentication gating (Strict development-only setting; strictly disabled in production)
+ALLOW_DEMO_AUTH = DEBUG and os.getenv('ALLOW_DEMO_AUTH', 'True').strip().lower() in ('true', '1', 'yes')
+
 ALLOWED_HOSTS = [
     host.strip() 
     for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') 

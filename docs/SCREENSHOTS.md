@@ -43,3 +43,11 @@ Real binary glTF 2.0 assets (`sofa.glb`, `coffee_table.glb`, `desk.glb`) loaded 
 Cloud persistence modal integrating the Django REST Framework `/api/v1/designs/` API with PostgreSQL 17. Users can save active 3D scenes, update snapshots, duplicate plans, and load previously saved designs with full object transform recovery.
 
 ![Phase 2 Room Design Persistence Modal](./screenshots/06_phase2_persistence_modal.png)
+
+---
+
+## 7. Phase 2 Transformed 3D Room Containment & Rotation Clamping
+Validation of rotated furniture within room boundaries. When furniture is rotated (e.g. +90° around Y), its complete transformed bounding box (accounting for scale, dimensions, and Euler angles) is calculated and strictly contained within the floor, ceiling, and perimeter walls.
+
+![Phase 2 Transformed 3D Room Containment & Rotation Clamping](./screenshots/07_phase2_containment_and_rotation.png)
+

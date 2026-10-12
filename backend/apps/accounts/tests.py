@@ -63,8 +63,16 @@ class AccountAuthenticationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['username'], 'dave')
 
-    def test_demo_auth_provisions_demo_user(self):
-        response = self.client.post(self.demo_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('token', response.data)
-        self.assertEqual(response.data['user']['username'], 'demo_engineer')
+    def test_demo_auth_provisions_demo_user_when_enabled(self):
+        with self.settings(ALLOW_DEMO_AUTH=True):
+            response = self.client.post(self.demo_url)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn('token', response.data)
+            self.assertEqual(response.data['user']['username'], 'demo_engineer')
+
+    def test_demo_auth_rejected_when_disabled(self):
+        with self.settings(ALLOW_DEMO_AUTH=False):
+            response = self.client.post(self.demo_url)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+            self.assertIn('detail', response.data)
+            self.assertIn('disabled', response.data['detail'].lower())

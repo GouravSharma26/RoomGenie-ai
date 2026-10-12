@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -75,7 +76,14 @@ def demo_auth(request):
     """
     Convenience endpoint for local development and smoke tests to obtain
     a persistent test account token without a registration wall.
+    Strictly forbidden in production environments or when ALLOW_DEMO_AUTH is False.
     """
+    if not getattr(settings, 'ALLOW_DEMO_AUTH', False):
+        return Response(
+            {'detail': 'Demo authentication is disabled in production environments.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user, _ = User.objects.get_or_create(
         username='demo_engineer',
         defaults={'email': 'demo@roomgenie.ai', 'first_name': 'Demo', 'last_name': 'Engineer'}
