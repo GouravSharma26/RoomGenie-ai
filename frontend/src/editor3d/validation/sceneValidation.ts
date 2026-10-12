@@ -11,8 +11,16 @@ export const MAX_ROOM_DIMENSION = 25.0;
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 5.0;
 
+export const SUPPORTED_SCHEMA_VERSION = 1;
+export const MIN_OBJECT_DIMENSION = 0.05;
+export const MAX_OBJECT_DIMENSION = 20.0;
+
 export function isFiniteNumber(val: unknown): val is number {
   return typeof val === 'number' && Number.isFinite(val);
+}
+
+export function isFinitePositiveNumber(val: unknown): val is number {
+  return typeof val === 'number' && Number.isFinite(val) && val > 0;
 }
 
 export function sanitizeNumber(val: unknown, fallback: number): number {
@@ -110,31 +118,76 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
     const parsed = JSON.parse(rawJson);
     if (!parsed || typeof parsed !== 'object') return null;
 
-    const room = validateRoomDimensions(parsed.room);
-    const objects: FurniturePlacement[] = Array.isArray(parsed.objects)
-      ? parsed.objects.map((obj: any, index: number): FurniturePlacement => {
-          const dims: Vector3Tuple = sanitizeVector3(obj.dimensions, [1, 1, 1]);
-          const scale: Vector3Tuple = validateScale(obj.scale);
-          const rotation: Vector3Tuple = validateRotation(obj.rotationEuler);
-          const position: Vector3Tuple = clampPositionToRoom(obj.position, dims, room, scale);
+    // Explicitly reject unsupported schema versions or non-matching unit
+    if (parsed.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+      return null;
+    }
+    if (parsed.unit !== 'm') {
+      return null;
+    }
 
-          return {
-            id: typeof obj.id === 'string' && obj.id ? obj.id : `placement-${Date.now()}-${index}`,
-            assetId: typeof obj.assetId === 'string' ? obj.assetId : 'unknown-asset',
-            name: typeof obj.name === 'string' ? obj.name : 'Furniture Item',
-            dimensions: dims,
-            scale,
-            rotationEuler: rotation,
-            position,
-            materialOverrides: obj.materialOverrides && typeof obj.materialOverrides === 'object'
-              ? { color: obj.materialOverrides.color }
-              : undefined,
-          };
-        })
-      : [];
+    // Validate room dimensions strictly as finite positive values
+    if (!parsed.room || typeof parsed.room !== 'object') return null;
+    const { width: rawW, length: rawL, height: rawH } = parsed.room;
+    if (!isFinitePositiveNumber(rawW) || !isFinitePositiveNumber(rawL) || !isFinitePositiveNumber(rawH)) {
+      return null; // Reject negative, zero, or non-finite room dimensions
+    }
+    const room = validateRoomDimensions(parsed.room);
+
+    // Validate objects array and strictly check dimensions of every object
+    if (!Array.isArray(parsed.objects)) return null;
+
+    const objects: FurniturePlacement[] = [];
+    for (let i = 0; i < parsed.objects.length; i++) {
+      const obj = parsed.objects[i];
+      if (!obj || typeof obj !== 'object') return null;
+
+      // Validate dimensions: must be an array of 3 finite positive numbers
+      if (!Array.isArray(obj.dimensions) || obj.dimensions.length < 3) {
+        return null;
+      }
+      const [ow, oh, od] = obj.dimensions;
+      if (!isFinitePositiveNumber(ow) || !isFinitePositiveNumber(oh) || !isFinitePositiveNumber(od)) {
+        return null; // Reject negative, zero, or non-finite object dimensions
+      }
+      const dims: Vector3Tuple = [ow, oh, od];
+
+      const scale: Vector3Tuple = validateScale(obj.scale);
+      const rotation: Vector3Tuple = validateRotation(obj.rotationEuler);
+      const position: Vector3Tuple = clampPositionToRoom(obj.position, dims, room, scale);
+
+      // Preserve all supported material overrides (color, roughness, metalness)
+      let materialOverrides: FurniturePlacement['materialOverrides'] = undefined;
+      if (obj.materialOverrides && typeof obj.materialOverrides === 'object') {
+        const overrides: NonNullable<FurniturePlacement['materialOverrides']> = {};
+        if (typeof obj.materialOverrides.color === 'string') {
+          overrides.color = obj.materialOverrides.color;
+        }
+        if (typeof obj.materialOverrides.roughness === 'number' && Number.isFinite(obj.materialOverrides.roughness)) {
+          overrides.roughness = Math.min(Math.max(obj.materialOverrides.roughness, 0), 1);
+        }
+        if (typeof obj.materialOverrides.metalness === 'number' && Number.isFinite(obj.materialOverrides.metalness)) {
+          overrides.metalness = Math.min(Math.max(obj.materialOverrides.metalness, 0), 1);
+        }
+        if (Object.keys(overrides).length > 0) {
+          materialOverrides = overrides;
+        }
+      }
+
+      objects.push({
+        id: typeof obj.id === 'string' && obj.id ? obj.id : `placement-${Date.now()}-${i}`,
+        assetId: typeof obj.assetId === 'string' ? obj.assetId : 'unknown-asset',
+        name: typeof obj.name === 'string' ? obj.name : 'Furniture Item',
+        dimensions: dims,
+        scale,
+        rotationEuler: rotation,
+        position,
+        materialOverrides,
+      });
+    }
 
     return {
-      schemaVersion: typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1,
+      schemaVersion: SUPPORTED_SCHEMA_VERSION,
       unit: 'm',
       room,
       objects,
@@ -143,3 +196,4 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
     return null;
   }
 }
+

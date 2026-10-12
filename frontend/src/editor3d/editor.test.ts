@@ -163,9 +163,120 @@ describe('Phase 1: 3D Room Editor Scene State & Validation', () => {
       expect(parsed?.objects[0].name).toBe('Modern Sofa');
     });
 
+    it('preserves all supported material overrides (color, roughness, metalness)', () => {
+      const sceneWithMaterials: CanonicalScene = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: 2.8 },
+        objects: [
+          {
+            id: 'mat-test-1',
+            assetId: 'coffee-table-minimal',
+            name: 'Coffee Table',
+            position: [0, 0.225, 0],
+            rotationEuler: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: [1.2, 0.45, 0.6],
+            materialOverrides: {
+              color: '#d97706',
+              roughness: 0.45,
+              metalness: 0.85,
+            },
+          },
+        ],
+      };
+
+      const parsed = parseCanonicalScene(serializeCanonicalScene(sceneWithMaterials));
+      expect(parsed).not.toBeNull();
+      const overrides = parsed?.objects[0].materialOverrides;
+      expect(overrides).toBeDefined();
+      expect(overrides?.color).toBe('#d97706');
+      expect(overrides?.roughness).toBe(0.45);
+      expect(overrides?.metalness).toBe(0.85);
+    });
+
+    it('rejects unsupported schema versions explicitly', () => {
+      const baseJson = {
+        schemaVersion: 2, // Unsupported future schema
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: 2.8 },
+        objects: [],
+      };
+      expect(parseCanonicalScene(JSON.stringify(baseJson))).toBeNull();
+
+      const noVersion = { ...baseJson, schemaVersion: undefined };
+      expect(parseCanonicalScene(JSON.stringify(noVersion))).toBeNull();
+    });
+
+    it('rejects negative or zero room dimensions', () => {
+      const negativeWidth = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: -5.0, length: 4.0, height: 2.8 },
+        objects: [],
+      };
+      expect(parseCanonicalScene(JSON.stringify(negativeWidth))).toBeNull();
+
+      const zeroLength = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 0, height: 2.8 },
+        objects: [],
+      };
+      expect(parseCanonicalScene(JSON.stringify(zeroLength))).toBeNull();
+
+      const nanHeight = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: NaN },
+        objects: [],
+      };
+      expect(parseCanonicalScene(JSON.stringify(nanHeight))).toBeNull();
+    });
+
+    it('rejects negative or zero furniture object dimensions', () => {
+      const negativeObj = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: 2.8 },
+        objects: [
+          {
+            id: 'bad-obj-1',
+            assetId: 'sofa-modern-3seater',
+            name: 'Corrupt Sofa',
+            position: [0, 0, 0],
+            rotationEuler: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: [-2.1, 0.85, 0.9], // Negative width
+          },
+        ],
+      };
+      expect(parseCanonicalScene(JSON.stringify(negativeObj))).toBeNull();
+
+      const zeroObj = {
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 5.0, length: 4.0, height: 2.8 },
+        objects: [
+          {
+            id: 'bad-obj-2',
+            assetId: 'sofa-modern-3seater',
+            name: 'Zero Height Sofa',
+            position: [0, 0, 0],
+            rotationEuler: [0, 0, 0],
+            scale: [1, 1, 1],
+            dimensions: [2.1, 0, 0.9], // Zero height
+          },
+        ],
+      };
+      expect(parseCanonicalScene(JSON.stringify(zeroObj))).toBeNull();
+    });
+
     it('returns null safely for corrupt or invalid JSON', () => {
       expect(parseCanonicalScene('invalid-json{{{')).toBeNull();
       expect(parseCanonicalScene('null')).toBeNull();
+      expect(parseCanonicalScene('{}')).toBeNull();
     });
   });
 });
+

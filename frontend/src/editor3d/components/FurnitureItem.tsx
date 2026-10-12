@@ -1,10 +1,53 @@
-import React, { useRef } from 'react';
+import React, { useRef, Suspense, useMemo } from 'react';
 import * as THREE from 'three';
+import { useGLTF } from '@react-three/drei';
 import type { FurniturePlacement } from '../../types/scene';
 import { useEditorStore } from '../store/editorStore';
+import { SAMPLE_CATALOG } from '../data/catalog';
 
 interface FurnitureItemProps {
   placement: FurniturePlacement;
+}
+
+interface GLTFModelProps {
+  url: string;
+  color: string;
+  roughness: number;
+  metalness: number;
+}
+
+const GLTFModel: React.FC<GLTFModelProps> = ({ url, color, roughness, metalness }) => {
+  const { scene } = useGLTF(url);
+  const cloned = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.traverse((child: any) => {
+      if (child.isMesh && child.material) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.material = child.material.clone();
+        if (color) child.material.color.set(color);
+        child.material.roughness = roughness;
+        child.material.metalness = metalness;
+      }
+    });
+    return clone;
+  }, [scene, color, roughness, metalness]);
+
+  return <primitive object={cloned} />;
+};
+
+class ModelErrorBoundary extends React.Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
 }
 
 export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
@@ -18,6 +61,8 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const isHovered = hoveredId === placement.id;
 
   const color = placement.materialOverrides?.color || '#4f46e5';
+  const roughness = placement.materialOverrides?.roughness ?? 0.7;
+  const metalness = placement.materialOverrides?.metalness ?? 0.1;
   const [width, height, depth] = placement.dimensions;
 
   const handleClick = (e: any) => {
@@ -34,16 +79,17 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
     hoverObject(null);
   };
 
-  // Render stylized procedural model based on assetId
-  const renderGeometry = () => {
+  // Render stylized procedural geometry as native mesh or fallback
+  const renderProceduralGeometry = () => {
     if (placement.assetId.includes('sofa')) {
       return (
         <group>
           {/* Main Seat Base */}
           <mesh position={[0, -height * 0.25, 0]} castShadow receiveShadow>
             <boxGeometry args={[width * 0.95, height * 0.3, depth * 0.85]} />
-            <meshStandardMaterial color={color} roughness={0.7} />
+            <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} />
           </mesh>
+
           {/* Cushions */}
           {[-width * 0.28, 0, width * 0.28].map((x, i) => (
             <mesh key={`cushion-${i}`} position={[x, -height * 0.05, depth * 0.05]} castShadow>
@@ -180,6 +226,27 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
     );
   };
 
+  const catalogItem = SAMPLE_CATALOG.find((item) => item.id === placement.assetId);
+
+  // Render GLB asset if available with automatic procedural geometry fallback
+  const renderFurniture = () => {
+    if (catalogItem?.modelUrl) {
+      return (
+        <ModelErrorBoundary fallback={renderProceduralGeometry()}>
+          <Suspense fallback={renderProceduralGeometry()}>
+            <GLTFModel
+              url={catalogItem.modelUrl}
+              color={color}
+              roughness={roughness}
+              metalness={metalness}
+            />
+          </Suspense>
+        </ModelErrorBoundary>
+      );
+    }
+    return renderProceduralGeometry();
+  };
+
   return (
     <group
       ref={groupRef}
@@ -190,7 +257,7 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      {renderGeometry()}
+      {renderFurniture()}
 
       {/* Selection & Hover Wireframe / Glow Highlight */}
       {(isSelected || isHovered) && (

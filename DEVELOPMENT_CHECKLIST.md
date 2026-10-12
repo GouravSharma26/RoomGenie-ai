@@ -8,17 +8,17 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] `.env` is ignored by Git and `.env.example` has placeholders only.
 - [x] Frontend install/start/build commands work on the target computer.
 - [x] Backend install/check/run commands work on the target computer.
-- [ ] PostgreSQL connection is verified when database work begins (Local PostgreSQL 17 running on port 5432; pending DB_PASSWORD in .env for migrations).
+- [x] PostgreSQL connection and migrations verified (PostgreSQL 17 on Docker loopback 127.0.0.1:5433; core auth/admin/session migrations applied).
 - [x] Dependency lockfile and migration files are committed.
 
 ## 3D editor
 
 - [x] Room dimensions use metres and coordinate conventions are documented.
-- [x] At least three legal sample GLB/GLTF assets load (5 models with legal attribution).
+- [x] At least three legal sample GLB/GLTF assets provided with verifiable CC0 attribution (3 GLB models in public/models/ + 2 procedural models; see ASSET_LICENSES.md).
 - [x] Add/select/move/rotate/scale/delete/duplicate actions work.
 - [x] Camera controls work without preventing furniture selection.
-- [x] Bad transforms are rejected or clamped.
-- [x] Scene save/reload preserves IDs, assets, and transforms (canonical schema tested).
+- [x] Bad transforms are rejected or clamped (non-positive dimensions rejected in canonical schema).
+- [ ] Full backend scene save/reload via API (deferred to Phase 2; canonical JSON schema serialization and validation tested in frontend).
 - [x] UI provides clear empty/loading/error states.
 
 ## API and persistence

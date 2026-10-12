@@ -3,7 +3,7 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)  
-> **Status:** Phase 0 (Setup & Scaffold) Verified
+> **Status:** Phase 1 (Interactive 3D Room Editor) Verified & Corrected; Phase 2 Review Pending
 
 ---
 
@@ -121,12 +121,13 @@ python manage.py runserver 127.0.0.1:8000
 ```
 - Health endpoint: `http://127.0.0.1:8000/api/v1/health/`
 
-### 4. Running Database with Docker Compose (Optional)
+### 4. Running Database with Docker Compose (Recommended Alternative)
 
-If you prefer running PostgreSQL via Docker instead of local Windows service:
+To run containerized PostgreSQL 17 without port collisions on machines with native PostgreSQL on port 5432, Docker Compose exposes port `5433` on loopback `127.0.0.1`:
 ```powershell
 docker compose up -d postgres
 ```
+Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.example`).
 
 ---
 
@@ -143,10 +144,11 @@ docker compose up -d postgres
   - Three.js + React Three Fiber + Drei interactive canvas with architectural lighting
   - Editable room boundary envelope in metres with real-time floor grid
   - OrbitControls with reset camera and 2D floor-plan / 3D perspective switcher
-  - 5 legally cleared architectural furniture assets (CC0)
+  - 5 legally cleared architectural furniture assets with verifiable CC0 attribution ([`ASSET_LICENSES.md`](file:///ASSET_LICENSES.md))
+  - Real binary glTF models (`sofa.glb`, `coffee_table.glb`, `desk.glb`) with procedural Three.js geometry fallbacks
   - Interactive selection, translation, rotation (+45/-45/90/180/slider), and scale clamping
-  - Real-time room boundary clamping preventing out-of-bounds clipping
-  - Material swatch color customization and duplicate/delete actions
+  - Real-time room boundary clamping preventing out-of-bounds clipping and non-positive dimension rejection
+  - Material swatch color customization with preserved roughness and metalness overrides
   - Keyboard shortcuts (Delete, Backspace, Esc) and comprehensive navigation guide modal
 - [ ] **Phase 2 — Django API and persistence**
 - [ ] **Phase 3 — Furniture catalogue and budget**
