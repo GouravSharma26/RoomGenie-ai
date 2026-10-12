@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from apps.ai_agent.models import AgentSession, AgentRun
+from apps.designs.models import Design
 
 
 class AgentRunSerializer(serializers.ModelSerializer):
@@ -14,6 +15,8 @@ class AgentRunSerializer(serializers.ModelSerializer):
             'proposed_actions',
             'validation_results',
             'provider_metadata',
+            'base_scene_snapshot',
+            'candidate_scene_snapshot',
             'applied_scene_snapshot',
             'created_at',
         ]
@@ -24,6 +27,8 @@ class AgentRunSerializer(serializers.ModelSerializer):
             'proposed_actions',
             'validation_results',
             'provider_metadata',
+            'base_scene_snapshot',
+            'candidate_scene_snapshot',
             'applied_scene_snapshot',
             'created_at',
         ]
@@ -46,6 +51,21 @@ class AgentSessionSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            self.fields['design'].queryset = Design.objects.filter(owner=request.user)
+
+    def validate_design(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if value.owner != request.user:
+                raise serializers.ValidationError("Cannot link a design owned by another user.")
+        return value
 
 
 class AgentPromptRequestSerializer(serializers.Serializer):

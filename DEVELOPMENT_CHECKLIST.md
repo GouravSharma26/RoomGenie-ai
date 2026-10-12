@@ -25,8 +25,8 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 - [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404; demo auth gated behind `ALLOW_DEMO_AUTH = DEBUG and ...` configuration and rejected with 403 in production).
 - [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, dimensions, transforms, and full 3D rotated footprint containment).
-- [x] Relevant Django tests pass (53/53 tests pass across accounts, rooms, furniture, designs, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, and malformed input rejection).
-- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 27 Vitest tests pass, production bundle built).
+- [x] Relevant Django tests pass (70/70 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, and containment enforcement).
+- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 28 Vitest tests pass, production bundle built).
 
 ## Catalogue and budget
 
@@ -41,7 +41,7 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] Mock provider is available for development/tests (deterministic offline `MockDesignLLMAdapter` active by default in test suite and development).
 - [x] Tool names and parameters are allowlisted and validated (`ALLOWED_ACTION_TYPES` strictly restricted to `add_furniture`, `move_object`, `replace_furniture`, `remove_object`, `set_material`, `clear_room`).
 - [x] No arbitrary SQL, Python, shell, or unrestricted network tool is exposed (verified by automated regression test `test_tools_reject_arbitrary_or_unlisted_actions`).
-- [x] Multi-object changes are previewed and require approval (Two-phase approval workflow: `/prompt/` simulates and creates `AgentRun(status='proposed')` with candidate diff; design mutated only upon explicit user approval via `/apply/`).
+- [x] Multi-object changes are previewed and require approval (Two-phase approval workflow: `/prompt/` simulates and creates `AgentRun(status='proposed')` with candidate diff; design mutated only upon explicit user approval via `/apply/`; proposals bound to base scene snapshots with HTTP 409 stale conflict rejection and canonical scene validation before persistence; containment violations strictly block approval).
 - [x] Errors, timeouts, uncertainty, and invalid proposals are handled (15s network timeout on Gemini API, validation errors/warnings surfaced in diff, mock fallback).
 - [x] Provider secrets stay in backend environment variables (`GEMINI_API_KEY` accessed solely on Django backend; never exposed to browser).
 

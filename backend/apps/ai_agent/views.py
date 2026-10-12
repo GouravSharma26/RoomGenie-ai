@@ -1,4 +1,4 @@
-from rest_framework import permissions, status, viewsets
+from rest_framework import exceptions, permissions, serializers, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
@@ -10,6 +10,7 @@ from apps.ai_agent.serializers import (
 )
 from apps.ai_agent.adapters import get_design_llm_adapter
 from apps.ai_agent.tools import validate_and_simulate_actions
+from apps.designs.validators import validate_canonical_scene
 from apps.furniture.models import FurnitureAsset
 
 
@@ -25,6 +26,9 @@ class AgentSessionViewSet(viewsets.ModelViewSet):
         return AgentSession.objects.filter(owner=self.request.user)
 
     def perform_create(self, serializer):
+        design = serializer.validated_data.get('design')
+        if design and design.owner != self.request.user:
+            raise exceptions.PermissionDenied("Cannot attach a design owned by another user.")
         serializer.save(owner=self.request.user)
 
 
@@ -49,11 +53,12 @@ class AgentPromptView(APIView):
         prompt = serializer.validated_data['prompt']
         client_scene = serializer.validated_data.get('scene_json')
 
-        # Determine current scene context
-        if client_scene and isinstance(client_scene, dict) and 'room' in client_scene:
-            current_scene = client_scene
-        elif session.design and session.design.scene_json:
+        # Determine current scene context:
+        # For sessions attached to saved designs, the authoritative saved design scene is used.
+        if session.design and session.design.scene_json:
             current_scene = session.design.scene_json
+        elif client_scene and isinstance(client_scene, dict) and 'room' in client_scene:
+            current_scene = client_scene
         else:
             current_scene = {
                 'schemaVersion': 1,
@@ -87,7 +92,7 @@ class AgentPromptView(APIView):
         # Deterministically simulate and validate proposed actions
         sim_result = validate_and_simulate_actions(current_scene, proposal.proposed_actions)
 
-        # Persist AgentRun
+        # Persist AgentRun with base and candidate snapshots
         run = AgentRun.objects.create(
             session=session,
             user_prompt=prompt,
@@ -106,6 +111,8 @@ class AgentPromptView(APIView):
                 'latency_ms': proposal.latency_ms,
                 'raw_metadata': proposal.raw_metadata,
             },
+            base_scene_snapshot=current_scene,
+            candidate_scene_snapshot=sim_result['candidate_scene'],
         )
 
         return Response({
@@ -132,13 +139,22 @@ class AgentApplyRunView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        client_scene = request.data.get('scene_json')
-        if client_scene and isinstance(client_scene, dict) and 'room' in client_scene:
-            base_scene = client_scene
-        elif run.session.design and run.session.design.scene_json:
+        # For sessions attached to saved designs, use the authoritative saved scene as the apply base.
+        # Any client-supplied scene_json in the apply request is ignored to avoid trusting untrusted client payloads.
+        if run.session.design:
             base_scene = run.session.design.scene_json
+            # Bind proposals to the scene version/snapshot used to generate them; reject stale proposals when design changes.
+            if run.base_scene_snapshot is not None and base_scene != run.base_scene_snapshot:
+                return Response(
+                    {
+                        "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
+                        "code": "stale_proposal",
+                        "stale": True,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
         else:
-            base_scene = {
+            base_scene = run.base_scene_snapshot or {
                 'schemaVersion': 1,
                 'unit': 'm',
                 'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
@@ -153,6 +169,18 @@ class AgentApplyRunView(APIView):
             )
 
         applied_scene = sim_result['candidate_scene']
+
+        # Validate the final candidate with the canonical scene validator before persisting
+        try:
+            validate_canonical_scene(applied_scene)
+        except serializers.ValidationError as exc:
+            return Response(
+                {
+                    "detail": "Candidate scene failed canonical scene validation.",
+                    "errors": exc.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Persist scene onto associated design if attached
         if run.session.design:

@@ -75,6 +75,16 @@ class AgentRun(models.Model):
         default=dict,
         help_text="Provider, model ID, latency, and safe telemetry metadata."
     )
+    base_scene_snapshot = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The exact scene snapshot against which the proposal was generated."
+    )
+    candidate_scene_snapshot = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The simulated candidate scene previewed to the user."
+    )
     applied_scene_snapshot = models.JSONField(
         null=True,
         blank=True,

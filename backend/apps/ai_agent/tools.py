@@ -350,12 +350,12 @@ def validate_and_simulate_actions(
     }
 
     if not budget_diff['room_containment_valid']:
-        warnings.append(
-            f"Candidate layout has {len(budget_diff['room_violations'])} item(s) extending beyond room boundaries."
+        errors.append(
+            f"Candidate layout violates 3D room containment: {len(budget_diff['room_violations'])} item(s) extend beyond room walls/ceiling."
         )
 
     return {
-        'is_valid': len(errors) == 0,
+        'is_valid': len(errors) == 0 and budget_diff.get('room_containment_valid', True),
         'errors': errors,
         'warnings': warnings,
         'candidate_scene': candidate_scene,
