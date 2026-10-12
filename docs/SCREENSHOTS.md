@@ -51,3 +51,18 @@ Validation of rotated furniture within room boundaries. When furniture is rotate
 
 ![Phase 2 Transformed 3D Room Containment & Rotation Clamping](./screenshots/07_phase2_containment_and_rotation.png)
 
+---
+
+## 8. Phase 3 Authoritative Deterministic Budget Breakdown Modal
+Authoritative backend budget calculation (`/api/v1/budgets/estimate/`) using integer paise arithmetic. Displays total estimated furniture cost in INR (`₹29,999.00`), category subtotals (`seating: ₹29,999.00`, `decor: ₹0.00`), 3D room envelope containment validation, itemized breakdown table, and explicit handling of unpriced items (`Custom Slatted Partition Screen` marked as `Price on request` rather than invented prices).
+
+![Phase 3 Deterministic Budget Breakdown Modal](./screenshots/08_phase3_catalogue_and_budget.png)
+
+---
+
+## 9. Phase 3 Furniture Catalogue Search, Filtering & Multi-Item 3D Placement
+Expanded 10-model catalogue featuring keyword search, category tabs (Seating, Tables, Storage, Beds, Decor), style filter pills (Modern, Scandinavian, Minimalist, Industrial), maximum budget slider (INR), CC0 licensing attribution badges, and placed 3D items with live header budget summary (`2 items placed • ₹29,999 (+1 unpriced)`).
+
+![Phase 3 Furniture Catalogue Search and 3D Placement](./screenshots/09_phase3_editor_palette_and_filters.png)
+
+

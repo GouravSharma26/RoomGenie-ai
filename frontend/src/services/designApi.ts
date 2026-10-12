@@ -122,3 +122,141 @@ export async function deleteDesignFromBackend(id: string): Promise<void> {
     throw new Error(`Failed to delete design: HTTP ${res.status}`);
   }
 }
+
+export interface FurnitureAssetBackend {
+  id: string;
+  name: string;
+  category: string;
+  style_tags: string[];
+  width: string;
+  height: string;
+  depth: string;
+  dimensions: [number, number, number];
+  price_paise: number | null;
+  price_inr: string | null;
+  is_priced: boolean;
+  currency: string;
+  model_url: string | null;
+  thumbnail_url: string | null;
+  license: string;
+  source: string;
+  description: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CatalogueFilterParams {
+  category?: string;
+  style?: string;
+  search?: string;
+  min_price?: number;
+  max_price?: number;
+  has_price?: boolean;
+  ordering?: string;
+}
+
+export interface BudgetEstimateItem {
+  index: number;
+  placement_id: string;
+  asset_id: string | null;
+  name: string;
+  category: string;
+  status: 'priced' | 'unpriced' | 'unregistered';
+  price_paise: number | null;
+  price_inr: string | null;
+  currency: string;
+  is_known_price: boolean;
+  dimensions: number[];
+  position: number[];
+  scale: number[];
+  rotationEuler: number[];
+}
+
+export interface CategorySubtotal {
+  category: string;
+  item_count: number;
+  subtotal_paise: number;
+  subtotal_inr: string;
+  currency: string;
+  has_unpriced: boolean;
+}
+
+export interface BoundaryViolation {
+  placement_id: string;
+  name: string;
+  axis: string;
+  message: string;
+}
+
+export interface BudgetEstimateResponse {
+  design_title: string | null;
+  currency: string;
+  total_paise: number;
+  total_inr: string;
+  total_items: number;
+  priced_items_count: number;
+  unpriced_items_count: number;
+  has_unknown_prices: boolean;
+  category_breakdown: Record<string, CategorySubtotal>;
+  items: BudgetEstimateItem[];
+  room_constraints: {
+    is_valid: boolean;
+    violations_count: number;
+    violations: BoundaryViolation[];
+  };
+}
+
+export async function fetchFurnitureCatalog(params?: CatalogueFilterParams): Promise<FurnitureAssetBackend[]> {
+  const query = new URLSearchParams();
+  if (params?.category && params.category !== 'all') {
+    query.set('category', params.category);
+  }
+  if (params?.style && params.style !== 'all') {
+    query.set('style', params.style);
+  }
+  if (params?.search) {
+    query.set('search', params.search.trim());
+  }
+  if (params?.min_price !== undefined) {
+    query.set('min_price', String(params.min_price));
+  }
+  if (params?.max_price !== undefined) {
+    query.set('max_price', String(params.max_price));
+  }
+  if (params?.has_price !== undefined) {
+    query.set('has_price', String(params.has_price));
+  }
+  if (params?.ordering) {
+    query.set('ordering', params.ordering);
+  }
+
+  const queryString = query.toString();
+  const url = `${API_BASE_URL}/api/v1/furniture/${queryString ? `?${queryString}` : ''}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch furniture catalogue (HTTP ${res.status})`);
+  }
+  return await res.json();
+}
+
+export async function estimateBudget(payload: {
+  scene_json?: CanonicalScene;
+  design_id?: string;
+  items?: any[];
+}): Promise<BudgetEstimateResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/budgets/estimate/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Budget calculation failed (HTTP ${res.status})`);
+  }
+  return await res.json();
+}
+

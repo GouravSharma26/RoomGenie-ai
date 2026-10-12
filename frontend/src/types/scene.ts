@@ -41,12 +41,13 @@ export interface FurnitureCatalogItem {
   id: string;
   name: string;
   category: 'seating' | 'tables' | 'storage' | 'beds' | 'decor';
+  styleTags?: string[];
   dimensions: Vector3Tuple; // [width, height, depth] in metres
-  pricePaise: number;       // Deterministic price in INR paise (e.g., 2499900 = ₹24,999)
-  modelUrl?: string;        // Optional GLB/GLTF file URL
+  pricePaise: number | null; // Deterministic price in INR paise (e.g., 2499900 = ₹24,999) or null if unpriced
+  modelUrl?: string; // Optional GLB/GLTF file URL
   thumbnail?: string;
-  license: string;          // e.g. "CC0 - Public Domain"
-  source: string;           // Asset attribution or procedural generator
+  license: string; // e.g. "CC0 1.0 Universal"
+  source: string; // Asset attribution or procedural generator
   description: string;
   defaultColor: string;
 }

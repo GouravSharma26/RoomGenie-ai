@@ -3,7 +3,8 @@ from apps.furniture.models import FurnitureAsset
 
 
 class FurnitureAssetSerializer(serializers.ModelSerializer):
-    price_inr = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    price_inr = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True, allow_null=True)
+    is_priced = serializers.BooleanField(read_only=True)
     dimensions = serializers.SerializerMethodField()
 
     class Meta:
@@ -19,6 +20,7 @@ class FurnitureAssetSerializer(serializers.ModelSerializer):
             'dimensions',
             'price_paise',
             'price_inr',
+            'is_priced',
             'currency',
             'model_url',
             'thumbnail_url',

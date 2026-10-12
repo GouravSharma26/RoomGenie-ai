@@ -4,6 +4,7 @@ URL configuration for RoomGenie AI backend.
 from django.contrib import admin
 from django.urls import include, path
 from config.views import health_check
+from apps.furniture.views import BudgetEstimateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -12,4 +13,6 @@ urlpatterns = [
     path('api/v1/rooms/', include('apps.rooms.urls', namespace='rooms')),
     path('api/v1/furniture/', include('apps.furniture.urls', namespace='furniture')),
     path('api/v1/designs/', include('apps.designs.urls', namespace='designs')),
+    path('api/v1/budgets/estimate/', BudgetEstimateView.as_view(), name='budget-estimate'),
 ]
+

@@ -5,7 +5,8 @@ import {
   HelpCircle, 
   Compass, 
   Layers,
-  Cloud
+  Cloud,
+  DollarSign
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
@@ -13,9 +14,14 @@ import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
 interface EditorHeaderProps {
   onOpenHelp: () => void;
   onOpenSaveLoad: () => void;
+  onOpenBudgetBreakdown?: () => void;
 }
 
-export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp, onOpenSaveLoad }) => {
+export const EditorHeader: React.FC<EditorHeaderProps> = ({
+  onOpenHelp,
+  onOpenSaveLoad,
+  onOpenBudgetBreakdown,
+}) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
   const setRoomDimensions = useEditorStore((state) => state.setRoomDimensions);
@@ -27,8 +33,13 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp, onOpenSa
   // Deterministic price calculation from catalogue
   const totalBudgetPaise = objects.reduce((total, obj) => {
     const catalogItem = SAMPLE_CATALOG.find((item) => item.id === obj.assetId);
-    return total + (catalogItem ? catalogItem.pricePaise : 0);
+    return total + (catalogItem && catalogItem.pricePaise !== null ? catalogItem.pricePaise : 0);
   }, 0);
+
+  const unpricedCount = objects.filter((obj) => {
+    const catalogItem = SAMPLE_CATALOG.find((item) => item.id === obj.assetId);
+    return !catalogItem || catalogItem.pricePaise === null;
+  }).length;
 
   const totalBudgetRupees = (totalBudgetPaise / 100).toLocaleString('en-IN');
 
@@ -51,9 +62,26 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({ onOpenHelp, onOpenSa
             <span className="font-bold text-sm tracking-tight text-white block">
               3D Room Editor
             </span>
-            <span className="text-[10px] text-slate-400 block">
-              {objects.length} item{objects.length === 1 ? '' : 's'} placed &bull; ₹{totalBudgetRupees}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-[10px] text-slate-400">
+                {objects.length} item{objects.length === 1 ? '' : 's'} placed &bull; ₹{totalBudgetRupees}
+                {unpricedCount > 0 && (
+                  <span className="text-amber-400 font-medium ml-1">
+                    (+{unpricedCount} unpriced)
+                  </span>
+                )}
+              </span>
+              {onOpenBudgetBreakdown && (
+                <button
+                  onClick={onOpenBudgetBreakdown}
+                  title="View Authoritative Budget Breakdown & Room Containment"
+                  className="px-1.5 py-0.2 rounded bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 hover:text-white text-[9px] font-semibold transition inline-flex items-center gap-0.5"
+                >
+                  <DollarSign className="w-2.5 h-2.5" />
+                  Breakdown
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

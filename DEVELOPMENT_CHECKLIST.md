@@ -26,15 +26,15 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404; demo auth gated behind `ALLOW_DEMO_AUTH = DEBUG and ...` configuration and rejected with 403 in production).
 - [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, dimensions, transforms, and full 3D rotated footprint containment).
 - [x] Migrations apply cleanly from an empty development database (authtoken, rooms, furniture, designs initial migrations).
-- [x] Relevant Django tests pass (39/39 tests pass across accounts, rooms, furniture, designs, including demo auth gating and boundary/rotation containment regression tests).
-- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 22 Vitest tests pass).
+- [x] Relevant Django tests pass (48/48 tests pass across accounts, rooms, furniture, designs, including catalogue filtering, integer paise budget calculation, and unpriced asset handling).
+- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 27 Vitest tests pass, production bundle built).
 
 ## Catalogue and budget
 
-- [ ] Asset source/licence and dimensions are recorded.
-- [ ] Missing prices are not invented.
-- [ ] Budget totals are computed by deterministic backend code.
-- [ ] Room boundary and basic collision constraints are checked where implemented.
+- [x] Asset source/licence and dimensions are recorded (10 architectural models across seating, tables, storage, beds, decor with SI dimensions in metres, CC0 1.0 Universal license, and verifiable provenance in ASSET_LICENSES.md).
+- [x] Missing prices are not invented (explicit nullable `price_paise=None`, unpriced custom divider labelled as "Price on Request", flagged with `has_unknown_prices`).
+- [x] Budget totals are computed by deterministic backend code (authoritative integer paise calculation in `apps/furniture/budget.py` via `POST /api/v1/budgets/estimate/`; category subtotals and itemized breakdowns without floating-point math).
+- [x] Room boundary and basic collision constraints are checked where implemented (3D transformed room envelope containment calculated during budget estimation).
 
 ## AI agent and photo analysis
 

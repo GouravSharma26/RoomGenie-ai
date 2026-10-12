@@ -3,7 +3,7 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)  
-> **Status:** Phase 2 (Django API & Persistence) Implemented & Verified; Review Pending  
+> **Status:** Phase 3 (Furniture Catalogue & Deterministic Budget) Implemented & Verified; Ready for Review  
 > **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots.
 
 ---
@@ -119,8 +119,8 @@ pip install -r requirements.txt
 Run checks and tests:
 ```powershell
 python manage.py check               # Django system checks
-python manage.py test                # Run full Django test suite (39 tests across accounts, rooms, furniture, designs)
-python manage.py seed_furniture      # Seed initial 5 CC0 architectural furniture catalogue assets
+python manage.py test                # Run full Django test suite (48 tests across accounts, rooms, furniture, designs)
+python manage.py seed_furniture      # Seed 10 architectural CC0 furniture catalogue assets
 ```
 
 Run database migrations (requires configured PostgreSQL):
@@ -135,7 +135,8 @@ python manage.py runserver 127.0.0.1:8000
 - Health endpoint: `http://127.0.0.1:8000/api/v1/health/`
 - Auth endpoints: `http://127.0.0.1:8000/api/v1/auth/` (`register/`, `login/`, `me/`, `demo/` [gated by `ALLOW_DEMO_AUTH = DEBUG and ...`; 403 in production])
 - Room envelopes CRUD: `http://127.0.0.1:8000/api/v1/rooms/`
-- Furniture catalogue: `http://127.0.0.1:8000/api/v1/furniture/`
+- Furniture catalogue: `http://127.0.0.1:8000/api/v1/furniture/` (with category, style_tags, dimension, and price range filtering)
+- Deterministic budget estimate: `http://127.0.0.1:8000/api/v1/budgets/estimate/` (integer paise calculation with 3D room containment validation)
 - Room designs persistence: `http://127.0.0.1:8000/api/v1/designs/` (`{id}/duplicate/`)
 
 ### 4. Running Database with Docker Compose (Recommended Alternative)
@@ -177,8 +178,16 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Full CRUD endpoints: `/api/v1/rooms/`, `/api/v1/furniture/`, `/api/v1/designs/` with design cloning (`duplicate`)
   - Initial catalogue seed command (`seed_furniture`)
   - Frontend persistence service ([`frontend/src/services/designApi.ts`](frontend/src/services/designApi.ts)) & Save/Load UI modal
-  - Comprehensive automated test suite: 39 Django tests, 22 frontend Vitest tests, 0 lint warnings
-- [ ] **Phase 3 — Furniture catalogue and budget**
+  - Automated test suite: 39 Django tests, 22 frontend Vitest tests, 0 lint warnings
+- [x] **Phase 3 — Furniture catalogue and budget**
+  - Expanded catalogue model with 10 architectural models across seating, tables, storage, beds, and decor
+  - Multi-attribute filtering in `FurnitureAssetViewSet`: category, style tags, keyword search, price range (`min_price`, `max_price`), and dimension compatibility (`max_width`, `max_depth`, `max_height`)
+  - Deterministic backend budget estimation engine (`POST /api/v1/budgets/estimate/` in `apps/furniture/budget.py`) using integer paise math (minor units) to prevent floating-point rounding errors
+  - Category subtotals, itemized pricing, and explicit handling of unpriced custom assets (`price_paise: None` rendered as "Price on Request" without invented prices)
+  - Full transformed 3D room containment validation in budget estimates to detect out-of-bounds furniture
+  - Enhanced frontend `FurniturePalette.tsx` with live search, category tabs, style filter pills, budget slider, and API fallback
+  - Interactive `BudgetBreakdownModal.tsx` showing authoritative calculation, category subtotals, and room envelope compliance
+  - Full automated tests passing: 48 Django tests, 27 frontend Vitest tests, 0 lint warnings
 - [ ] **Phase 4 — AI interior-design agent**
 - [ ] **Phase 5 — Room photo analysis**
 - [ ] **Phase 6 — Photo-to-3D furniture approximation**

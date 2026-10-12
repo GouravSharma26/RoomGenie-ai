@@ -5,58 +5,123 @@ export const SAMPLE_CATALOG: FurnitureCatalogItem[] = [
     id: 'sofa-modern-3seater',
     name: 'Modern 3-Seater Sofa',
     category: 'seating',
-    dimensions: [2.1, 0.85, 0.9], // Width: 2.1m, Height: 0.85m, Depth: 0.9m
-    pricePaise: 2999900,         // ₹29,999
+    styleTags: ['modern', 'minimalist', 'living-room'],
+    dimensions: [2.1, 0.85, 0.9],
+    pricePaise: 2999900, // ₹29,999
     modelUrl: '/models/sofa.glb',
     license: 'CC0 1.0 Universal',
     source: 'RoomGenie Architectural Assets (see ASSET_LICENSES.md)',
     description: 'Contemporary low-profile three-seater sofa with deep foam cushions and solid wood base.',
-    defaultColor: '#4f46e5',     // Indigo / Slate
+    defaultColor: '#4f46e5',
   },
   {
     id: 'table-oak-coffee',
     name: 'Minimalist Coffee Table',
     category: 'tables',
-    dimensions: [1.2, 0.45, 0.6], // Width: 1.2m, Height: 0.45m, Depth: 0.6m
-    pricePaise: 849900,          // ₹8,499
+    styleTags: ['scandinavian', 'minimalist', 'living-room'],
+    dimensions: [1.2, 0.45, 0.6],
+    pricePaise: 849900, // ₹8,499
     modelUrl: '/models/coffee_table.glb',
     license: 'CC0 1.0 Universal',
     source: 'RoomGenie Architectural Assets (see ASSET_LICENSES.md)',
     description: 'Clean Scandinavian solid oak coffee table with rounded chamfered edges.',
-    defaultColor: '#b45309',     // Amber / Oak
+    defaultColor: '#b45309',
   },
   {
     id: 'desk-workspace-study',
     name: 'Ergonomic Study Desk',
     category: 'tables',
-    dimensions: [1.4, 0.75, 0.7], // Width: 1.4m, Height: 0.75m, Depth: 0.7m
-    pricePaise: 1499900,         // ₹14,999
+    styleTags: ['industrial', 'workspace', 'home-office'],
+    dimensions: [1.4, 0.75, 0.7],
+    pricePaise: 1499900, // ₹14,999
     modelUrl: '/models/desk.glb',
     license: 'CC0 1.0 Universal',
     source: 'RoomGenie Architectural Assets (see ASSET_LICENSES.md)',
     description: 'Spacious work-from-home desk with dual cable cutouts and matte steel legs.',
-    defaultColor: '#334155',     // Slate
+    defaultColor: '#334155',
   },
   {
     id: 'chair-accent-armchair',
     name: 'Lounge Accent Armchair',
     category: 'seating',
-    dimensions: [0.85, 0.88, 0.85], // Width: 0.85m, Height: 0.88m, Depth: 0.85m
-    pricePaise: 1199900,            // ₹11,999
+    styleTags: ['accent', 'living-room', 'reading', 'modern', 'scandinavian'],
+    dimensions: [0.85, 0.88, 0.85],
+    pricePaise: 1199900, // ₹11,999
     license: 'CC0 1.0 Universal',
     source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
     description: 'Comfortable textured fabric reading armchair with tapered wooden legs.',
-    defaultColor: '#059669',        // Emerald
+    defaultColor: '#059669',
   },
   {
     id: 'storage-bookshelf-tall',
     name: '4-Tier Architectural Bookshelf',
     category: 'storage',
-    dimensions: [1.0, 1.8, 0.35], // Width: 1.0m, Height: 1.8m, Depth: 0.35m
-    pricePaise: 1649900,          // ₹16,499
+    styleTags: ['modern', 'walnut', 'storage', 'industrial'],
+    dimensions: [1.0, 1.8, 0.35],
+    pricePaise: 1649900, // ₹16,499
     license: 'CC0 1.0 Universal',
     source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
     description: 'Open-backed vertical display shelving unit crafted from walnut veneer and blackened steel.',
-    defaultColor: '#1e293b',      // Dark slate
+    defaultColor: '#1e293b',
+  },
+  {
+    id: 'bed-queen-platform',
+    name: 'Nordic Queen Platform Bed',
+    category: 'beds',
+    styleTags: ['scandinavian', 'minimalist', 'bedroom', 'modern'],
+    dimensions: [1.65, 0.95, 2.1],
+    pricePaise: 3499900, // ₹34,999
+    license: 'CC0 1.0 Universal',
+    source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
+    description: 'Low-profile solid pine queen bed frame with floating headboard and integrated slats.',
+    defaultColor: '#92400e',
+  },
+  {
+    id: 'storage-wardrobe-compact',
+    name: 'Compact 2-Door Wardrobe',
+    category: 'storage',
+    styleTags: ['minimalist', 'modern', 'bedroom', 'storage'],
+    dimensions: [1.2, 2.0, 0.6],
+    pricePaise: 2449900, // ₹24,499
+    license: 'CC0 1.0 Universal',
+    source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
+    description: 'Dual-compartment matte white modular wardrobe with concealed soft-close hinges.',
+    defaultColor: '#64748b',
+  },
+  {
+    id: 'table-bedside-nightstand',
+    name: 'Minimalist Nightstand',
+    category: 'tables',
+    styleTags: ['scandinavian', 'minimalist', 'bedroom'],
+    dimensions: [0.45, 0.5, 0.4],
+    pricePaise: 499900, // ₹4,999
+    license: 'CC0 1.0 Universal',
+    source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
+    description: 'Single-drawer bedside nightstand with open cubby shelf and rounded oak veneer.',
+    defaultColor: '#d97706',
+  },
+  {
+    id: 'decor-plant-floor-vase',
+    name: 'Botanical Ceramic Floor Planter',
+    category: 'decor',
+    styleTags: ['decor', 'modern', 'living-room', 'minimalist'],
+    dimensions: [0.4, 1.1, 0.4],
+    pricePaise: 249900, // ₹2,499
+    license: 'CC0 1.0 Universal',
+    source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
+    description: 'Handcrafted matte fluted terracotta floor planter featuring architectural foliage.',
+    defaultColor: '#15803d',
+  },
+  {
+    id: 'decor-divider-architectural',
+    name: 'Custom Slatted Partition Screen',
+    category: 'decor',
+    styleTags: ['architectural', 'custom', 'modern', 'living-room'],
+    dimensions: [1.2, 1.75, 0.3],
+    pricePaise: null, // Price on request / unpriced
+    license: 'CC0 1.0 Universal',
+    source: 'RoomGenie Architectural Assets (Procedural, see ASSET_LICENSES.md)',
+    description: 'Bespoke vertical timber slat divider for space zoning. Custom fabrication with price on consultation.',
+    defaultColor: '#78350f',
   },
 ];

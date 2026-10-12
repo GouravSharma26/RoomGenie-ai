@@ -8,6 +8,33 @@ vi.mock('./services/designApi', () => ({
   listSavedDesigns: vi.fn().mockResolvedValue([]),
   saveDesignToBackend: vi.fn().mockResolvedValue({ id: 'test-id', title: 'Test' }),
   deleteDesignFromBackend: vi.fn().mockResolvedValue(undefined),
+  fetchFurnitureCatalog: vi.fn().mockResolvedValue([]),
+  estimateBudget: vi.fn().mockResolvedValue({
+    design_title: null,
+    currency: 'INR',
+    total_paise: 2999900,
+    total_inr: '29999.00',
+    total_items: 1,
+    priced_items_count: 1,
+    unpriced_items_count: 0,
+    has_unknown_prices: false,
+    category_breakdown: {
+      seating: {
+        category: 'seating',
+        item_count: 1,
+        subtotal_paise: 2999900,
+        subtotal_inr: '29999.00',
+        currency: 'INR',
+        has_unpriced: false,
+      },
+    },
+    items: [],
+    room_constraints: {
+      is_valid: true,
+      violations_count: 0,
+      violations: [],
+    },
+  }),
 }));
 vi.mock('./editor3d/components/RoomCanvas', () => ({
   RoomCanvas: () => <div data-testid="mock-room-canvas">3D Viewport Active</div>,
@@ -28,7 +55,7 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 2 Active')).toBeInTheDocument();
+    expect(screen.getByText('Phase 3 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Load/i })).toBeInTheDocument();
     expect(screen.getByTestId('mock-room-canvas')).toBeInTheDocument();
@@ -46,6 +73,23 @@ describe('RoomGenie AI App Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Save & Load/i }));
     expect(screen.getByText('Save & Load Room Designs')).toBeInTheDocument();
     expect(screen.getByText('PostgreSQL Cloud Persistence (Phase 2)')).toBeInTheDocument();
+  });
+
+  it('opens Budget Breakdown modal when Breakdown button is clicked', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    render(<App />);
+    const breakdownBtn = screen.getByRole('button', { name: /Breakdown/i });
+    expect(breakdownBtn).toBeInTheDocument();
+    fireEvent.click(breakdownBtn);
+
+    expect(screen.getByText('Deterministic Budget & Cost Estimate')).toBeInTheDocument();
+    expect(screen.getByText(/Authoritative backend calculation in integer paise/i)).toBeInTheDocument();
   });
 
   it('switches to System Status dashboard and renders connected database state', async () => {

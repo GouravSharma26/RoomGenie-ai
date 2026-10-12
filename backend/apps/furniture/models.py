@@ -25,8 +25,10 @@ class FurnitureAsset(models.Model):
     depth = models.DecimalField(max_digits=5, decimal_places=2, help_text='Depth in metres')
 
     price_paise = models.BigIntegerField(
-        default=0,
-        help_text='Deterministic price in INR paise (1 INR = 100 paise)'
+        null=True,
+        blank=True,
+        default=None,
+        help_text='Deterministic price in INR paise (1 INR = 100 paise). Null if unpriced/unknown.'
     )
     currency = models.CharField(max_length=10, default='INR')
 
@@ -44,9 +46,18 @@ class FurnitureAsset(models.Model):
         ordering = ['category', 'name']
 
     @property
-    def price_inr(self) -> Decimal:
-        """Helper property to calculate exact INR rupees as Decimal."""
+    def price_inr(self) -> Decimal | None:
+        """Helper property to calculate exact INR rupees as Decimal, or None if unpriced."""
+        if self.price_paise is None:
+            return None
         return Decimal(self.price_paise) / Decimal(100)
 
+    @property
+    def is_priced(self) -> bool:
+        return self.price_paise is not None
+
     def __str__(self):
-        return f"{self.name} (₹{self.price_inr:,.2f}) [{self.id}]"
+        if self.price_inr is not None:
+            return f"{self.name} (₹{self.price_inr:,.2f}) [{self.id}]"
+        return f"{self.name} (Price on request) [{self.id}]"
+

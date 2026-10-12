@@ -361,5 +361,73 @@ describe('Phase 1: 3D Room Editor Scene State & Validation', () => {
       expect(parseCanonicalScene('{}')).toBeNull();
     });
   });
+
+  describe('Phase 3: Furniture Catalogue & Deterministic Budget Calculation', () => {
+    it('provides architectural items across multiple categories with valid metadata', () => {
+      expect(SAMPLE_CATALOG.length).toBeGreaterThanOrEqual(10);
+      const categories = new Set(SAMPLE_CATALOG.map((item) => item.category));
+      expect(categories.has('seating')).toBe(true);
+      expect(categories.has('tables')).toBe(true);
+      expect(categories.has('storage')).toBe(true);
+      expect(categories.has('beds')).toBe(true);
+      expect(categories.has('decor')).toBe(true);
+
+      SAMPLE_CATALOG.forEach((item) => {
+        expect(item.id).toBeTruthy();
+        expect(item.name).toBeTruthy();
+        expect(item.dimensions).toHaveLength(3);
+        expect(item.dimensions.every((d) => d > 0)).toBe(true);
+        expect(item.license).toContain('CC0');
+      });
+    });
+
+    it('filters catalogue items by style tag accurately', () => {
+      const modernItems = SAMPLE_CATALOG.filter((i) =>
+        (i.styleTags || []).some((t) => t.toLowerCase() === 'modern')
+      );
+      expect(modernItems.length).toBeGreaterThan(0);
+      expect(modernItems.some((i) => i.id === 'sofa-modern-3seater')).toBe(true);
+
+      const scandiItems = SAMPLE_CATALOG.filter((i) =>
+        (i.styleTags || []).some((t) => t.toLowerCase() === 'scandinavian')
+      );
+      expect(scandiItems.length).toBeGreaterThan(0);
+      expect(scandiItems.some((i) => i.id === 'table-oak-coffee')).toBe(true);
+    });
+
+    it('identifies unpriced items as null and never invents default 0 prices', () => {
+      const unpricedItem = SAMPLE_CATALOG.find((i) => i.id === 'decor-divider-architectural');
+      expect(unpricedItem).toBeDefined();
+      expect(unpricedItem?.pricePaise).toBeNull();
+
+      // Calculation must not treat null as 0 INR without flag
+      const pricedItems = SAMPLE_CATALOG.filter((i) => i.pricePaise !== null);
+      const unpricedItems = SAMPLE_CATALOG.filter((i) => i.pricePaise === null);
+      expect(pricedItems.length).toBe(9);
+      expect(unpricedItems.length).toBe(1);
+    });
+
+    it('calculates deterministic budget total strictly in integer paise', () => {
+      const store = useEditorStore.getState();
+      store.clearScene();
+
+      // Add Sofa (₹29,999 = 2,999,900 paise)
+      store.addFurniture(SAMPLE_CATALOG.find((i) => i.id === 'sofa-modern-3seater')!);
+      // Add Coffee Table (₹8,499 = 849,900 paise)
+      store.addFurniture(SAMPLE_CATALOG.find((i) => i.id === 'table-oak-coffee')!);
+
+      const objects = useEditorStore.getState().scene.objects;
+      const totalPaise = objects.reduce((sum, obj) => {
+        const item = SAMPLE_CATALOG.find((cat) => cat.id === obj.assetId);
+        return sum + (item && item.pricePaise !== null ? item.pricePaise : 0);
+      }, 0);
+
+      // 2,999,900 + 849,900 = 3,849,800 paise
+      expect(totalPaise).toBe(3849800);
+      const totalRupees = totalPaise / 100;
+      expect(totalRupees).toBe(38498);
+    });
+  });
 });
+
 

@@ -22,6 +22,11 @@ All sample 3D furniture assets provided in this repository are licensed under th
 | **Ergonomic Study Desk** | `study-desk-ergo` | `frontend/public/models/desk.glb` | Binary glTF 2.0 (`.glb`) + procedural fallback | 1.40m × 0.75m × 0.70m | CC0 1.0 Universal | Authored for RoomGenie AI via `frontend/scripts/generateModels.js` using Three.js BufferGeometries. |
 | **Lounge Accent Armchair** | `armchair-accent-nordic` | *Procedural buffer geometry* | Procedural Three.js React component | 0.85m × 0.88m × 0.85m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
 | **4-Tier Bookshelf** | `bookshelf-4tier-metal` | *Procedural buffer geometry* | Procedural Three.js React component | 1.00m × 1.80m × 0.35m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
+| **Round Oak Dining Table** | `dining-table-round-oak` | *Procedural buffer geometry* | Procedural Three.js React component | 1.20m × 0.76m × 1.20m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
+| **Nordic Queen Platform Bed** | `bed-queen-nordic-wood` | *Procedural buffer geometry* | Procedural Three.js React component | 1.65m × 0.95m × 2.10m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
+| **Single Drawer Bedside Nightstand** | `nightstand-1drawer-oak` | *Procedural buffer geometry* | Procedural Three.js React component | 0.50m × 0.55m × 0.45m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
+| **Botanical Ceramic Floor Planter** | `decor-plant-monstera-terracotta` | *Procedural buffer geometry* | Procedural Three.js React component | 0.40m × 1.10m × 0.40m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. |
+| **Custom Slatted Partition Screen** | `decor-divider-architectural` | *Procedural buffer geometry* | Procedural Three.js React component | 1.20m × 1.75m × 0.30m | CC0 1.0 Universal | Authored for RoomGenie AI in `FurnitureItem.tsx`. Bespoke unpriced custom asset. |
 
 ---
 
