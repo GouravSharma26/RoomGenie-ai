@@ -67,4 +67,7 @@ uploads/
 *.swo
 .DS_Store
 Thumbs.db
-Desktop.ini
+# Testing & Playwright MCP
+.playwright-mcp/
+roomgenie_*.png
+
