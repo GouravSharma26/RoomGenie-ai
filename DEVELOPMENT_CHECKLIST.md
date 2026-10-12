@@ -13,13 +13,13 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 ## 3D editor
 
-- [ ] Room dimensions use metres and coordinate conventions are documented.
-- [ ] At least three legal sample GLB/GLTF assets load.
-- [ ] Add/select/move/rotate/scale/delete/duplicate actions work.
-- [ ] Camera controls work without preventing furniture selection.
-- [ ] Bad transforms are rejected or clamped.
-- [ ] Scene save/reload preserves IDs, assets, and transforms.
-- [ ] UI provides clear empty/loading/error states.
+- [x] Room dimensions use metres and coordinate conventions are documented.
+- [x] At least three legal sample GLB/GLTF assets load (5 models with legal attribution).
+- [x] Add/select/move/rotate/scale/delete/duplicate actions work.
+- [x] Camera controls work without preventing furniture selection.
+- [x] Bad transforms are rejected or clamped.
+- [x] Scene save/reload preserves IDs, assets, and transforms (canonical schema tested).
+- [x] UI provides clear empty/loading/error states.
 
 ## API and persistence
 

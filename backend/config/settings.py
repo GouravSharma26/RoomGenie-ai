@@ -120,15 +120,22 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Django REST Framework
+# Django REST Framework default permissions (authenticated by default, public endpoints explicit)
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
 }
+
+# Production safety validations (ensure dev defaults cannot silently run in production)
+if not DEBUG:
+    if SECRET_KEY == 'django-insecure-default-roomgenie-dev-key-change-in-production':
+        raise ValueError("DJANGO_SECRET_KEY must be securely configured when DJANGO_DEBUG=False.")
+    if DB_PASSWORD in ('postgres', ''):
+        raise ValueError("DB_PASSWORD must be explicitly configured with a secure password when DJANGO_DEBUG=False.")
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [
@@ -143,7 +150,7 @@ CORS_ALLOWED_ORIGINS = [
 # AI and Model Provider Baseline Settings
 AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', 'mock').lower()
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.7-flash')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 
 IMAGE_TO_3D_PROVIDER_MODE = os.getenv('IMAGE_TO_3D_PROVIDER_MODE', 'mock').lower()
 TRIPO_API_KEY = os.getenv('TRIPO_API_KEY', '')

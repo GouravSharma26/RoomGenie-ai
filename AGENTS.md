@@ -18,7 +18,7 @@ Read `plan.md`, `MODEL_AND_TECH_DECISIONS.md`, `ARCHITECTURE.md`, `HUMAN_SETUP.m
 
 ## Locked stack and model decisions
 
-Follow `MODEL_AND_TECH_DECISIONS.md`: React + TypeScript + Vite + Tailwind; Three.js + React Three Fiber + Drei; Django + DRF; PostgreSQL; Gemini API model `gemini-3.7-flash` behind a configurable adapter; optional Tripo image-to-3D adapter using model `v3.1-20260211` only after explicit cost/key approval; mock providers by default in development/tests. Verify current compatibility with official documentation before implementation. Do not expose secrets to the browser.
+Follow `MODEL_AND_TECH_DECISIONS.md`: React + TypeScript + Vite + Tailwind; Three.js + React Three Fiber + Drei; Django + DRF; PostgreSQL; Gemini API model `gemini-3.8-flash` behind a configurable adapter; optional Tripo image-to-3D adapter using model `v3.1-20260211` only after explicit cost/key approval; mock providers by default in development/tests. Verify current compatibility with official documentation before implementation. Do not expose secrets to the browser.
 
 ## Product priorities
 

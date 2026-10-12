@@ -24,7 +24,7 @@
 ### Primary LLM and room-image analysis
 
 - **Provider:** Google Gemini API.
-- **Initial model ID:** `gemini-3.7-flash`.
+- **Initial model ID:** `gemini-3.8-flash`.
 - **Use cases:** structured design-agent tool calling, room-photo observations, style/colour descriptions, and furniture/category suggestions.
 - **Official references:** [Gemini models](https://ai.google.dev/gemini-api/docs/models), [function calling](https://ai.google.dev/gemini-api/docs/function-calling), [pricing and free-tier terms](https://ai.google.dev/gemini-api/docs/pricing).
 - **Implementation rule:** read the official docs at implementation time and verify that the exact model ID remains available to the selected API key/region. Keep the model ID configurable as `GEMINI_MODEL`; do not hardcode it in multiple modules.

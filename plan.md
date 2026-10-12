@@ -211,7 +211,7 @@ A phase is not complete merely because code was generated. It is complete only w
 ## 7. Progress tracker
 
 - [x] Phase 0 — Setup and scaffold (scaffold, health endpoint, tests, environment checks verified)
-- [ ] Phase 1 — Interactive 3D room editor
+- [x] Phase 1 — Interactive 3D room editor (Three.js/R3F room canvas, lighting, orbit controls, catalogue, CRUD, transforms, bounds clamping, properties panel)
 - [ ] Phase 2 — Django API and persistence
 - [ ] Phase 3 — Furniture catalogue and budget
 - [ ] Phase 4 — AI design agent

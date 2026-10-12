@@ -11,10 +11,10 @@ An AI-Agent-Assisted Interior Design System combining interactive 3D furniture p
 
 - **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS v4
 - **3D Engine:** Three.js + React Three Fiber + Drei (Phase 1)
-- **Backend:** Python 3.12 + Django 5.1 + Django REST Framework + CORS Headers
+- **Backend:** Python 3.12 + Django 5.2 LTS + Django REST Framework + CORS Headers
 - **Database:** PostgreSQL 17 (authoritative relational & scene persistence)
 - **AI Baselines:** 
-  - LLM & Vision: Google Gemini API (`gemini-3.7-flash`), default mock adapter in dev/tests
+  - LLM & Vision: Google Gemini API (`gemini-3.8-flash`), default mock adapter in dev/tests
   - Photo-to-3D: Tripo API (`v3.1-20260211`), default mock adapter with catalogue fallback
   - Currency: INR (₹) with deterministic backend arithmetic
 
@@ -139,7 +139,15 @@ docker compose up -d postgres
   - Django + DRF backend with environment-based PostgreSQL settings
   - Health check endpoint `/api/v1/health/` and unit test suite
   - Locked tech stack verification & mock provider configurations
-- [ ] **Phase 1 — Interactive 3D room editor**
+- [x] **Phase 1 — Interactive 3D room editor**
+  - Three.js + React Three Fiber + Drei interactive canvas with architectural lighting
+  - Editable room boundary envelope in metres with real-time floor grid
+  - OrbitControls with reset camera and 2D floor-plan / 3D perspective switcher
+  - 5 legally cleared architectural furniture assets (CC0)
+  - Interactive selection, translation, rotation (+45/-45/90/180/slider), and scale clamping
+  - Real-time room boundary clamping preventing out-of-bounds clipping
+  - Material swatch color customization and duplicate/delete actions
+  - Keyboard shortcuts (Delete, Backspace, Esc) and comprehensive navigation guide modal
 - [ ] **Phase 2 — Django API and persistence**
 - [ ] **Phase 3 — Furniture catalogue and budget**
 - [ ] **Phase 4 — AI interior-design agent**

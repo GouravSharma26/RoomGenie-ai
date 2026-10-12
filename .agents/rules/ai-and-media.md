@@ -5,7 +5,7 @@ description: "Apply when implementing AI tool calling, room photo analysis, medi
 
 # RoomGenie AI and Media Rules
 
-- Follow `MODEL_AND_TECH_DECISIONS.md`: Gemini API model `gemini-3.7-flash` is the configurable baseline for live LLM/vision; Tripo model `v3.1-20260211` is an optional image-to-3D provider after explicit user approval. Verify current official docs before integration.
+- Follow `MODEL_AND_TECH_DECISIONS.md`: Gemini API model `gemini-3.8-flash` is the configurable baseline for live LLM/vision; Tripo model `v3.1-20260211` is an optional image-to-3D provider after explicit user approval. Verify current official docs before integration.
 - Use mock providers for local development and automated tests. Missing API keys must not block the rest of the application.
 - Never call live providers, create accounts, enable billing, or consume credits without explicit approval. Never upload private room photos without the developer's informed decision.
 - Isolate provider-specific code behind interfaces. Keep model IDs and provider configuration in backend environment variables.
