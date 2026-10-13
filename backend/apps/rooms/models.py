@@ -42,3 +42,62 @@ class Room(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.width}m x {self.length}m x {self.height}m) [{self.owner.username}]"
+
+
+class RoomPhotoUpload(models.Model):
+    """
+    Ephemeral or attached room photo upload metadata.
+    Private room photos are never publicly exposed or retained indefinitely.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='room_photo_uploads'
+    )
+    room = models.ForeignKey(
+        Room,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='photo_uploads'
+    )
+    file_path = models.CharField(
+        max_length=512,
+        help_text='Filesystem path to the stored room photo'
+    )
+    original_filename = models.CharField(
+        max_length=255,
+        help_text='Sanitized original client filename'
+    )
+    file_size_bytes = models.PositiveIntegerField(
+        help_text='File size in bytes'
+    )
+    content_type = models.CharField(
+        max_length=64,
+        help_text='Verified MIME content type'
+    )
+    image_format = models.CharField(
+        max_length=16,
+        help_text='Verified image encoding format (JPEG, PNG, WEBP)'
+    )
+    width = models.PositiveIntegerField(
+        help_text='Pixel width'
+    )
+    height = models.PositiveIntegerField(
+        help_text='Pixel height'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        help_text='Expiration time after which the ephemeral file is purged'
+    )
+    is_deleted = models.BooleanField(
+        default=False,
+        help_text='Flag indicating whether the file has been cleaned up from disk'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"RoomPhotoUpload {self.id} ({self.image_format} {self.width}x{self.height}) [{self.owner.username}]"

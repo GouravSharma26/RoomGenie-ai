@@ -169,3 +169,15 @@ GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 IMAGE_TO_3D_PROVIDER_MODE = os.getenv('IMAGE_TO_3D_PROVIDER_MODE', 'mock').lower()
 TRIPO_API_KEY = os.getenv('TRIPO_API_KEY', '')
 TRIPO_MODEL = os.getenv('TRIPO_MODEL', 'v3.1-20260211')
+
+# Media and Ephemeral Upload Storage
+MEDIA_ROOT = os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media'))
+MEDIA_URL = '/media/'
+
+# Room Photo Upload Security Limits
+ROOM_PHOTO_MAX_UPLOAD_SIZE = int(os.getenv('ROOM_PHOTO_MAX_UPLOAD_SIZE', str(10 * 1024 * 1024)))  # 10 MB default
+ROOM_PHOTO_MIN_DIMENSION = int(os.getenv('ROOM_PHOTO_MIN_DIMENSION', '100'))  # 100px minimum width/height
+ROOM_PHOTO_MAX_DIMENSION = int(os.getenv('ROOM_PHOTO_MAX_DIMENSION', '8192'))  # 8192px maximum width/height
+ROOM_PHOTO_ALLOWED_FORMATS = ('JPEG', 'PNG', 'WEBP')
+ROOM_PHOTO_ALLOWED_MIME_TYPES = ('image/jpeg', 'image/png', 'image/webp')
+ROOM_PHOTO_EXPIRY_SECONDS = int(os.getenv('ROOM_PHOTO_EXPIRY_SECONDS', '3600'))  # 1 hour ephemeral retention
