@@ -25,7 +25,7 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 - [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404; demo auth gated behind `ALLOW_DEMO_AUTH = DEBUG and ...` configuration and rejected with 403 in production).
 - [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, dimensions, transforms, and full 3D rotated footprint containment).
-- [x] Relevant Django tests pass (84/84 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, and room-photo upload validation).
+- [x] Relevant Django tests pass (92/92 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, room-photo upload validation, early HTTP 413 body size rejection, total pixel caps, Pillow decompression-bomb hardening, orphan-free rollback, and safe management command cleanup).
 - [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 28 Vitest tests pass, production bundle built).
 
 ## Catalogue and budget

@@ -1,0 +1,1 @@
+# rooms management commands package

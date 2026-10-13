@@ -178,6 +178,11 @@ MEDIA_URL = '/media/'
 ROOM_PHOTO_MAX_UPLOAD_SIZE = int(os.getenv('ROOM_PHOTO_MAX_UPLOAD_SIZE', str(10 * 1024 * 1024)))  # 10 MB default
 ROOM_PHOTO_MIN_DIMENSION = int(os.getenv('ROOM_PHOTO_MIN_DIMENSION', '100'))  # 100px minimum width/height
 ROOM_PHOTO_MAX_DIMENSION = int(os.getenv('ROOM_PHOTO_MAX_DIMENSION', '8192'))  # 8192px maximum width/height
+ROOM_PHOTO_MAX_PIXELS = int(os.getenv('ROOM_PHOTO_MAX_PIXELS', '25000000'))  # 25 MP default (e.g. 5000x5000)
 ROOM_PHOTO_ALLOWED_FORMATS = ('JPEG', 'PNG', 'WEBP')
 ROOM_PHOTO_ALLOWED_MIME_TYPES = ('image/jpeg', 'image/png', 'image/webp')
 ROOM_PHOTO_EXPIRY_SECONDS = int(os.getenv('ROOM_PHOTO_EXPIRY_SECONDS', '3600'))  # 1 hour ephemeral retention
+
+# Request body and upload memory limits before consuming excessive resources
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', str(12 * 1024 * 1024)))  # 12 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('FILE_UPLOAD_MAX_MEMORY_SIZE', str(10 * 1024 * 1024)))  # 10 MB

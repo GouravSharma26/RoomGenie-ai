@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -30,7 +31,8 @@ class RoomPhotoUploadView(APIView):
     """
     POST /api/v1/rooms/upload-photo/
     Secure endpoint for uploading a room photo for vision analysis.
-    - Validates file content, real binary format (JPEG, PNG, WebP), dimensions, and size.
+    - Early rejection of oversized request payloads before reading/parsing multipart stream.
+    - Validates file content, real binary format (JPEG, PNG, WebP), dimensions, pixel counts, and size.
     - Enforces user authentication and ownership of any linked room.
     - Stores the file in an ephemeral, user-isolated directory with an expiration TTL.
     - Returns structured metadata for the subsequent room-analysis stage.
@@ -39,6 +41,26 @@ class RoomPhotoUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
+        # 1. Early request body size enforcement before parsing or consuming excessive resources
+        content_length_header = request.META.get('CONTENT_LENGTH')
+        if content_length_header:
+            try:
+                content_length = int(content_length_header)
+                max_upload_size = getattr(settings, 'ROOM_PHOTO_MAX_UPLOAD_SIZE', 10 * 1024 * 1024)
+                # Allow a small 64KB overhead for multipart form boundaries, headers, and auxiliary fields
+                max_allowed_body = max_upload_size + 65536
+                if content_length > max_allowed_body:
+                    max_mb = max_upload_size / (1024 * 1024)
+                    return Response(
+                        {
+                            "detail": f"Request body ({content_length / (1024 * 1024):.1f} MB) exceeds maximum allowed size of {max_mb:.1f} MB.",
+                            "code": "request_entity_too_large",
+                        },
+                        status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    )
+            except (ValueError, TypeError):
+                pass
+
         serializer = RoomPhotoUploadSerializer(
             data=request.data,
             context={'request': request}

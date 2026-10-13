@@ -1,16 +1,21 @@
 import io
 import os
 from decimal import Decimal
+from pathlib import Path
+from unittest.mock import patch
 from PIL import Image
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.db import DatabaseError
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 from apps.rooms.models import Room, RoomPhotoUpload
-from apps.rooms.services import cleanup_expired_room_photos
+from apps.rooms.services import cleanup_expired_room_photos, save_temporary_room_photo
 
 
 class RoomPersistenceTests(APITestCase):
@@ -250,9 +255,160 @@ class RoomPhotoUploadTests(APITestCase):
 
         # Manually trigger cleanup for files older than -1 seconds (all files)
         purged = cleanup_expired_room_photos(max_age_seconds=-1)
-        self.assertGreaterEqual(purged, 1)
+        self.assertGreaterEqual(purged['purged_count'], 1)
+        self.assertEqual(purged['failed_count'], 0)
 
         # File is deleted from disk
         self.assertFalse(os.path.exists(file_path))
         record.refresh_from_db()
         self.assertTrue(record.is_deleted)
+
+    def test_cleanup_management_command_execution_and_dry_run(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file = self.make_test_image("cmd_test.jpg", "JPEG")
+        res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+        self.assertTrue(os.path.exists(record.file_path))
+
+        # 1. Test Dry Run: output indicates dry run, disk file still exists, DB is_deleted remains False
+        out = io.StringIO()
+        call_command('cleanup_expired_photos', '--dry-run', '--max-age-seconds=-1', stdout=out)
+        output_str = out.getvalue()
+        self.assertIn("DRY-RUN", output_str)
+        self.assertIn("purged=1", output_str)
+        self.assertTrue(os.path.exists(record.file_path))
+        record.refresh_from_db()
+        self.assertFalse(record.is_deleted)
+
+        # 2. Real Run: deletes disk file and marks record as deleted
+        out_real = io.StringIO()
+        call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out_real)
+        output_real_str = out_real.getvalue()
+        self.assertIn("purged=1", output_real_str)
+        self.assertIn("failed=0", output_real_str)
+        self.assertFalse(os.path.exists(record.file_path))
+        record.refresh_from_db()
+        self.assertTrue(record.is_deleted)
+
+    def test_cleanup_handles_unlink_failures_safely(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file = self.make_test_image("unlink_err.jpg", "JPEG")
+        res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
+        record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+
+        # Mock Path.unlink to raise OSError (e.g. permission error, locked file)
+        with patch.object(Path, 'unlink', side_effect=OSError("Permission denied on disk")):
+            out = io.StringIO()
+            call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out)
+            output_str = out.getvalue()
+            self.assertIn("failed=1", output_str)
+
+        # Command should not crash, file still exists, is_deleted is NOT True so it can be retried
+        self.assertTrue(os.path.exists(record.file_path))
+        record.refresh_from_db()
+        self.assertFalse(record.is_deleted)
+
+        # Clean up the actual file after test
+        if os.path.exists(record.file_path):
+            os.remove(record.file_path)
+
+    def test_cleanup_handles_already_missing_disk_files_gracefully(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file = self.make_test_image("already_gone.jpg", "JPEG")
+        res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
+        record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+
+        # Manually delete file behind Django's back
+        if os.path.exists(record.file_path):
+            os.remove(record.file_path)
+        self.assertFalse(os.path.exists(record.file_path))
+
+        out = io.StringIO()
+        call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out)
+        output_str = out.getvalue()
+        self.assertIn("missing=1", output_str)
+        self.assertIn("failed=0", output_str)
+
+        record.refresh_from_db()
+        self.assertTrue(record.is_deleted)
+
+    def test_early_content_length_rejection_413(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file = self.make_test_image("huge.jpg", "JPEG")
+        oversized_content_length = str(20 * 1024 * 1024)  # 20 MB
+
+        initial_count = RoomPhotoUpload.objects.count()
+        res = self.client.post(
+            self.upload_url,
+            {'photo': img_file},
+            format='multipart',
+            CONTENT_LENGTH=oversized_content_length
+        )
+        self.assertEqual(res.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        self.assertEqual(res.data.get('code'), 'request_entity_too_large')
+        self.assertIn('exceeds maximum allowed size', res.data.get('detail', ''))
+        # No DB record or file created
+        self.assertEqual(RoomPhotoUpload.objects.count(), initial_count)
+
+    @override_settings(ROOM_PHOTO_MAX_PIXELS=400_000)
+    def test_max_total_pixels_limit_rejected_400(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        # 800x600 = 480,000 pixels (> 400,000 max pixels limit)
+        img_file = self.make_test_image("exceed_pixels.jpg", "JPEG", size=(800, 600))
+        res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        error_text = str(res.data)
+        self.assertTrue(
+            "exceeds safe threshold" in error_text or
+            "exceeds the maximum allowed limit" in error_text or
+            "decompression bomb" in error_text.lower(),
+            f"Expected pixel limit error, got: {error_text}"
+        )
+
+    def test_pillow_decompression_bomb_warning_and_error_rejected(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file1 = self.make_test_image("bomb1.jpg", "JPEG")
+
+        # Simulate Pillow triggering DecompressionBombWarning on Image.open
+        with patch('apps.rooms.services.Image.open', side_effect=Image.DecompressionBombWarning("Image size (120000000 pixels) exceeds limit")):
+            res_warn = self.client.post(self.upload_url, {'photo': img_file1}, format='multipart')
+            self.assertEqual(res_warn.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("decompression bomb", str(res_warn.data).lower())
+
+        img_file2 = self.make_test_image("bomb2.jpg", "JPEG")
+        # Simulate Pillow raising DecompressionBombError
+        with patch('apps.rooms.services.Image.open', side_effect=Image.DecompressionBombError("Image size (200000000 pixels) exceeds bomb threshold")):
+            res_err = self.client.post(self.upload_url, {'photo': img_file2}, format='multipart')
+            self.assertEqual(res_err.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("decompression bomb", str(res_err.data).lower())
+
+    def test_failed_database_operation_leaves_no_orphaned_file(self):
+        img_file = self.make_test_image("orphan_test.jpg", "JPEG")
+        temp_dir = Path(settings.MEDIA_ROOT) / 'temp_room_photos' / str(self.user_a.id)
+
+        # Record list of existing files before test
+        existing_files_before = set(temp_dir.glob('*')) if temp_dir.exists() else set()
+
+        with patch.object(RoomPhotoUpload.objects, 'create', side_effect=DatabaseError("DB connection failed")):
+            with self.assertRaises(DatabaseError):
+                save_temporary_room_photo(user=self.user_a, uploaded_file=img_file)
+
+        # Verify no new orphaned file was left behind
+        existing_files_after = set(temp_dir.glob('*')) if temp_dir.exists() else set()
+        new_files = existing_files_after - existing_files_before
+        self.assertEqual(len(new_files), 0, f"Found orphaned files left on disk: {new_files}")
+
+    def test_failed_disk_write_leaves_no_orphaned_file(self):
+        img_file = self.make_test_image("disk_fail.jpg", "JPEG")
+        temp_dir = Path(settings.MEDIA_ROOT) / 'temp_room_photos' / str(self.user_a.id)
+        existing_files_before = set(temp_dir.glob('*')) if temp_dir.exists() else set()
+
+        # Simulate write failure during chunks iteration
+        with patch.object(SimpleUploadedFile, 'chunks', side_effect=IOError("Disk write failed midway")):
+            with self.assertRaises(IOError):
+                save_temporary_room_photo(user=self.user_a, uploaded_file=img_file)
+
+        existing_files_after = set(temp_dir.glob('*')) if temp_dir.exists() else set()
+        new_files = existing_files_after - existing_files_before
+        self.assertEqual(len(new_files), 0, f"Found orphaned files left on disk: {new_files}")
