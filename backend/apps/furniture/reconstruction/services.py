@@ -169,6 +169,30 @@ def create_reconstruction_job(
     return job
 
 
+def claim_job_for_processing(job: FurnitureReconstructionJob) -> bool:
+    """
+    Atomically claims a reconstruction job for processing from 'queued' to 'processing'.
+    Uses a short database transaction with row-level locking (select_for_update)
+    so that exactly one execution can claim the job, even under high concurrency.
+    Avoids holding database transaction open during provider/network calls.
+    Returns True if successfully claimed, False if already claimed or not in 'queued' state.
+    """
+    with transaction.atomic():
+        locked_job = (
+            FurnitureReconstructionJob.objects.select_for_update()
+            .filter(id=job.id)
+            .first()
+        )
+        if not locked_job or locked_job.status != FurnitureReconstructionJob.STATUS_QUEUED:
+            job.refresh_from_db()
+            return False
+
+        locked_job.status = FurnitureReconstructionJob.STATUS_PROCESSING
+        locked_job.save(update_fields=['status', 'updated_at'])
+        job.status = FurnitureReconstructionJob.STATUS_PROCESSING
+        return True
+
+
 def run_reconstruction_job(
     job: FurnitureReconstructionJob,
     adapter: BaseImageTo3DAdapter | None = None,
@@ -177,7 +201,7 @@ def run_reconstruction_job(
 ) -> FurnitureReconstructionJob:
     """
     Executes a 3D furniture reconstruction job lifecycle:
-    1. Validates and marks job 'processing'.
+    1. Atomically claims job for processing (from 'queued' to 'processing').
     2. Invokes the image-to-3D provider adapter.
     3. Validates the generated GLB binary data (Khronos glTF 2.0 Binary spec).
     4. Writes model bytes atomically to a private user-scoped storage path under MEDIA_ROOT.
@@ -191,11 +215,13 @@ def run_reconstruction_job(
     start_time = time.time()
     context = context or {}
 
-    # 1. State transition to processing
-    try:
-        job.transition_to(FurnitureReconstructionJob.STATUS_PROCESSING)
-    except Exception as exc:
-        logger.error("Failed to transition job %s to processing: %s", job.id, exc)
+    # 1. Atomically claim job for processing
+    if not claim_job_for_processing(job):
+        logger.warning(
+            "Reconstruction job %s could not be claimed for processing (current status: %s). Aborting redundant execution.",
+            job.id,
+            job.status
+        )
         return job
 
     # 2. Determine source image path

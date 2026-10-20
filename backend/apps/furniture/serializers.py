@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
 from apps.furniture.reconstruction.services import (
@@ -79,10 +80,12 @@ class FurnitureReconstructionJobCreateSerializer(serializers.Serializer):
         if not request or not request.user or not request.user.is_authenticated:
             raise serializers.ValidationError("Authentication required to link room photo upload.")
 
+        now = timezone.now()
         photo_upload = RoomPhotoUpload.objects.filter(
             id=value,
             owner=request.user,
-            is_deleted=False
+            is_deleted=False,
+            expires_at__gt=now
         ).first()
         if not photo_upload:
             raise serializers.ValidationError(
@@ -107,6 +110,15 @@ class FurnitureReconstructionJobCreateSerializer(serializers.Serializer):
                 f"Unsupported provider mode: '{value}'. Supported modes: {sorted(SUPPORTED_PROVIDER_MODES)}."
             )
         return cleaned
+
+
+class FurnitureReconstructionJobProcessSerializer(serializers.Serializer):
+    """
+    Validates execution options for process_job action.
+    Strictly validates Boolean inputs (e.g. rejects non-booleans and parses
+    'false' and '0' as False rather than truthy).
+    """
+    sync = serializers.BooleanField(required=False, default=True)
 
 
 class FurnitureReconstructionJobSerializer(serializers.ModelSerializer):

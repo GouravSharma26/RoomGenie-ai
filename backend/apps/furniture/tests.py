@@ -2,14 +2,17 @@ import io
 import json
 import math
 import struct
+import threading
+import time
 import urllib.request
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
+from apps.furniture.reconstruction.base import ReconstructionResult
 from apps.furniture.reconstruction.validator import GLBValidator, GLBValidationError
 from apps.furniture.reconstruction.mock import MockImageTo3DAdapter, build_procedural_furniture_glb
 from apps.furniture.reconstruction.tripo import (
@@ -1487,31 +1490,8 @@ class ReconstructionAPISecurityAndStreamingTests(APITestCase):
         self.assertIsNone(data['model_download_url'])
         self.assertIsNone(data['file_size_bytes'])
 
-    def test_job_create_validates_photo_upload_ownership(self):
+    def test_job_create_accepts_valid_photo_upload(self):
         from django.utils import timezone
-        # Photo owned by user 2
-        foreign_photo = RoomPhotoUpload.objects.create(
-            owner=self.user2,
-            file_path="/tmp/user2_photo.jpg",
-            original_filename="user2_photo.jpg",
-            file_size_bytes=1024,
-            content_type="image/jpeg",
-            image_format="JPEG",
-            width=800,
-            height=600,
-            expires_at=timezone.now() + timezone.timedelta(hours=1)
-        )
-
-        # User 1 attempts to link foreign photo
-        resp = self.client.post(self.jobs_url, {
-            "photo_upload_id": str(foreign_photo.id),
-            "target_category": "seating"
-        })
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("photo_upload_id", resp.data)
-        self.assertIn("does not belong to you", str(resp.data['photo_upload_id']))
-
-        # Photo owned by user 1
         own_photo = RoomPhotoUpload.objects.create(
             owner=self.user1,
             file_path="/tmp/user1_photo.jpg",
@@ -1523,13 +1503,79 @@ class ReconstructionAPISecurityAndStreamingTests(APITestCase):
             height=600,
             expires_at=timezone.now() + timezone.timedelta(hours=1)
         )
-        resp_own = self.client.post(self.jobs_url, {
+        resp = self.client.post(self.jobs_url, {
             "photo_upload_id": str(own_photo.id),
             "target_category": "seating",
             "auto_process": False
         })
-        self.assertEqual(resp_own.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp_own.data['photo_upload_id'], str(own_photo.id))
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data['photo_upload_id'], str(own_photo.id))
+
+    def test_job_create_rejects_expired_photo_upload(self):
+        from django.utils import timezone
+        # Expired photo owned by user 1
+        expired_photo = RoomPhotoUpload.objects.create(
+            owner=self.user1,
+            file_path="/tmp/expired_photo.jpg",
+            original_filename="expired_photo.jpg",
+            file_size_bytes=1024,
+            content_type="image/jpeg",
+            image_format="JPEG",
+            width=800,
+            height=600,
+            expires_at=timezone.now() - timezone.timedelta(minutes=10)
+        )
+        resp = self.client.post(self.jobs_url, {
+            "photo_upload_id": str(expired_photo.id),
+            "target_category": "seating"
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("photo_upload_id", resp.data)
+        self.assertIn("not found, expired, or does not belong to you", str(resp.data['photo_upload_id']))
+
+    def test_job_create_rejects_deleted_photo_upload(self):
+        from django.utils import timezone
+        deleted_photo = RoomPhotoUpload.objects.create(
+            owner=self.user1,
+            file_path="/tmp/deleted_photo.jpg",
+            original_filename="deleted_photo.jpg",
+            file_size_bytes=1024,
+            content_type="image/jpeg",
+            image_format="JPEG",
+            width=800,
+            height=600,
+            expires_at=timezone.now() + timezone.timedelta(hours=1),
+            is_deleted=True
+        )
+        resp = self.client.post(self.jobs_url, {
+            "photo_upload_id": str(deleted_photo.id),
+            "target_category": "seating"
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("photo_upload_id", resp.data)
+        self.assertIn("not found, expired, or does not belong to you", str(resp.data['photo_upload_id']))
+
+    def test_job_create_rejects_other_user_photo_upload(self):
+        from django.utils import timezone
+        foreign_photo = RoomPhotoUpload.objects.create(
+            owner=self.user2,
+            file_path="/tmp/user2_photo.jpg",
+            original_filename="user2_photo.jpg",
+            file_size_bytes=1024,
+            content_type="image/jpeg",
+            image_format="JPEG",
+            width=800,
+            height=600,
+            expires_at=timezone.now() + timezone.timedelta(hours=1)
+        )
+        resp = self.client.post(self.jobs_url, {
+            "photo_upload_id": str(foreign_photo.id),
+            "target_category": "seating"
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("photo_upload_id", resp.data)
+        # Invariant: error message is generic and does not leak existence
+        self.assertIn("not found, expired, or does not belong to you", str(resp.data['photo_upload_id']))
 
     def test_job_create_validates_reference_dimensions(self):
         # Negative dimension
@@ -1637,6 +1683,58 @@ class ReconstructionAPISecurityAndStreamingTests(APITestCase):
         resp_foreign = self.client.post(process_url, {"sync": True})
         self.assertEqual(resp_foreign.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_job_process_action_validates_sync_parameter(self):
+        job = create_reconstruction_job(self.user1, target_category='seating')
+        process_url = reverse('furniture:reconstruction-jobs-process', kwargs={'pk': job.id})
+
+        # 1. Invalid non-boolean types and strings return 400 Bad Request
+        resp_invalid_str = self.client.post(process_url, {"sync": "not-a-bool"}, format='json')
+        self.assertEqual(resp_invalid_str.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sync", resp_invalid_str.data)
+
+        resp_invalid_num = self.client.post(process_url, {"sync": 99}, format='json')
+        self.assertEqual(resp_invalid_num.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sync", resp_invalid_num.data)
+
+        resp_invalid_list = self.client.post(process_url, {"sync": [True]}, format='json')
+        self.assertEqual(resp_invalid_list.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sync", resp_invalid_list.data)
+
+        # 2. Non-dict request body returns 400 Bad Request
+        resp_non_dict = self.client.post(process_url, "not a dict", content_type='application/json')
+        self.assertEqual(resp_non_dict.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 3. Valid Boolean "false" string does NOT silently evaluate to True
+        with patch('apps.furniture.views._run_reconstruction_in_background') as mock_bg, \
+             patch('apps.furniture.views.run_reconstruction_job') as mock_sync:
+            resp_str_false = self.client.post(process_url, {"sync": "false"}, format='json')
+            self.assertEqual(resp_str_false.status_code, status.HTTP_200_OK)
+            mock_bg.assert_called_once_with(str(job.id))
+            mock_sync.assert_not_called()
+
+        with patch('apps.furniture.views._run_reconstruction_in_background') as mock_bg, \
+             patch('apps.furniture.views.run_reconstruction_job') as mock_sync:
+            resp_bool_false = self.client.post(process_url, {"sync": False}, format='json')
+            self.assertEqual(resp_bool_false.status_code, status.HTTP_200_OK)
+            mock_bg.assert_called_once_with(str(job.id))
+            mock_sync.assert_not_called()
+
+        with patch('apps.furniture.views._run_reconstruction_in_background') as mock_bg, \
+             patch('apps.furniture.views.run_reconstruction_job') as mock_sync:
+            resp_str_0 = self.client.post(process_url, {"sync": "0"}, format='json')
+            self.assertEqual(resp_str_0.status_code, status.HTTP_200_OK)
+            mock_bg.assert_called_once_with(str(job.id))
+            mock_sync.assert_not_called()
+
+        # 4. Valid Boolean true values execute synchronously
+        with patch('apps.furniture.views._run_reconstruction_in_background') as mock_bg, \
+             patch('apps.furniture.views.run_reconstruction_job', wraps=run_reconstruction_job) as mock_sync:
+            resp_str_true = self.client.post(process_url, {"sync": "true"}, format='json')
+            self.assertEqual(resp_str_true.status_code, status.HTTP_200_OK)
+            self.assertEqual(resp_str_true.data['status'], 'completed')
+            mock_bg.assert_not_called()
+            mock_sync.assert_called_once()
+
     def test_job_model_streaming_security_headers_and_payload(self):
         job = create_reconstruction_job(self.user1, target_category='seating')
         run_reconstruction_job(job)
@@ -1724,6 +1822,184 @@ class ReconstructionAPISecurityAndStreamingTests(APITestCase):
         data = resp.data
         self.assertEqual(data['status'], 'completed')
         self.assertIsNotNone(data['model_download_url'])
+
+
+class ReconstructionJobConcurrencyTests(APITransactionTestCase):
+    """
+    Concurrency and atomic claiming tests.
+    Ensures that a reconstruction job can be claimed for processing by only one execution,
+    even under heavy thread concurrency or background worker races.
+    Validates atomic transitions and prevents double provider invocation or output overwrites.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='concurrency_user',
+            email='concurrency@example.com',
+            password='testpassword123'
+        )
+
+    def tearDown(self):
+        # Clean up any generated model files
+        for job in FurnitureReconstructionJob.objects.filter(owner=self.user):
+            delete_reconstruction_job_file(job)
+
+    def test_reconstruction_job_claimed_at_most_once_under_concurrency(self):
+        """
+        Verify that when multiple concurrent threads attempt to process the same job,
+        exactly one worker successfully claims the job and invokes the image-to-3D adapter.
+        """
+        job = create_reconstruction_job(self.user, target_category='seating')
+
+        mock_adapter = MagicMock()
+        def mock_generate(*args, **kwargs):
+            time.sleep(0.05)
+            glb_data = build_procedural_furniture_glb(1.0, 0.8, 0.9)
+            return ReconstructionResult(
+                model_bytes=glb_data,
+                model_name='mock-concurrency-model',
+                approximate_dimensions={'width_m': 1.0, 'height_m': 0.8, 'depth_m': 0.9},
+                raw_metadata={'test': True}
+            )
+        mock_adapter.generate_furniture_model.side_effect = mock_generate
+
+        num_threads = 5
+        barrier = threading.Barrier(num_threads)
+        errors = []
+
+        def worker():
+            from django.db import connection
+            try:
+                barrier.wait()
+                run_reconstruction_job(job, adapter=mock_adapter)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0, f"Errors in concurrent workers: {errors}")
+        # The provider adapter must have been invoked EXACTLY once
+        self.assertEqual(mock_adapter.generate_furniture_model.call_count, 1)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_COMPLETED)
+        self.assertIsNotNone(job.completed_at)
+
+    def test_deterministic_claim_race_blocks_second_execution(self):
+        """
+        Deterministically verifies that while one execution is actively processing
+        (e.g., inside the provider adapter network call), a concurrent execution cannot
+        claim the job, cannot invoke the provider adapter, and cannot overwrite output.
+        """
+        job = create_reconstruction_job(self.user, target_category='storage')
+
+        in_provider_event = threading.Event()
+        release_provider_event = threading.Event()
+        second_finished_event = threading.Event()
+        second_adapter_called = []
+
+        mock_adapter_1 = MagicMock()
+        def mock_generate_1(*args, **kwargs):
+            in_provider_event.set()
+            release_provider_event.wait(timeout=5.0)
+            glb_data = build_procedural_furniture_glb(1.0, 1.5, 0.5)
+            return ReconstructionResult(
+                model_bytes=glb_data,
+                model_name='first-claimant-model',
+                approximate_dimensions={'width_m': 1.0, 'height_m': 1.5, 'depth_m': 0.5},
+                raw_metadata={'winner': 1}
+            )
+        mock_adapter_1.generate_furniture_model.side_effect = mock_generate_1
+
+        mock_adapter_2 = MagicMock()
+        def mock_generate_2(*args, **kwargs):
+            second_adapter_called.append(True)
+            return ReconstructionResult(
+                model_bytes=b'invalid',
+                model_name='second-claimant-overwrite',
+                approximate_dimensions={'width_m': 0.1, 'height_m': 0.1, 'depth_m': 0.1},
+                raw_metadata={'winner': 2}
+            )
+        mock_adapter_2.generate_furniture_model.side_effect = mock_generate_2
+
+        thread1_errors = []
+        thread2_errors = []
+
+        def worker_1():
+            from django.db import connection
+            try:
+                run_reconstruction_job(job, adapter=mock_adapter_1)
+            except Exception as e:
+                thread1_errors.append(e)
+            finally:
+                connection.close()
+
+        def worker_2():
+            from django.db import connection
+            try:
+                # Wait until worker 1 is actively inside provider call
+                in_provider_event.wait(timeout=5.0)
+                run_reconstruction_job(job, adapter=mock_adapter_2)
+            except Exception as e:
+                thread2_errors.append(e)
+            finally:
+                second_finished_event.set()
+                connection.close()
+
+        t1 = threading.Thread(target=worker_1)
+        t2 = threading.Thread(target=worker_2)
+
+        t1.start()
+        t2.start()
+
+        second_finished_event.wait(timeout=5.0)
+        release_provider_event.set()
+
+        t1.join()
+        t2.join()
+
+        self.assertEqual(len(thread1_errors), 0, f"Thread 1 errors: {thread1_errors}")
+        self.assertEqual(len(thread2_errors), 0, f"Thread 2 errors: {thread2_errors}")
+
+        # Worker 2 must NEVER have invoked adapter
+        self.assertEqual(len(second_adapter_called), 0)
+        self.assertEqual(mock_adapter_2.generate_furniture_model.call_count, 0)
+        # Worker 1 invoked adapter exactly once
+        self.assertEqual(mock_adapter_1.generate_furniture_model.call_count, 1)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_COMPLETED)
+        self.assertEqual(job.model_name, 'first-claimant-model')
+
+    def test_claim_job_for_processing_state_guards(self):
+        """
+        Verify that claim_job_for_processing rejects jobs that are not in 'queued' state.
+        """
+        from apps.furniture.reconstruction.services import claim_job_for_processing
+
+        job = create_reconstruction_job(self.user, target_category='tables')
+
+        # First claim succeeds
+        self.assertTrue(claim_job_for_processing(job))
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_PROCESSING)
+
+        # Second claim fails
+        self.assertFalse(claim_job_for_processing(job))
+
+        # Completed or failed jobs cannot be claimed
+        job.status = FurnitureReconstructionJob.STATUS_COMPLETED
+        job.save(update_fields=['status'])
+        self.assertFalse(claim_job_for_processing(job))
+
+        job.status = FurnitureReconstructionJob.STATUS_FAILED
+        job.save(update_fields=['status'])
+        self.assertFalse(claim_job_for_processing(job))
+
 
 
 

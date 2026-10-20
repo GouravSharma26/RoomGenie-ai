@@ -12,6 +12,7 @@ from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
 from apps.furniture.serializers import (
     FurnitureAssetSerializer,
     FurnitureReconstructionJobCreateSerializer,
+    FurnitureReconstructionJobProcessSerializer,
     FurnitureReconstructionJobSerializer,
 )
 from apps.furniture.reconstruction.services import (
@@ -369,17 +370,27 @@ class FurnitureReconstructionJobViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        sync = True
-        if isinstance(request.data, dict) and 'sync' in request.data:
-            sync = bool(request.data['sync'])
+        if not isinstance(request.data, dict) and request.data != '' and request.data is not None:
+            return Response(
+                {"detail": "Request body must be a JSON object."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = FurnitureReconstructionJobProcessSerializer(
+            data=request.data if isinstance(request.data, dict) else {}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        sync = serializer.validated_data['sync']
 
         if sync:
             job = run_reconstruction_job(job)
         else:
             _run_reconstruction_in_background(str(job.id))
 
-        serializer = FurnitureReconstructionJobSerializer(job, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        output_serializer = FurnitureReconstructionJobSerializer(job, context={'request': request})
+        return Response(output_serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='model', url_name='model')
     def stream_model(self, request, pk=None):
