@@ -953,7 +953,8 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
                     "https://tripo-models.tripo3d.ai/oversized.glb",
                     max_size_bytes=1000,
                     chunk_size=512,
-                    check_dns=False
+                    check_dns=False,
+                    pinned_ip_override="104.18.27.71"
                 )
             self.assertIn("exceeded maximum allowed limit", str(ctx.exception))
             # Must close response cleanly
@@ -971,7 +972,8 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
                 "https://tripo-models.tripo3d.ai/chunked.glb",
                 max_size_bytes=1024,
                 chunk_size=512,
-                check_dns=False
+                check_dns=False,
+                pinned_ip_override="104.18.27.71"
             )
             self.assertEqual(downloaded, valid_bytes)
             mock_resp.close.assert_called()
@@ -985,7 +987,8 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
                 stream_download_model(
                     "https://tripo-models.tripo3d.ai/big.glb",
                     max_size_bytes=15 * 1024 * 1024,
-                    check_dns=False
+                    check_dns=False,
+                    pinned_ip_override="104.18.27.71"
                 )
             self.assertIn("exceeds maximum allowed limit", str(ctx.exception))
             mock_resp.close.assert_called()
@@ -1065,7 +1068,11 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
         self.assertIn("disallowed", str(ctx.exception).lower())
 
     def test_safe_redirect_handler_allows_valid_https_redirect(self):
-        handler = SafeRedirectHandler(allowed_hosts=['tripo3d.ai', '.tripo3d.ai', '.cloudfront.net'], check_dns=False)
+        handler = SafeRedirectHandler(
+            allowed_hosts=['tripo3d.ai', '.tripo3d.ai', '.cloudfront.net'],
+            check_dns=False,
+            pinned_ip_override="104.18.27.71"
+        )
         req = urllib.request.Request("https://tripo-models.tripo3d.ai/start.glb")
         redirect_req = handler.redirect_request(
             req, None, 302, "Found", {}, "https://assets.cloudfront.net/model.glb"
@@ -1136,6 +1143,93 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
                 pinned_ip_override="127.0.0.1"
             )
         self.assertIn("disallowed private or local address", str(ctx.exception).lower())
+
+    def test_check_dns_false_without_pinned_ip_rejects_unpinned_hostname_connection(self):
+        """
+        Regression test: Proves that setting check_dns=False without an explicit pinned IP
+        or validated IP literal rejects the download and refuses to establish an unpinned
+        hostname connection.
+        """
+        hostname = "tripo-models.tripo3d.ai"
+        url = f"https://{hostname}/model.glb"
+
+        # 1. validate_and_resolve_download_url must reject domain hostname when check_dns=False
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_and_resolve_download_url(url, check_dns=False)
+        self.assertIn("explicitly validated pinned ip address is required", str(ctx.exception).lower())
+
+        # 2. stream_download_model must reject domain hostname when check_dns=False
+        with self.assertRaises(GLBValidationError) as ctx:
+            stream_download_model(url, check_dns=False)
+        self.assertIn("explicitly validated pinned ip address is required", str(ctx.exception).lower())
+
+        # 3. SafeHTTPSHandler.https_open must reject domain hostname when check_dns=False
+        # and neither socket.create_connection nor socket.getaddrinfo must ever be invoked
+        handler = SafeHTTPSHandler(allowed_hosts=[hostname], check_dns=False)
+        req = urllib.request.Request(url)
+
+        with patch('socket.create_connection') as mock_create_conn, \
+             patch('socket.getaddrinfo') as mock_getaddrinfo:
+            with self.assertRaises(GLBValidationError) as ctx:
+                handler.https_open(req)
+            self.assertIn("explicitly validated pinned ip address is required", str(ctx.exception).lower())
+            mock_create_conn.assert_not_called()
+            mock_getaddrinfo.assert_not_called()
+
+    def test_check_dns_false_permitted_for_validated_ip_literal(self):
+        """
+        Proves that check_dns=False is permitted when destination is an explicitly validated
+        public IP literal, connecting directly to the IP literal without DNS resolution.
+        """
+        ip_literal = "104.18.27.71"
+        url = f"https://{ip_literal}/model.glb"
+
+        # 1. validate_and_resolve_download_url returns the IP literal as pinned_ip
+        validated_url, pinned_ip, hostname, port = validate_and_resolve_download_url(
+            url,
+            allowed_hosts=[ip_literal],
+            check_dns=False
+        )
+        self.assertEqual(validated_url, url)
+        self.assertEqual(pinned_ip, ip_literal)
+        self.assertEqual(hostname, ip_literal)
+        self.assertEqual(port, 443)
+
+        # 2. SafeHTTPSHandler connects directly to the IP literal without DNS lookup
+        handler = SafeHTTPSHandler(allowed_hosts=[ip_literal], check_dns=False)
+        req = urllib.request.Request(url)
+
+        mock_sock = MagicMock()
+        mock_create_conn = MagicMock(return_value=mock_sock)
+        mock_wrap_socket = MagicMock(return_value=mock_sock)
+        mock_response = MagicMock(status=200, reason="OK", msg={}, headers={})
+        mock_response.read.return_value = b"glb_bytes"
+
+        with patch('socket.create_connection', mock_create_conn), \
+             patch('ssl.SSLContext.wrap_socket', mock_wrap_socket), \
+             patch('http.client.HTTPSConnection.getresponse', return_value=mock_response), \
+             patch('socket.getaddrinfo') as mock_getaddrinfo:
+            resp = handler.https_open(req)
+            self.assertIsNotNone(resp)
+            mock_create_conn.assert_called_once_with((ip_literal, 443), req.timeout, None)
+            mock_getaddrinfo.assert_not_called()
+
+    def test_pinned_connection_enforces_ip_invariant(self):
+        """
+        Proves that PinnedConnection.connect strictly verifies pinned_ip is a valid IP address
+        and aborts if a non-IP string is present.
+        """
+        hostname = "tripo-models.tripo3d.ai"
+        url = f"https://{hostname}/model.glb"
+
+        # Attempting to supply a non-IP string as pinned_ip_override must fail validation
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_and_resolve_download_url(
+                url,
+                check_dns=False,
+                pinned_ip_override="not-an-ip.internal"
+            )
+        self.assertIn("not a valid ip address", str(ctx.exception).lower())
 
 
 class ReconstructionJobLifecycleTests(APITestCase):

@@ -122,7 +122,12 @@ def validate_and_resolve_download_url(
     # 4. Resolve DNS and pin destination IP to eliminate TOCTOU / rebinding races
     if pinned_ip_override:
         # Validate override IP
-        override_ip_obj = ipaddress.ip_address(pinned_ip_override)
+        try:
+            override_ip_obj = ipaddress.ip_address(pinned_ip_override)
+        except ValueError as exc:
+            raise GLBValidationError(
+                f"Pinned IP override '{pinned_ip_override}' is not a valid IP address: {exc}"
+            ) from exc
         if not allow_private_ips and (
             override_ip_obj.is_private or override_ip_obj.is_loopback or override_ip_obj.is_link_local or
             override_ip_obj.is_reserved or override_ip_obj.is_multicast or override_ip_obj.is_unspecified
@@ -130,10 +135,10 @@ def validate_and_resolve_download_url(
             raise GLBValidationError(
                 f"Pinned IP override '{pinned_ip_override}' is a disallowed private or local address."
             )
-        pinned_ip = pinned_ip_override
+        pinned_ip = str(override_ip_obj)
     elif ip_literal is not None:
         pinned_ip = str(ip_literal)
-    elif check_dns and not allow_private_ips:
+    elif check_dns:
         try:
             addr_entries = socket.getaddrinfo(hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
             if not addr_entries:
@@ -142,8 +147,10 @@ def validate_and_resolve_download_url(
             for entry in addr_entries:
                 resolved_ip_str = entry[4][0]
                 resolved_ip = ipaddress.ip_address(resolved_ip_str)
-                if (resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or
-                    resolved_ip.is_reserved or resolved_ip.is_multicast or resolved_ip.is_unspecified):
+                if not allow_private_ips and (
+                    resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or
+                    resolved_ip.is_reserved or resolved_ip.is_multicast or resolved_ip.is_unspecified
+                ):
                     raise GLBValidationError(
                         f"Model download destination '{hostname}' resolved to disallowed local/private address ({resolved_ip_str})."
                     )
@@ -153,8 +160,12 @@ def validate_and_resolve_download_url(
         except socket.gaierror as e:
             raise GLBValidationError(f"DNS resolution failed for model download host '{hostname}': {e}") from e
     else:
-        # Fallback when DNS check is explicitly disabled (e.g. mock test environment)
-        pinned_ip = hostname
+        # Destination is a domain name, but DNS validation is disabled without an explicitly validated pinned IP.
+        # Do not permit hostname-based connections when DNS validation is disabled.
+        raise GLBValidationError(
+            f"Cannot establish connection to domain '{hostname}' with check_dns=False: "
+            "an explicitly validated pinned IP address is required."
+        )
 
     return model_url, pinned_ip, hostname, port
 
@@ -163,14 +174,16 @@ def validate_download_url(
     model_url: str,
     allowed_hosts: list[str] | None = None,
     allow_private_ips: bool = False,
-    check_dns: bool = True
+    check_dns: bool = True,
+    pinned_ip_override: str | None = None
 ) -> str:
     """Helper that validates download URL and returns validated URL string."""
     validated_url, _, _, _ = validate_and_resolve_download_url(
         model_url,
         allowed_hosts=allowed_hosts,
         allow_private_ips=allow_private_ips,
-        check_dns=check_dns
+        check_dns=check_dns,
+        pinned_ip_override=pinned_ip_override
     )
     return validated_url
 
@@ -185,12 +198,14 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         self,
         allowed_hosts: list[str] | None = None,
         max_redirects: int = 3,
-        check_dns: bool = True
+        check_dns: bool = True,
+        pinned_ip_override: str | None = None
     ):
         super().__init__()
         self.allowed_hosts = allowed_hosts
         self.max_redirects = max_redirects
         self.check_dns = check_dns
+        self.pinned_ip_override = pinned_ip_override
         self.redirect_count = 0
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -201,7 +216,12 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
             )
 
         # Validate target redirect URL before sending any request
-        validate_and_resolve_download_url(newurl, allowed_hosts=self.allowed_hosts, check_dns=self.check_dns)
+        validate_and_resolve_download_url(
+            newurl,
+            allowed_hosts=self.allowed_hosts,
+            check_dns=self.check_dns,
+            pinned_ip_override=self.pinned_ip_override
+        )
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -236,6 +256,13 @@ class SafeHTTPSHandler(urllib.request.HTTPSHandler):
 
         class PinnedConnection(http.client.HTTPSConnection):
             def connect(conn_self):
+                # Ensure security invariant: destination MUST be an IP literal, never an unresolved hostname
+                try:
+                    ipaddress.ip_address(pinned_ip)
+                except ValueError:
+                    raise GLBValidationError(
+                        f"Security invariant violated: connection destination '{pinned_ip}' is not a valid IP address."
+                    )
                 # Connect raw socket directly to the validated pinned IP.
                 # No second DNS resolution can occur.
                 conn_self.sock = conn_self._create_connection(
@@ -290,7 +317,11 @@ def stream_download_model(
         model_url,
         headers={"User-Agent": "RoomGenie-AI/1.0"}
     )
-    redirect_handler = SafeRedirectHandler(allowed_hosts=allowed_hosts, check_dns=check_dns)
+    redirect_handler = SafeRedirectHandler(
+        allowed_hosts=allowed_hosts,
+        check_dns=check_dns,
+        pinned_ip_override=pinned_ip_override
+    )
     https_handler = SafeHTTPSHandler(
         allowed_hosts=allowed_hosts,
         check_dns=check_dns,
