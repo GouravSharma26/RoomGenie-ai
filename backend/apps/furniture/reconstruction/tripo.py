@@ -1,10 +1,13 @@
+import ipaddress
 import json
 import logging
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
 from typing import Any
+from urllib.parse import urlsplit
 from django.conf import settings
 
 from apps.furniture.reconstruction.base import BaseImageTo3DAdapter, ReconstructionResult
@@ -25,22 +28,171 @@ def sanitize_sensitive_text(text: str, secret: str = '') -> str:
     return sanitized[:255]
 
 
+def validate_download_url(
+    model_url: str,
+    allowed_hosts: list[str] | None = None,
+    allow_private_ips: bool = False,
+    check_dns: bool = True
+) -> str:
+    """
+    Validates model download URLs against SSRF, unauthorized destinations, and non-HTTPS protocols.
+    Enforces:
+    1. Scheme MUST be HTTPS.
+    2. Explicit provider/CDN host policy whitelist.
+    3. Rejects userinfo in URLs.
+    4. Rejects non-standard ports (only port 443 permitted).
+    5. Rejects localhost, loopback, private RFC1918, link-local, and reserved IP addresses.
+    6. DNS resolution verification: ensures resolved IP is not a private/local network address.
+    """
+    if not model_url or not isinstance(model_url, str):
+        raise GLBValidationError("Model download URL must be a non-empty string.")
+
+    try:
+        parsed = urlsplit(model_url)
+    except Exception as err:
+        raise GLBValidationError(f"Invalid model download URL format: {err}") from err
+
+    scheme = (parsed.scheme or '').lower()
+    if scheme != 'https':
+        raise GLBValidationError(
+            f"Invalid model download URL scheme: '{parsed.scheme}'. Only HTTPS is permitted for 3D model downloads."
+        )
+
+    hostname = (parsed.hostname or '').lower().strip()
+    if not hostname:
+        raise GLBValidationError("Model download URL missing hostname.")
+
+    if parsed.username or parsed.password:
+        raise GLBValidationError("Model download URL contains disallowed user credentials.")
+
+    if parsed.port is not None and parsed.port != 443:
+        raise GLBValidationError(
+            f"Disallowed port ({parsed.port}) in model download URL. Only standard HTTPS port 443 is permitted."
+        )
+
+    # 1. Check for localhost / loopback string names
+    if hostname in ('localhost', 'localhost.localdomain'):
+        raise GLBValidationError(f"Disallowed destination in model download URL: {hostname}")
+
+    # 2. Check for IP literals and block private/loopback/link-local ranges
+    ip = None
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        # Hostname is a domain name, not an IP literal
+        ip = None
+
+    if ip is not None and not allow_private_ips:
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or
+            ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise GLBValidationError(
+                f"Model download destination '{hostname}' is a disallowed private or local IP address."
+            )
+
+    # 3. Match against allowed hosts whitelist
+    if allowed_hosts is None:
+        configured = getattr(
+            settings,
+            'IMAGE_TO_3D_ALLOWED_HOSTS',
+            ['tripo3d.ai', '.tripo3d.ai', 'amazonaws.com', '.amazonaws.com', 'cloudfront.net', '.cloudfront.net']
+        )
+        allowed_hosts = configured
+
+    clean_allowed = [h.strip().lower() for h in allowed_hosts if h.strip()]
+    matched = False
+    for pattern in clean_allowed:
+        if pattern.startswith('.'):
+            # Suffix match, e.g. '.tripo3d.ai' matches 'tripo3d.ai' and 'api.tripo3d.ai'
+            bare = pattern[1:]
+            if hostname == bare or hostname.endswith(pattern):
+                matched = True
+                break
+        else:
+            # Exact or subdomain match, e.g. 'tripo3d.ai' matches 'tripo3d.ai' and 'api.tripo3d.ai'
+            if hostname == pattern or hostname.endswith('.' + pattern):
+                matched = True
+                break
+
+    if not matched:
+        raise GLBValidationError(
+            f"Model download host '{hostname}' is not in the allowed provider/CDN whitelist."
+        )
+
+    # 4. Resolve DNS to ensure destination cannot rebind to local or private networks
+    if check_dns and not allow_private_ips:
+        try:
+            addr_entries = socket.getaddrinfo(hostname, 443, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+            if not addr_entries:
+                raise GLBValidationError(f"Failed to resolve hostname '{hostname}' for model download.")
+            for entry in addr_entries:
+                resolved_ip_str = entry[4][0]
+                resolved_ip = ipaddress.ip_address(resolved_ip_str)
+                if (resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or
+                    resolved_ip.is_reserved or resolved_ip.is_multicast or resolved_ip.is_unspecified):
+                    raise GLBValidationError(
+                        f"Model download destination '{hostname}' resolved to disallowed local/private address ({resolved_ip_str})."
+                    )
+        except socket.gaierror as e:
+            raise GLBValidationError(f"DNS resolution failed for model download host '{hostname}': {e}") from e
+
+    return model_url
+
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """
+    Subclass of HTTPRedirectHandler that intercepts 301/302/303/307 redirects and verifies
+    the new target destination against the strict URL security policy before making any network request.
+    Prevents SSRF redirection to localhost, cloud metadata services, and internal network IP ranges.
+    """
+    def __init__(
+        self,
+        allowed_hosts: list[str] | None = None,
+        max_redirects: int = 3,
+        check_dns: bool = True
+    ):
+        super().__init__()
+        self.allowed_hosts = allowed_hosts
+        self.max_redirects = max_redirects
+        self.check_dns = check_dns
+        self.redirect_count = 0
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self.redirect_count += 1
+        if self.redirect_count > self.max_redirects:
+            raise GLBValidationError(
+                f"Too many redirects ({self.redirect_count}) while downloading model (max allowed: {self.max_redirects})."
+            )
+
+        # Validate target redirect URL before sending any request
+        validate_download_url(newurl, allowed_hosts=self.allowed_hosts, check_dns=self.check_dns)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def stream_download_model(
     model_url: str,
     max_size_bytes: int = 15 * 1024 * 1024,
     chunk_size: int = 64 * 1024,
-    timeout: float = 30.0
+    timeout: float = 30.0,
+    allowed_hosts: list[str] | None = None,
+    check_dns: bool = True
 ) -> bytes:
     """
     Streams a 3D model from a remote URL in chunks.
-    Enforces maximum size bounds during streaming without reading the entire payload into memory.
-    Treats Content-Length as advisory and immediately terminates/closes the response if exceeded.
+    1. Validates the URL against HTTPS, allowed CDN/provider domains, and SSRF restrictions.
+    2. Builds an opener with SafeRedirectHandler to validate redirect destinations.
+    3. Enforces maximum size bounds during streaming without reading the entire payload into memory.
+    4. Treats Content-Length as advisory and immediately terminates/closes the response if exceeded.
     """
+    # Validate destination before opening connection
+    validate_download_url(model_url, allowed_hosts=allowed_hosts, check_dns=check_dns)
+
     req = urllib.request.Request(
         model_url,
         headers={"User-Agent": "RoomGenie-AI/1.0"}
     )
-    resp = urllib.request.urlopen(req, timeout=timeout)
+    redirect_handler = SafeRedirectHandler(allowed_hosts=allowed_hosts, check_dns=check_dns)
+    opener = urllib.request.build_opener(redirect_handler)
+    resp = opener.open(req, timeout=timeout)
     try:
         # 1. Advisory Content-Length header check
         content_length_header = None

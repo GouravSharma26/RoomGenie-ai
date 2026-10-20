@@ -22,6 +22,25 @@ class GLBValidator:
     # Default maximum size for generated 3D models (15 MB)
     DEFAULT_MAX_SIZE_BYTES = 15 * 1024 * 1024
 
+    COMPONENT_TYPE_SIZES: dict[int, int] = {
+        5120: 1,  # BYTE
+        5121: 1,  # UNSIGNED_BYTE
+        5122: 2,  # SHORT
+        5123: 2,  # UNSIGNED_SHORT
+        5125: 4,  # UNSIGNED_INT
+        5126: 4,  # FLOAT
+    }
+
+    TYPE_NUM_COMPONENTS: dict[str, int] = {
+        'SCALAR': 1,
+        'VEC2': 2,
+        'VEC3': 3,
+        'VEC4': 4,
+        'MAT2': 4,
+        'MAT3': 9,
+        'MAT4': 16,
+    }
+
     @classmethod
     def validate(
         cls,
@@ -248,6 +267,18 @@ class GLBValidator:
                         f"glTF bufferView at index {idx} has invalid byteOffset: {bv_offset}. Must be non-negative integer."
                     )
 
+                if bv_offset % 4 != 0:
+                    raise GLBValidationError(
+                        f"glTF bufferView at index {idx} byteOffset ({bv_offset}) is not 4-byte aligned."
+                    )
+
+                byte_stride = bv.get('byteStride')
+                if byte_stride is not None:
+                    if not isinstance(byte_stride, int) or byte_stride < 4 or byte_stride > 252 or byte_stride % 4 != 0:
+                        raise GLBValidationError(
+                            f"glTF bufferView at index {idx} has invalid byteStride: {byte_stride}. Must be a multiple of 4 between 4 and 252."
+                        )
+
                 target_buf = buffers[buf_idx]
                 target_buf_len = target_buf.get('byteLength', 0)
                 if bv_offset + bv_len > target_buf_len:
@@ -262,7 +293,7 @@ class GLBValidator:
                             f"glTF bufferView {idx} range ({bv_offset + bv_len} bytes) exceeds available BIN chunk size ({bin_chunk_len} bytes) (insufficient binary data)."
                         )
 
-        # 3. Validate accessors referencing bufferViews
+        # 3. Validate accessors referencing bufferViews and their full byte spans
         accessors = json_data.get('accessors')
         if accessors is not None:
             if not isinstance(accessors, list):
@@ -270,22 +301,154 @@ class GLBValidator:
 
             for idx, acc in enumerate(accessors):
                 if not isinstance(acc, dict):
-                    continue
+                    raise GLBValidationError(f"glTF accessor at index {idx} must be an object.")
+
+                # Validate componentType
+                comp_type = acc.get('componentType')
+                if comp_type not in cls.COMPONENT_TYPE_SIZES:
+                    raise GLBValidationError(
+                        f"glTF accessor at index {idx} has invalid or unsupported componentType: {comp_type}."
+                    )
+                comp_size = cls.COMPONENT_TYPE_SIZES[comp_type]
+
+                # Validate type
+                elem_type = acc.get('type')
+                if elem_type not in cls.TYPE_NUM_COMPONENTS:
+                    raise GLBValidationError(
+                        f"glTF accessor at index {idx} has invalid or unsupported type: {elem_type}."
+                    )
+                num_components = cls.TYPE_NUM_COMPONENTS[elem_type]
+                element_size = num_components * comp_size
+
+                # Validate count
+                count = acc.get('count')
+                if not isinstance(count, int) or count < 0:
+                    raise GLBValidationError(
+                        f"glTF accessor at index {idx} has invalid count: {count}. Must be non-negative integer."
+                    )
+
+                # Validate byteOffset
+                acc_offset = acc.get('byteOffset', 0)
+                if not isinstance(acc_offset, int) or acc_offset < 0:
+                    raise GLBValidationError(
+                        f"glTF accessor at index {idx} has invalid byteOffset: {acc_offset}. Must be non-negative integer."
+                    )
+
+                # Alignment: accessor byteOffset must be a multiple of component size
+                if acc_offset % comp_size != 0:
+                    raise GLBValidationError(
+                        f"glTF accessor at index {idx} byteOffset ({acc_offset}) is not aligned to component size ({comp_size} bytes)."
+                    )
+
+                # Full byte range verification against bufferView
                 if 'bufferView' in acc:
                     bv_idx = acc['bufferView']
                     if not buffer_views or not isinstance(bv_idx, int) or bv_idx < 0 or bv_idx >= len(buffer_views):
                         raise GLBValidationError(
                             f"glTF accessor at index {idx} references invalid bufferView index {bv_idx}."
                         )
-                    acc_offset = acc.get('byteOffset', 0)
-                    if not isinstance(acc_offset, int) or acc_offset < 0:
+
+                    target_bv = buffer_views[bv_idx]
+                    target_bv_len = target_bv.get('byteLength', 0)
+                    byte_stride = target_bv.get('byteStride')
+
+                    if byte_stride is not None:
+                        if byte_stride < element_size:
+                            raise GLBValidationError(
+                                f"glTF bufferView {bv_idx} byteStride ({byte_stride}) cannot be smaller than accessor {idx} element size ({element_size} bytes)."
+                            )
+                        if count == 0:
+                            total_bytes = 0
+                        elif count == 1:
+                            total_bytes = element_size
+                        else:
+                            total_bytes = (count - 1) * byte_stride + element_size
+                    else:
+                        total_bytes = count * element_size
+
+                    end_offset = acc_offset + total_bytes
+                    if end_offset > target_bv_len:
                         raise GLBValidationError(
-                            f"glTF accessor at index {idx} has invalid byteOffset: {acc_offset}."
+                            f"glTF accessor {idx} complete data span ({acc_offset} + {total_bytes} = {end_offset} bytes) "
+                            f"exceeds target bufferView {bv_idx} byteLength ({target_bv_len} bytes)."
                         )
-                    target_bv_len = buffer_views[bv_idx].get('byteLength', 0)
-                    if acc_offset >= target_bv_len:
+
+                    # Also verify relative to underlying buffer & binary chunk
+                    buf_idx = target_bv.get('buffer')
+                    bv_offset = target_bv.get('byteOffset', 0)
+                    if buffers and isinstance(buf_idx, int) and 0 <= buf_idx < len(buffers):
+                        target_buf = buffers[buf_idx]
+                        if bv_offset + end_offset > target_buf.get('byteLength', 0):
+                            raise GLBValidationError(
+                                f"glTF accessor {idx} complete data span exceeds target buffer {buf_idx} byteLength."
+                            )
+                        if buf_idx == 0 and not target_buf.get('uri'):
+                            if bv_offset + end_offset > bin_chunk_len:
+                                raise GLBValidationError(
+                                    f"glTF accessor {idx} complete data span exceeds available BIN chunk size ({bin_chunk_len} bytes)."
+                                )
+
+                # Validate sparse accessor if present
+                if 'sparse' in acc:
+                    sparse = acc['sparse']
+                    if not isinstance(sparse, dict):
+                        raise GLBValidationError(f"glTF accessor {idx} 'sparse' must be an object.")
+                    sparse_count = sparse.get('count')
+                    if not isinstance(sparse_count, int) or sparse_count <= 0 or sparse_count > count:
                         raise GLBValidationError(
-                            f"glTF accessor {idx} byteOffset ({acc_offset}) exceeds target bufferView {bv_idx} byteLength ({target_bv_len})."
+                            f"glTF accessor {idx} sparse count ({sparse_count}) must be a positive integer <= accessor count ({count})."
+                        )
+
+                    # Validate sparse indices
+                    indices = sparse.get('indices')
+                    if not isinstance(indices, dict):
+                        raise GLBValidationError(f"glTF accessor {idx} sparse 'indices' must be an object.")
+                    indices_bv_idx = indices.get('bufferView')
+                    if not buffer_views or not isinstance(indices_bv_idx, int) or indices_bv_idx < 0 or indices_bv_idx >= len(buffer_views):
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse indices references invalid bufferView index {indices_bv_idx}."
+                        )
+                    idx_comp_type = indices.get('componentType')
+                    if idx_comp_type not in (5121, 5123, 5125):
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse indices componentType ({idx_comp_type}) must be UNSIGNED_BYTE (5121), UNSIGNED_SHORT (5123), or UNSIGNED_INT (5125)."
+                        )
+                    idx_comp_size = cls.COMPONENT_TYPE_SIZES[idx_comp_type]
+                    idx_offset = indices.get('byteOffset', 0)
+                    if not isinstance(idx_offset, int) or idx_offset < 0:
+                        raise GLBValidationError(f"glTF accessor {idx} sparse indices has invalid byteOffset: {idx_offset}.")
+                    if idx_offset % idx_comp_size != 0:
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse indices byteOffset ({idx_offset}) is not aligned to component size ({idx_comp_size} bytes)."
+                        )
+                    indices_total = sparse_count * idx_comp_size
+                    if idx_offset + indices_total > buffer_views[indices_bv_idx].get('byteLength', 0):
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse indices span ({idx_offset} + {indices_total} = {idx_offset + indices_total} bytes) "
+                            f"exceeds bufferView {indices_bv_idx} byteLength ({buffer_views[indices_bv_idx].get('byteLength', 0)} bytes)."
+                        )
+
+                    # Validate sparse values
+                    values = sparse.get('values')
+                    if not isinstance(values, dict):
+                        raise GLBValidationError(f"glTF accessor {idx} sparse 'values' must be an object.")
+                    values_bv_idx = values.get('bufferView')
+                    if not buffer_views or not isinstance(values_bv_idx, int) or values_bv_idx < 0 or values_bv_idx >= len(buffer_views):
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse values references invalid bufferView index {values_bv_idx}."
+                        )
+                    val_offset = values.get('byteOffset', 0)
+                    if not isinstance(val_offset, int) or val_offset < 0:
+                        raise GLBValidationError(f"glTF accessor {idx} sparse values has invalid byteOffset: {val_offset}.")
+                    if val_offset % comp_size != 0:
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse values byteOffset ({val_offset}) is not aligned to component size ({comp_size} bytes)."
+                        )
+                    values_total = sparse_count * element_size
+                    if val_offset + values_total > buffer_views[values_bv_idx].get('byteLength', 0):
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} sparse values span ({val_offset} + {values_total} = {val_offset + values_total} bytes) "
+                            f"exceeds bufferView {values_bv_idx} byteLength ({buffer_views[values_bv_idx].get('byteLength', 0)} bytes)."
                         )
 
 

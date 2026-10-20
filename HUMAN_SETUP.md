@@ -30,6 +30,7 @@ The project must work in mock mode without API keys. Only when you choose to ena
   1. Set `IMAGE_TO_3D_PROVIDER_MODE=tripo` in your `.env`.
   2. Set `TRIPO_API_KEY=<your-key>` in `.env`.
   3. Explicitly set `IMAGE_TO_3D_ALLOW_PAID_REQUESTS=true` in `.env` to authorize paid outbound requests. If this flag is omitted or `false`, the backend will always fall back safely to the offline procedural mock adapter.
+  4. Remote model downloads are protected against SSRF by validating the destination and any redirects against `IMAGE_TO_3D_ALLOWED_HOSTS` (defaults to `tripo3d.ai,.tripo3d.ai,amazonaws.com,.amazonaws.com,cloudfront.net,.cloudfront.net`) and blocking private/local networks.
 - Keep keys out of chat messages, Markdown, screenshots, Git commits, and frontend environment variables.
 - Review current pricing, data use, and privacy terms before sending real room photos to any hosted provider.
 

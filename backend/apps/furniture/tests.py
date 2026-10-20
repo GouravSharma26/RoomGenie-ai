@@ -2,6 +2,7 @@ import io
 import json
 import math
 import struct
+import urllib.request
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
@@ -11,7 +12,13 @@ from rest_framework.test import APITestCase
 from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
 from apps.furniture.reconstruction.validator import GLBValidator, GLBValidationError
 from apps.furniture.reconstruction.mock import MockImageTo3DAdapter, build_procedural_furniture_glb
-from apps.furniture.reconstruction.tripo import TripoImageTo3DAdapter, stream_download_model, sanitize_sensitive_text
+from apps.furniture.reconstruction.tripo import (
+    TripoImageTo3DAdapter,
+    stream_download_model,
+    sanitize_sensitive_text,
+    validate_download_url,
+    SafeRedirectHandler,
+)
 from apps.furniture.reconstruction.services import (
     resolve_catalogue_fallback,
     get_image_to_3d_adapter,
@@ -658,6 +665,162 @@ class GLBValidatorTests(APITestCase):
             GLBValidator.validate(raw_glb)
         self.assertIn("invalid buffer index", str(ctx.exception).lower())
 
+    def test_accessor_offset_not_aligned_to_component_size_rejected(self):
+        # Component type 5126 (FLOAT, 4 bytes), but byteOffset is 2 (not multiple of 4)
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 48}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 2,
+                "componentType": 5126,
+                "count": 2,
+                "type": "SCALAR"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("not aligned to component size", str(ctx.exception).lower())
+
+    def test_accessor_valid_offset_but_complete_span_exceeds_bufferview_rejected(self):
+        # Accessor byteOffset is 0 (valid inside 24-byte view),
+        # but count=4, type='VEC3' (3 floats = 12 bytes each), componentType=5126 (FLOAT)
+        # Required size = 4 * 12 = 48 bytes > 24 bytes bufferView length
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 24}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": 4,
+                "type": "VEC3"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("complete data span", str(ctx.exception).lower())
+        self.assertIn("exceeds target bufferview", str(ctx.exception).lower())
+
+    def test_accessor_byte_stride_range_exceeds_bufferview_rejected(self):
+        # bufferView byteStride is 16, count is 3, element size is 12 (VEC3 float)
+        # Required span: (3 - 1) * 16 + 12 = 44 bytes > 32 bytes bufferView length
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 32, "byteStride": 16}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": 3,
+                "type": "VEC3"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("complete data span", str(ctx.exception).lower())
+
+    def test_accessor_invalid_component_type_rejected(self):
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 32}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 9999,
+                "count": 2,
+                "type": "SCALAR"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("invalid or unsupported componenttype", str(ctx.exception).lower())
+
+    def test_accessor_invalid_type_rejected(self):
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 32}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": 2,
+                "type": "VEC99"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("invalid or unsupported type", str(ctx.exception).lower())
+
+    def test_accessor_negative_count_rejected(self):
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 32}],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": -5,
+                "type": "VEC3"
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("invalid count", str(ctx.exception).lower())
+
+    def test_bufferview_unaligned_byte_offset_rejected(self):
+        # bufferView byteOffset must be a multiple of 4
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 3, "byteLength": 16}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("not 4-byte aligned", str(ctx.exception).lower())
+
+    def test_sparse_accessor_indices_exceed_bufferview_rejected(self):
+        # Sparse count 10, indices componentType 5123 (UNSIGNED_SHORT, 2 bytes) -> needs 20 bytes
+        # But indices bufferView length is only 8 bytes
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 128}],
+            "bufferViews": [
+                {"buffer": 0, "byteOffset": 0, "byteLength": 48},  # base
+                {"buffer": 0, "byteOffset": 48, "byteLength": 8},  # sparse indices (too small!)
+                {"buffer": 0, "byteOffset": 56, "byteLength": 64}, # sparse values
+            ],
+            "accessors": [{
+                "bufferView": 0,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": 10,
+                "type": "SCALAR",
+                "sparse": {
+                    "count": 10,
+                    "indices": {"bufferView": 1, "byteOffset": 0, "componentType": 5123},
+                    "values": {"bufferView": 2, "byteOffset": 0}
+                }
+            }]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 128)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("sparse indices span", str(ctx.exception).lower())
+
 
 class MockImageTo3DAdapterTests(APITestCase):
     """
@@ -782,9 +945,14 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
         mock_resp.headers = {}
         mock_resp.read.side_effect = [chunk_data, chunk_data, chunk_data, b""]
 
-        with patch('urllib.request.urlopen', return_value=mock_resp):
+        with patch('urllib.request.OpenerDirector.open', return_value=mock_resp):
             with self.assertRaises(GLBValidationError) as ctx:
-                stream_download_model("http://example.com/oversized.glb", max_size_bytes=1000, chunk_size=512)
+                stream_download_model(
+                    "https://tripo-models.tripo3d.ai/oversized.glb",
+                    max_size_bytes=1000,
+                    chunk_size=512,
+                    check_dns=False
+                )
             self.assertIn("exceeded maximum allowed limit", str(ctx.exception))
             # Must close response cleanly
             mock_resp.close.assert_called()
@@ -796,8 +964,13 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
         mock_resp.headers = {}  # No Content-Length
         mock_resp.read.side_effect = [valid_bytes, b""]
 
-        with patch('urllib.request.urlopen', return_value=mock_resp):
-            downloaded = stream_download_model("http://example.com/chunked.glb", max_size_bytes=1024, chunk_size=512)
+        with patch('urllib.request.OpenerDirector.open', return_value=mock_resp):
+            downloaded = stream_download_model(
+                "https://tripo-models.tripo3d.ai/chunked.glb",
+                max_size_bytes=1024,
+                chunk_size=512,
+                check_dns=False
+            )
             self.assertEqual(downloaded, valid_bytes)
             mock_resp.close.assert_called()
 
@@ -805,11 +978,98 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
         mock_resp = MagicMock()
         mock_resp.headers = {'Content-Length': '25000000'}  # 25MB
 
-        with patch('urllib.request.urlopen', return_value=mock_resp):
+        with patch('urllib.request.OpenerDirector.open', return_value=mock_resp):
             with self.assertRaises(GLBValidationError) as ctx:
-                stream_download_model("http://example.com/big.glb", max_size_bytes=15 * 1024 * 1024)
+                stream_download_model(
+                    "https://tripo-models.tripo3d.ai/big.glb",
+                    max_size_bytes=15 * 1024 * 1024,
+                    check_dns=False
+                )
             self.assertIn("exceeds maximum allowed limit", str(ctx.exception))
             mock_resp.close.assert_called()
+
+    def test_validate_download_url_rejects_non_https(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("http://tripo-models.tripo3d.ai/model.glb")
+        self.assertIn("only https is permitted", str(ctx.exception).lower())
+
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("file:///etc/passwd")
+        self.assertIn("only https is permitted", str(ctx.exception).lower())
+
+    def test_validate_download_url_rejects_disallowed_hosts(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://malicious-site.com/model.glb", check_dns=False)
+        self.assertIn("not in the allowed provider/cdn whitelist", str(ctx.exception).lower())
+
+    def test_validate_download_url_rejects_localhost_and_loopback(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://localhost/model.glb", check_dns=False)
+        self.assertIn("disallowed destination", str(ctx.exception).lower())
+
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://127.0.0.1/model.glb", check_dns=False)
+        self.assertIn("disallowed", str(ctx.exception).lower())
+
+    def test_validate_download_url_rejects_private_and_link_local_ips(self):
+        # 192.168.x.x
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://192.168.1.100/model.glb", check_dns=False)
+        self.assertIn("disallowed", str(ctx.exception).lower())
+
+        # 10.x.x.x
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://10.0.0.5/model.glb", check_dns=False)
+        self.assertIn("disallowed", str(ctx.exception).lower())
+
+        # 169.254.x.x (AWS/Cloud metadata)
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://169.254.169.254/latest/meta-data", check_dns=False)
+        self.assertIn("disallowed", str(ctx.exception).lower())
+
+    def test_validate_download_url_rejects_userinfo_and_non_standard_ports(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://user:pass@tripo-models.tripo3d.ai/model.glb", check_dns=False)
+        self.assertIn("disallowed user credentials", str(ctx.exception).lower())
+
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_download_url("https://tripo-models.tripo3d.ai:8080/model.glb", check_dns=False)
+        self.assertIn("disallowed port", str(ctx.exception).lower())
+
+    def test_validate_download_url_rejects_dns_resolving_to_private_ip(self):
+        # Even if domain name is in whitelist, if DNS resolves to private IP, reject!
+        mock_dns = [(2, 0, 0, '', ('127.0.0.1', 443))]
+        with patch('socket.getaddrinfo', return_value=mock_dns):
+            with self.assertRaises(GLBValidationError) as ctx:
+                validate_download_url("https://tripo-models.tripo3d.ai/model.glb", check_dns=True)
+            self.assertIn("disallowed local/private address", str(ctx.exception).lower())
+
+    def test_safe_redirect_handler_rejects_redirect_to_disallowed_host(self):
+        handler = SafeRedirectHandler(allowed_hosts=['tripo3d.ai', '.tripo3d.ai'], check_dns=False)
+        req = urllib.request.Request("https://tripo-models.tripo3d.ai/start.glb")
+        with self.assertRaises(GLBValidationError) as ctx:
+            handler.redirect_request(req, None, 302, "Found", {}, "https://evil-attacker.com/secret.glb")
+        self.assertIn("not in the allowed provider/cdn whitelist", str(ctx.exception).lower())
+
+    def test_safe_redirect_handler_rejects_redirect_to_localhost_and_private_network(self):
+        handler = SafeRedirectHandler(allowed_hosts=['tripo3d.ai', '.tripo3d.ai'], check_dns=False)
+        req = urllib.request.Request("https://tripo-models.tripo3d.ai/start.glb")
+        with self.assertRaises(GLBValidationError) as ctx:
+            handler.redirect_request(req, None, 302, "Found", {}, "http://localhost:8000/admin")
+        self.assertIn("only https is permitted", str(ctx.exception).lower())
+
+        with self.assertRaises(GLBValidationError) as ctx:
+            handler.redirect_request(req, None, 302, "Found", {}, "https://127.0.0.1/admin")
+        self.assertIn("disallowed", str(ctx.exception).lower())
+
+    def test_safe_redirect_handler_allows_valid_https_redirect(self):
+        handler = SafeRedirectHandler(allowed_hosts=['tripo3d.ai', '.tripo3d.ai', '.cloudfront.net'], check_dns=False)
+        req = urllib.request.Request("https://tripo-models.tripo3d.ai/start.glb")
+        redirect_req = handler.redirect_request(
+            req, None, 302, "Found", {}, "https://assets.cloudfront.net/model.glb"
+        )
+        self.assertIsNotNone(redirect_req)
+        self.assertEqual(redirect_req.full_url, "https://assets.cloudfront.net/model.glb")
 
 
 class ReconstructionJobLifecycleTests(APITestCase):

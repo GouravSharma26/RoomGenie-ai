@@ -173,6 +173,14 @@ TRIPO_MODEL = os.getenv('TRIPO_MODEL', 'v3.1-20260211')
 IMAGE_TO_3D_ALLOW_PAID_REQUESTS = os.getenv('IMAGE_TO_3D_ALLOW_PAID_REQUESTS', 'false').lower() in ('true', '1', 'yes')
 IMAGE_TO_3D_MAX_OUTPUT_SIZE = int(os.getenv('IMAGE_TO_3D_MAX_OUTPUT_SIZE', str(15 * 1024 * 1024)))  # 15 MB default
 IMAGE_TO_3D_TIMEOUT_SECONDS = int(os.getenv('IMAGE_TO_3D_TIMEOUT_SECONDS', '60'))
+IMAGE_TO_3D_ALLOWED_HOSTS = [
+    h.strip().lower()
+    for h in os.getenv(
+        'IMAGE_TO_3D_ALLOWED_HOSTS',
+        'tripo3d.ai,.tripo3d.ai,amazonaws.com,.amazonaws.com,cloudfront.net,.cloudfront.net'
+    ).split(',')
+    if h.strip()
+]
 
 # Media and Ephemeral Upload Storage
 MEDIA_ROOT = os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media'))
