@@ -30,6 +30,7 @@ from apps.furniture.reconstruction.services import (
     validate_reference_dimensions,
 )
 from apps.designs.models import Design
+from apps.rooms.models import RoomPhotoUpload
 
 User = get_user_model()
 
@@ -1419,6 +1420,310 @@ class ReconstructionJobLifecycleTests(APITestCase):
         self.assertNotIn("https://api.tripo3d.ai", sanitized)
         self.assertIn("[REDACTED]", sanitized)
         self.assertIn("[URL_REDACTED]", sanitized)
+
+
+class ReconstructionAPISecurityAndStreamingTests(APITestCase):
+    """
+    Tests verifying Milestone 6.2 Secure API:
+      - Authenticated job creation
+      - Owner-scoped job access & isolation
+      - Status polling
+      - Private model streaming with secure headers & MIME types
+      - Deletion cleanup
+      - Paid-provider authorization safeguards
+    """
+
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            username='recon_user_1',
+            email='recon1@example.com',
+            password='Password123!'
+        )
+        self.user2 = User.objects.create_user(
+            username='recon_user_2',
+            email='recon2@example.com',
+            password='Password123!'
+        )
+        self.client.force_authenticate(user=self.user1)
+        self.jobs_url = reverse('furniture:reconstruction-jobs-list')
+
+    def test_job_create_unauthenticated_returns_401(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.post(self.jobs_url, {"target_category": "seating"})
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_job_create_authenticated_success_with_defaults(self):
+        payload = {
+            "target_category": "seating",
+            "prompt_label": "Comfortable Scandinavian Armchair",
+            "reference_dimensions": {"width_m": 0.9, "height_m": 0.85, "depth_m": 0.8},
+            "sync": True
+        }
+        resp = self.client.post(self.jobs_url, payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        data = resp.data
+
+        self.assertIn('id', data)
+        self.assertEqual(data['owner_id'], self.user1.id)
+        self.assertEqual(data['status'], 'completed')
+        self.assertEqual(data['target_category'], 'seating')
+        self.assertEqual(data['prompt_label'], 'Comfortable Scandinavian Armchair')
+        self.assertIsNotNone(data['model_download_url'])
+        self.assertIn(f"/api/v1/furniture/reconstruction/jobs/{data['id']}/model/", data['model_download_url'])
+        self.assertGreater(data['file_size_bytes'], 0)
+        self.assertIn('width_m', data['approximate_dimensions'])
+
+    def test_job_create_with_auto_process_false_creates_queued_job(self):
+        payload = {
+            "target_category": "tables",
+            "prompt_label": "Oak Coffee Table",
+            "auto_process": False
+        }
+        resp = self.client.post(self.jobs_url, payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        data = resp.data
+
+        self.assertEqual(data['status'], 'queued')
+        self.assertIsNone(data['model_download_url'])
+        self.assertIsNone(data['file_size_bytes'])
+
+    def test_job_create_validates_photo_upload_ownership(self):
+        from django.utils import timezone
+        # Photo owned by user 2
+        foreign_photo = RoomPhotoUpload.objects.create(
+            owner=self.user2,
+            file_path="/tmp/user2_photo.jpg",
+            original_filename="user2_photo.jpg",
+            file_size_bytes=1024,
+            content_type="image/jpeg",
+            image_format="JPEG",
+            width=800,
+            height=600,
+            expires_at=timezone.now() + timezone.timedelta(hours=1)
+        )
+
+        # User 1 attempts to link foreign photo
+        resp = self.client.post(self.jobs_url, {
+            "photo_upload_id": str(foreign_photo.id),
+            "target_category": "seating"
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("photo_upload_id", resp.data)
+        self.assertIn("does not belong to you", str(resp.data['photo_upload_id']))
+
+        # Photo owned by user 1
+        own_photo = RoomPhotoUpload.objects.create(
+            owner=self.user1,
+            file_path="/tmp/user1_photo.jpg",
+            original_filename="user1_photo.jpg",
+            file_size_bytes=1024,
+            content_type="image/jpeg",
+            image_format="JPEG",
+            width=800,
+            height=600,
+            expires_at=timezone.now() + timezone.timedelta(hours=1)
+        )
+        resp_own = self.client.post(self.jobs_url, {
+            "photo_upload_id": str(own_photo.id),
+            "target_category": "seating",
+            "auto_process": False
+        })
+        self.assertEqual(resp_own.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp_own.data['photo_upload_id'], str(own_photo.id))
+
+    def test_job_create_validates_reference_dimensions(self):
+        # Negative dimension
+        resp1 = self.client.post(self.jobs_url, {
+            "reference_dimensions": {"width_m": -1.5}
+        }, format='json')
+        self.assertEqual(resp1.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Zero dimension
+        resp2 = self.client.post(self.jobs_url, {
+            "reference_dimensions": {"width_m": 0.0}
+        }, format='json')
+        self.assertEqual(resp2.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Out of bounds (> 10m)
+        resp3 = self.client.post(self.jobs_url, {
+            "reference_dimensions": {"width_m": 12.0}
+        }, format='json')
+        self.assertEqual(resp3.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Non-numeric
+        resp4 = self.client.post(self.jobs_url, {
+            "reference_dimensions": {"width_m": "one-point-five"}
+        }, format='json')
+        self.assertEqual(resp4.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_job_create_validates_provider_mode(self):
+        resp = self.client.post(self.jobs_url, {
+            "provider": "unsupported_foreign_cloud"
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("provider", resp.data)
+
+    def test_jobs_list_is_owner_scoped_and_filterable(self):
+        # Create 2 jobs for user1, 1 for user2
+        job1 = create_reconstruction_job(self.user1, target_category='seating')
+        job2 = create_reconstruction_job(self.user1, target_category='tables')
+        run_reconstruction_job(job2)
+        create_reconstruction_job(self.user2, target_category='beds')
+
+        # User 1 listing
+        resp = self.client.get(self.jobs_url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        returned_ids = [j['id'] for j in resp.data]
+        self.assertEqual(len(returned_ids), 2)
+        self.assertIn(str(job1.id), returned_ids)
+        self.assertIn(str(job2.id), returned_ids)
+
+        # Status filter
+        resp_status = self.client.get(f"{self.jobs_url}?status=completed")
+        self.assertEqual(resp_status.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_status.data), 1)
+        self.assertEqual(resp_status.data[0]['id'], str(job2.id))
+
+        # Category filter
+        resp_cat = self.client.get(f"{self.jobs_url}?category=seating")
+        self.assertEqual(resp_cat.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_cat.data), 1)
+        self.assertEqual(resp_cat.data[0]['id'], str(job1.id))
+
+        # User 2 listing
+        self.client.force_authenticate(user=self.user2)
+        resp_u2 = self.client.get(self.jobs_url)
+        self.assertEqual(resp_u2.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_u2.data), 1)
+        self.assertNotIn(str(job1.id), [j['id'] for j in resp_u2.data])
+
+    def test_job_detail_is_owner_scoped_and_serves_status_polling(self):
+        job = create_reconstruction_job(self.user1, target_category='seating')
+        detail_url = reverse('furniture:reconstruction-jobs-detail', kwargs={'pk': job.id})
+
+        # User 1 polling queued job
+        resp = self.client.get(detail_url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['status'], 'queued')
+        self.assertIsNone(resp.data['model_download_url'])
+
+        # User 2 accessing user 1's job -> 404
+        self.client.force_authenticate(user=self.user2)
+        resp_foreign = self.client.get(detail_url)
+        self.assertEqual(resp_foreign.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Anonymous -> 401
+        self.client.force_authenticate(user=None)
+        resp_anon = self.client.get(detail_url)
+        self.assertEqual(resp_anon.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_job_process_action_triggers_queued_job(self):
+        job = create_reconstruction_job(self.user1, target_category='storage')
+        process_url = reverse('furniture:reconstruction-jobs-process', kwargs={'pk': job.id})
+
+        # Trigger process with sync=True
+        resp = self.client.post(process_url, {"sync": True}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['status'], 'completed')
+        self.assertIsNotNone(resp.data['model_download_url'])
+
+        # Re-triggering completed job -> 400 Bad Request
+        resp_repeat = self.client.post(process_url, {"sync": True}, format='json')
+        self.assertEqual(resp_repeat.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already completed", resp_repeat.data['detail'])
+
+        # User 2 triggering user 1's job -> 404
+        self.client.force_authenticate(user=self.user2)
+        resp_foreign = self.client.post(process_url, {"sync": True})
+        self.assertEqual(resp_foreign.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_job_model_streaming_security_headers_and_payload(self):
+        job = create_reconstruction_job(self.user1, target_category='seating')
+        run_reconstruction_job(job)
+        model_url = reverse('furniture:reconstruction-jobs-model', kwargs={'pk': job.id})
+
+        # User 1 streaming completed model
+        resp = self.client.get(model_url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp['Content-Type'], 'model/gltf-binary')
+        self.assertEqual(resp['Cache-Control'], 'private, no-cache, no-store, must-revalidate')
+        self.assertEqual(resp['X-Content-Type-Options'], 'nosniff')
+
+        # Read streaming content
+        streamed_content = b"".join(resp.streaming_content)
+        self.assertEqual(len(streamed_content), job.file_size_bytes)
+        # Verify valid glTF 2.0 binary header
+        self.assertTrue(streamed_content.startswith(b'glTF'))
+
+        # User 2 streaming user 1's model -> 404
+        self.client.force_authenticate(user=self.user2)
+        resp_foreign = self.client.get(model_url)
+        self.assertEqual(resp_foreign.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Anonymous streaming -> 401
+        self.client.force_authenticate(user=None)
+        resp_anon = self.client.get(model_url)
+        self.assertEqual(resp_anon.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_job_model_streaming_rejects_non_completed_job(self):
+        job = create_reconstruction_job(self.user1, target_category='decor')
+        model_url = reverse('furniture:reconstruction-jobs-model', kwargs={'pk': job.id})
+
+        resp = self.client.get(model_url)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not ready", resp.data['detail'])
+
+    def test_job_model_streaming_handles_missing_file_or_path_traversal(self):
+        job = create_reconstruction_job(self.user1, target_category='seating')
+        run_reconstruction_job(job)
+        model_url = reverse('furniture:reconstruction-jobs-model', kwargs={'pk': job.id})
+
+        # Simulate missing file on disk
+        delete_reconstruction_job_file(job)
+        resp_missing = self.client.get(model_url)
+        self.assertEqual(resp_missing.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("not found on disk", resp_missing.data['detail'])
+
+        # Simulate path traversal attempt
+        job.model_file_path = "../../etc/passwd"
+        job.save()
+        resp_traversal = self.client.get(model_url)
+        self.assertEqual(resp_traversal.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("Security violation", resp_traversal.data['detail'])
+
+    def test_job_delete_cleans_up_record_and_file(self):
+        job = create_reconstruction_job(self.user1, target_category='seating')
+        run_reconstruction_job(job)
+        abs_path = job.get_absolute_model_path()
+        self.assertTrue(abs_path.exists())
+
+        detail_url = reverse('furniture:reconstruction-jobs-detail', kwargs={'pk': job.id})
+        resp = self.client.delete(detail_url)
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Database record must be gone
+        self.assertFalse(FurnitureReconstructionJob.objects.filter(id=job.id).exists())
+        # Model file on disk must be purged
+        self.assertFalse(abs_path.exists())
+
+    def test_paid_provider_safeguard_retained_in_api(self):
+        # When user creates job with provider="tripo" while IMAGE_TO_3D_ALLOW_PAID_REQUESTS=False,
+        # it falls back to mock safely and records audit reason
+        payload = {
+            "target_category": "seating",
+            "prompt_label": "Tripo Gated Armchair",
+            "provider": "tripo",
+            "sync": True
+        }
+        with patch('apps.furniture.reconstruction.tripo.urllib.request.urlopen') as mock_urlopen:
+            resp = self.client.post(self.jobs_url, payload, format='json')
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+            # Never touched the network
+            mock_urlopen.assert_not_called()
+
+        data = resp.data
+        self.assertEqual(data['status'], 'completed')
+        self.assertIsNotNone(data['model_download_url'])
 
 
 

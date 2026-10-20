@@ -1,12 +1,45 @@
+import logging
+import threading
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from django.http import FileResponse
 from rest_framework import permissions, serializers, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from apps.furniture.models import FurnitureAsset
-from apps.furniture.serializers import FurnitureAssetSerializer
+from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
+from apps.furniture.serializers import (
+    FurnitureAssetSerializer,
+    FurnitureReconstructionJobCreateSerializer,
+    FurnitureReconstructionJobSerializer,
+)
+from apps.furniture.reconstruction.services import (
+    create_reconstruction_job,
+    run_reconstruction_job,
+    delete_reconstruction_job_file,
+)
 from apps.furniture.budget import calculate_scene_budget
+from apps.rooms.models import RoomPhotoUpload
+
+logger = logging.getLogger(__name__)
+
+
+def _run_reconstruction_in_background(job_id_str: str) -> None:
+    """Helper to execute reconstruction job in a background daemon thread."""
+    def _worker():
+        from django.db import connection
+        try:
+            connection.close()
+            job = FurnitureReconstructionJob.objects.get(id=job_id_str)
+            run_reconstruction_job(job)
+        except Exception as exc:
+            logger.error("Background reconstruction execution failed for job %s: %s", job_id_str, exc)
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
 
 class FurnitureAssetViewSet(viewsets.ReadOnlyModelViewSet):
@@ -214,4 +247,181 @@ class BudgetEstimateView(APIView):
                 {"detail": f"Failed to calculate budget: {str(exc)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class FurnitureReconstructionJobViewSet(viewsets.ModelViewSet):
+    """
+    CRUD and actions for 3D furniture reconstruction jobs:
+      - POST   /api/v1/furniture/reconstruction/jobs/         (create new job, optionally kicks off processing)
+      - GET    /api/v1/furniture/reconstruction/jobs/         (list owner's jobs, filter by ?status= & ?category=)
+      - GET    /api/v1/furniture/reconstruction/jobs/<id>/    (retrieve single job / status polling endpoint)
+      - DELETE /api/v1/furniture/reconstruction/jobs/<id>/    (delete job and purge private model artifact)
+      - POST   /api/v1/furniture/reconstruction/jobs/<id>/process/ (trigger processing of a queued job)
+      - GET    /api/v1/furniture/reconstruction/jobs/<id>/model/   (stream private validated GLB binary)
+
+    Strict Security Rules:
+      - Authenticated users only (IsAuthenticated). Anonymous requests return 401.
+      - Owner-scoped queries: accessing another user's job returns 404 Not Found.
+      - Safe private model streaming: prevents directory traversal, checks completed status,
+        and sets private no-cache headers.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return FurnitureReconstructionJobCreateSerializer
+        return FurnitureReconstructionJobSerializer
+
+    def get_queryset(self):
+        queryset = FurnitureReconstructionJob.objects.filter(owner=self.request.user)
+
+        # 1. Filter by status (queued, processing, completed, failed)
+        job_status = self.request.query_params.get('status')
+        if job_status:
+            queryset = queryset.filter(status__iexact=job_status.strip())
+
+        # 2. Filter by category
+        category = self.request.query_params.get('category') or self.request.query_params.get('target_category')
+        if category:
+            queryset = queryset.filter(target_category__iexact=category.strip())
+
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = FurnitureReconstructionJobCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        photo_upload_id = serializer.validated_data.get('photo_upload_id')
+        photo_upload = None
+        if photo_upload_id:
+            photo_upload = RoomPhotoUpload.objects.filter(
+                id=photo_upload_id,
+                owner=request.user,
+                is_deleted=False
+            ).first()
+
+        target_category = serializer.validated_data.get('target_category', 'seating')
+        prompt_label = serializer.validated_data.get('prompt_label', '')
+        reference_dimensions = serializer.validated_data.get('reference_dimensions')
+        provider = serializer.validated_data.get('provider') or None
+        auto_process = serializer.validated_data.get('auto_process', True)
+        sync = serializer.validated_data.get('sync', False)
+
+        job = create_reconstruction_job(
+            user=request.user,
+            photo_upload=photo_upload,
+            target_category=target_category,
+            prompt_label=prompt_label,
+            provider=provider,
+            reference_dimensions=reference_dimensions
+        )
+
+        if auto_process:
+            if sync:
+                job = run_reconstruction_job(job)
+            else:
+                _run_reconstruction_in_background(str(job.id))
+
+        output_serializer = FurnitureReconstructionJobSerializer(
+            job,
+            context={'request': request}
+        )
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+    def retrieve(self, request, *args, **kwargs):
+        """Serves as the primary status polling endpoint for reconstruction jobs."""
+        job = self.get_object()
+        serializer = FurnitureReconstructionJobSerializer(job, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        """Deletes reconstruction job and purges associated disk artifacts."""
+        job = self.get_object()
+        delete_reconstruction_job_file(job)
+        job.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='process', url_name='process')
+    def process_job(self, request, pk=None):
+        """
+        Triggers execution of a queued reconstruction job.
+        Accepts optional {"sync": true/false}.
+        """
+        job = self.get_object()
+        if job.status == FurnitureReconstructionJob.STATUS_PROCESSING:
+            return Response(
+                {"detail": "Job is already currently processing."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if job.status == FurnitureReconstructionJob.STATUS_COMPLETED:
+            return Response(
+                {"detail": "Job is already completed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if job.status == FurnitureReconstructionJob.STATUS_FAILED:
+            return Response(
+                {"detail": "Job has already failed and cannot be re-executed. Please create a new job."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        sync = True
+        if isinstance(request.data, dict) and 'sync' in request.data:
+            sync = bool(request.data['sync'])
+
+        if sync:
+            job = run_reconstruction_job(job)
+        else:
+            _run_reconstruction_in_background(str(job.id))
+
+        serializer = FurnitureReconstructionJobSerializer(job, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='model', url_name='model')
+    def stream_model(self, request, pk=None):
+        """
+        Private, authenticated model streaming endpoint.
+        Streams validated binary GLB 3D model files with model/gltf-binary content type
+        and strict private cache control headers.
+        """
+        job = self.get_object()
+        if job.status != FurnitureReconstructionJob.STATUS_COMPLETED:
+            return Response(
+                {
+                    "detail": f"3D model is not ready for download. Current status: '{job.status}'.",
+                    "status": job.status,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            abs_path = job.get_absolute_model_path()
+        except PermissionError as p_err:
+            logger.error("Path traversal attempt detected on job %s: %s", job.id, p_err)
+            return Response(
+                {"detail": "Security violation: model path outside allowed media storage."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not abs_path or not abs_path.is_file():
+            return Response(
+                {"detail": "Reconstructed 3D model file not found on disk."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        file_size = abs_path.stat().st_size
+        response = FileResponse(
+            open(abs_path, 'rb'),
+            content_type='model/gltf-binary',
+            as_attachment=False,
+            filename=f"{job.id.hex}.glb"
+        )
+        response['Content-Length'] = str(file_size)
+        response['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
 
