@@ -1,9 +1,13 @@
+import struct
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
-from apps.furniture.models import FurnitureAsset
+from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
+from apps.furniture.reconstruction.validator import GLBValidator, GLBValidationError
+from apps.furniture.reconstruction.mock import MockImageTo3DAdapter, build_procedural_furniture_glb
+from apps.furniture.reconstruction.tripo import TripoImageTo3DAdapter
 from apps.designs.models import Design
 
 User = get_user_model()
@@ -467,4 +471,326 @@ class BudgetEstimateTests(APITestCase):
         self.assertFalse(constraints['is_valid'])
         self.assertGreaterEqual(constraints['violations_count'], 1)
         self.assertEqual(constraints['violations'][0]['axis'], 'X')
+
+
+class GLBValidatorTests(APITestCase):
+    """
+    Automated test suite for GLBValidator ensuring adherence to Khronos glTF 2.0 Binary specification.
+    """
+
+    def test_valid_procedural_glb_passes_validation(self):
+        glb_bytes = build_procedural_furniture_glb(width=1.5, height=0.8, depth=0.9)
+        meta = GLBValidator.validate(glb_bytes)
+        self.assertTrue(meta['valid'])
+        self.assertEqual(meta['version'], 2)
+        self.assertTrue(meta['has_binary_chunk'])
+        self.assertIsNotNone(meta['approximate_dimensions'])
+        dims = meta['approximate_dimensions']
+        self.assertAlmostEqual(dims['width_m'], 1.5, places=1)
+        self.assertAlmostEqual(dims['height_m'], 0.8, places=1)
+        self.assertAlmostEqual(dims['depth_m'], 0.9, places=1)
+
+    def test_empty_payload_rejected(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(b"")
+        self.assertIn("empty", str(ctx.exception).lower())
+
+    def test_header_too_short_rejected(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(b"glTF12")
+        self.assertIn("too short", str(ctx.exception).lower())
+
+    def test_invalid_magic_rejected(self):
+        bad_magic = struct.pack('<III', 0x12345678, 2, 20) + b"\x00" * 8
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(bad_magic)
+        self.assertIn("Invalid GLB magic", str(ctx.exception))
+
+    def test_unsupported_version_rejected(self):
+        bad_ver = struct.pack('<III', GLBValidator.MAGIC_GLTF, 1, 20) + b"\x00" * 8
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(bad_ver)
+        self.assertIn("Unsupported glTF version: 1", str(ctx.exception))
+
+    def test_declared_length_mismatch_rejected(self):
+        # Header claims 40 bytes, but payload is only 20 bytes
+        bad_len = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, 40) + b"\x00" * 8
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(bad_len)
+        self.assertIn("does not match actual byte count", str(ctx.exception))
+
+    def test_total_length_not_4byte_aligned_rejected(self):
+        # 21 bytes (not divisible by 4)
+        bad_aligned = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, 21) + b"\x00" * 9
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(bad_aligned)
+        self.assertIn("not 4-byte aligned", str(ctx.exception))
+
+    def test_first_chunk_must_be_json(self):
+        # Chunk 0 with BIN type instead of JSON
+        header = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, 24)
+        chunk0 = struct.pack('<II', 4, GLBValidator.CHUNK_TYPE_BIN) + b"test"
+        bad_chunk = header + chunk0
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(bad_chunk)
+        self.assertIn("First GLB chunk must be type JSON", str(ctx.exception))
+
+    def test_chunk_length_overflow_rejected(self):
+        # Declared chunk length 100 exceeds total file size of 28 bytes
+        header = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, 28)
+        chunk0 = struct.pack('<II', 100, GLBValidator.CHUNK_TYPE_JSON) + b"test" + b"test"
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(header + chunk0)
+        self.assertIn("overflows declared file boundary", str(ctx.exception))
+
+    def test_chunk_not_4byte_aligned_rejected(self):
+        # Chunk length 5 is not divisible by 4
+        header = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, 28)
+        chunk0 = struct.pack('<II', 5, GLBValidator.CHUNK_TYPE_JSON) + b"hello" + b"   "
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(header + chunk0)
+        self.assertIn("not 4-byte aligned", str(ctx.exception))
+
+    def test_file_size_limit_enforced(self):
+        small_limit = 100
+        glb_bytes = build_procedural_furniture_glb()
+        self.assertGreater(len(glb_bytes), small_limit)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(glb_bytes, max_size_bytes=small_limit)
+        self.assertIn("exceeds maximum allowed limit", str(ctx.exception))
+
+    def test_trailing_unparsed_bytes_rejected(self):
+        glb_bytes = build_procedural_furniture_glb()
+        # Append 4 trailing garbage bytes and update total length
+        corrupted = glb_bytes + b"ABCD"
+        corrupted = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, len(corrupted)) + corrupted[12:]
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(corrupted)
+        # Should raise either chunk header truncated or unparsed trailing bytes
+        self.assertTrue("trailing bytes" in str(ctx.exception) or "truncated" in str(ctx.exception).lower())
+
+
+class MockImageTo3DAdapterTests(APITestCase):
+    """
+    Automated tests verifying deterministic procedural 3D model generation and fallbacks.
+    """
+
+    def setUp(self):
+        self.adapter = MockImageTo3DAdapter()
+
+    def test_generates_valid_glb_for_all_categories(self):
+        categories = ['seating', 'tables', 'storage', 'beds', 'decor']
+        for cat in categories:
+            res = self.adapter.generate_furniture_model(
+                image_path='sample.jpg',
+                category=cat,
+                prompt_label=f'Test {cat}'
+            )
+            self.assertEqual(res.format, 'glb')
+            self.assertEqual(res.provider, 'mock')
+            self.assertGreater(len(res.model_bytes), 0)
+            # Must strictly pass GLBValidator
+            val = GLBValidator.validate(res.model_bytes)
+            self.assertTrue(val['valid'])
+            self.assertTrue(val['has_binary_chunk'])
+            self.assertIn(cat, self.adapter.CATALOGUE_FALLBACKS)
+            self.assertEqual(res.suggested_catalogue_fallback_id, self.adapter.CATALOGUE_FALLBACKS[cat])
+
+    def test_respects_reference_dimensions(self):
+        ref_dims = {'width_m': 2.4, 'height_m': 0.9, 'depth_m': 1.1}
+        res = self.adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            category='seating',
+            reference_dimensions=ref_dims
+        )
+        self.assertAlmostEqual(res.approximate_dimensions['width_m'], 2.4, places=1)
+        self.assertAlmostEqual(res.approximate_dimensions['height_m'], 0.9, places=1)
+        self.assertAlmostEqual(res.approximate_dimensions['depth_m'], 1.1, places=1)
+
+    def test_simulation_failure_hook(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self.adapter.generate_furniture_model(
+                image_path='sample.jpg',
+                context={'simulate_failure': True, 'failure_message': 'CUDA out of memory'}
+            )
+        self.assertIn('CUDA out of memory', str(ctx.exception))
+
+    def test_simulation_invalid_glb_hook(self):
+        res = self.adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            context={'simulate_invalid_glb': True}
+        )
+        # Returns HTML/bad bytes
+        with self.assertRaises(GLBValidationError):
+            GLBValidator.validate(res.model_bytes)
+
+    def test_simulation_oversized_glb_hook(self):
+        res = self.adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            context={'simulate_oversized_glb': True}
+        )
+        with self.assertRaises(GLBValidationError):
+            GLBValidator.validate(res.model_bytes, max_size_bytes=15 * 1024 * 1024)
+
+
+class TripoAdapterFallbackTests(APITestCase):
+    """
+    Tests ensuring TripoImageTo3DAdapter safely falls back to mock and redacts secrets.
+    """
+
+    def test_tripo_falls_back_when_key_unconfigured_or_placeholder(self):
+        adapter = TripoImageTo3DAdapter(api_key='tsk_placeholder_12345')
+        res = adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            category='seating',
+            prompt_label='Nordic sofa'
+        )
+        self.assertEqual(res.provider, 'mock')
+        self.assertTrue(res.raw_metadata.get('fallback_used'))
+        self.assertEqual(res.raw_metadata.get('fallback_reason'), 'tripo_api_key_not_configured')
+        # Ensure returned model is valid GLB
+        val = GLBValidator.validate(res.model_bytes)
+        self.assertTrue(val['valid'])
+
+    def test_tripo_error_redacts_api_key(self):
+        secret_key = "secret_live_api_key_9999"
+        adapter = TripoImageTo3DAdapter(api_key=secret_key)
+        # Simulating live call without network should trigger exception and fall back
+        res = adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            category='tables',
+            context={'file_token': 'dummy'}
+        )
+        self.assertEqual(res.provider, 'mock')
+        self.assertTrue(res.raw_metadata.get('fallback_used'))
+        reason = res.raw_metadata.get('fallback_reason', '')
+        self.assertNotIn(secret_key, reason)
+
+
+class ReconstructionJobLifecycleTests(APITestCase):
+    """
+    Tests verifying FurnitureReconstructionJob state transitions, service pipeline,
+    and orphan artifact cleanup.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='reconstruct_tester',
+            email='recon@example.com',
+            password='Password123!'
+        )
+
+    def test_job_creation_and_state_transitions(self):
+        from apps.furniture.reconstruction.services import create_reconstruction_job
+        job = create_reconstruction_job(
+            user=self.user,
+            target_category='seating',
+            prompt_label='Lounge Chair'
+        )
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_QUEUED)
+        self.assertEqual(job.suggested_catalogue_fallback_id, 'chair-accent-armchair')
+        self.assertIsNone(job.completed_at)
+
+        # Valid transition: queued -> processing
+        job.transition_to(FurnitureReconstructionJob.STATUS_PROCESSING)
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_PROCESSING)
+        self.assertIsNone(job.completed_at)
+
+        # Valid transition: processing -> completed
+        job.transition_to(FurnitureReconstructionJob.STATUS_COMPLETED)
+        self.assertEqual(job.status, FurnitureReconstructionJob.STATUS_COMPLETED)
+        self.assertIsNotNone(job.completed_at)
+
+        # Illegal transition: completed -> processing must raise ValueError
+        with self.assertRaises(ValueError):
+            job.transition_to(FurnitureReconstructionJob.STATUS_PROCESSING)
+
+        # Illegal transition: completed -> queued must raise ValueError
+        with self.assertRaises(ValueError):
+            job.transition_to(FurnitureReconstructionJob.STATUS_QUEUED)
+
+    def test_run_reconstruction_job_successful_pipeline(self):
+        from apps.furniture.reconstruction.services import (
+            create_reconstruction_job,
+            run_reconstruction_job,
+            delete_reconstruction_job_file
+        )
+        job = create_reconstruction_job(
+            user=self.user,
+            target_category='tables',
+            prompt_label='Coffee Table',
+            reference_dimensions={'width_m': 1.1, 'height_m': 0.45, 'depth_m': 0.65}
+        )
+        self.assertEqual(job.suggested_catalogue_fallback_id, 'table-oak-coffee')
+
+        # Run pipeline
+        completed_job = run_reconstruction_job(job)
+        self.assertEqual(completed_job.status, FurnitureReconstructionJob.STATUS_COMPLETED)
+        self.assertIsNotNone(completed_job.completed_at)
+        self.assertGreater(completed_job.file_size_bytes, 0)
+        self.assertTrue(completed_job.model_file_path.endswith(f"{completed_job.id.hex}.glb"))
+
+        # Verify model file actually exists on disk in private storage
+        abs_path = completed_job.get_absolute_model_path()
+        self.assertIsNotNone(abs_path)
+        self.assertTrue(abs_path.exists())
+
+        # Verify file content is valid GLB
+        with open(abs_path, 'rb') as f:
+            saved_bytes = f.read()
+        val = GLBValidator.validate(saved_bytes)
+        self.assertTrue(val['valid'])
+
+        # Clean up file
+        deleted = delete_reconstruction_job_file(completed_job)
+        self.assertTrue(deleted)
+        self.assertFalse(abs_path.exists())
+
+    def test_run_reconstruction_job_handles_provider_failure_without_stuck_state(self):
+        from apps.furniture.reconstruction.services import create_reconstruction_job, run_reconstruction_job
+        job = create_reconstruction_job(
+            user=self.user,
+            target_category='beds',
+            prompt_label='Platform Bed'
+        )
+
+        failed_job = run_reconstruction_job(
+            job,
+            context={'simulate_failure': True, 'failure_message': 'GPU service unavailable'}
+        )
+
+        self.assertEqual(failed_job.status, FurnitureReconstructionJob.STATUS_FAILED)
+        self.assertEqual(failed_job.error_category, 'provider_error')
+        self.assertIn('GPU service unavailable', failed_job.error_message)
+        self.assertIsNotNone(failed_job.completed_at)
+        # Verify no orphan file created
+        self.assertEqual(failed_job.model_file_path, '')
+        self.assertEqual(failed_job.suggested_catalogue_fallback_id, 'bed-queen-platform')
+
+    def test_run_reconstruction_job_handles_validation_failure_and_cleans_up(self):
+        from apps.furniture.reconstruction.services import create_reconstruction_job, run_reconstruction_job
+        job = create_reconstruction_job(
+            user=self.user,
+            target_category='storage',
+            prompt_label='Tall Bookshelf'
+        )
+
+        failed_job = run_reconstruction_job(
+            job,
+            context={'simulate_invalid_glb': True}
+        )
+
+        self.assertEqual(failed_job.status, FurnitureReconstructionJob.STATUS_FAILED)
+        self.assertEqual(failed_job.error_category, 'validation_failed')
+        self.assertIsNotNone(failed_job.completed_at)
+        self.assertEqual(failed_job.model_file_path, '')
+
+    def test_catalogue_fallback_keyword_resolution(self):
+        from apps.furniture.reconstruction.services import resolve_catalogue_fallback
+        self.assertEqual(resolve_catalogue_fallback('seating', 'Velvet Armchair'), 'chair-accent-armchair')
+        self.assertEqual(resolve_catalogue_fallback('tables', 'Computer Desk'), 'desk-workspace-study')
+        self.assertEqual(resolve_catalogue_fallback('storage', 'Wooden Wardrobe'), 'storage-wardrobe-2door')
+        self.assertEqual(resolve_catalogue_fallback('decor', 'Tall Indoor Plant'), 'decor-plant-floor-vase')
+        self.assertEqual(resolve_catalogue_fallback('unknown', ''), 'sofa-modern-3seater')
+
 
