@@ -142,7 +142,19 @@ export function clampPositionToRoom(
 }
 
 export function serializeCanonicalScene(scene: CanonicalScene): string {
-  return JSON.stringify(scene, null, 2);
+  // Strip ephemeral blob: URLs so they are not persisted to storage,
+  // while retaining stable reconstructionJobId for authenticated re-hydration.
+  const sanitizedScene: CanonicalScene = {
+    ...scene,
+    objects: scene.objects.map((obj) => {
+      if (obj.modelUrl && obj.modelUrl.startsWith('blob:')) {
+        const { modelUrl: _modelUrl, ...rest } = obj;
+        return rest;
+      }
+      return obj;
+    }),
+  };
+  return JSON.stringify(sanitizedScene, null, 2);
 }
 
 export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
@@ -206,6 +218,20 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
         }
       }
 
+      const reconstructionJobId =
+        typeof obj.reconstructionJobId === 'string' && obj.reconstructionJobId.trim()
+          ? obj.reconstructionJobId.trim()
+          : undefined;
+      const isCustomReconstruction =
+        typeof obj.isCustomReconstruction === 'boolean'
+          ? obj.isCustomReconstruction
+          : reconstructionJobId ? true : undefined;
+      // Do not accept stale/dead blob URLs from serialized payloads
+      const modelUrl =
+        typeof obj.modelUrl === 'string' && !obj.modelUrl.startsWith('blob:')
+          ? obj.modelUrl
+          : undefined;
+
       objects.push({
         id: typeof obj.id === 'string' && obj.id ? obj.id : `placement-${Date.now()}-${i}`,
         assetId: typeof obj.assetId === 'string' ? obj.assetId : 'unknown-asset',
@@ -215,6 +241,9 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
         rotationEuler: rotation,
         position,
         materialOverrides,
+        modelUrl,
+        reconstructionJobId,
+        isCustomReconstruction,
       });
     }
 

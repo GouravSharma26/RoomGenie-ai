@@ -1,9 +1,10 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PhotoTo3DModal } from './PhotoTo3DModal';
 import * as photoTo3dApi from '../../services/photoTo3dApi';
 import * as visionApi from '../../services/visionApi';
 import { useEditorStore } from '../../editor3d/store/editorStore';
+import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
 
 // Mock ModelPreviewCanvas to prevent WebGL/jsdom issues in test runner
 vi.mock('./ModelPreviewCanvas', () => ({
@@ -27,8 +28,13 @@ vi.mock('../../services/visionApi', () => ({
 }));
 
 describe('PhotoTo3DModal Component', () => {
+  let revokeSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    reconstructedAssetManager.releaseAll();
+    revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
     useEditorStore.setState({
       scene: {
         schemaVersion: 1,
@@ -37,6 +43,11 @@ describe('PhotoTo3DModal Component', () => {
         objects: [],
       },
     });
+  });
+
+  afterEach(() => {
+    revokeSpy.mockRestore();
+    reconstructedAssetManager.releaseAll();
   });
 
   it('renders Photo-to-3D configuration step with category options and dimensions inputs', () => {
@@ -280,5 +291,143 @@ describe('PhotoTo3DModal Component', () => {
     // Click catalogue fallback
     fireEvent.click(fallbackBtn);
     expect(screen.getByText(/Place in Room Canvas/i)).toBeInTheDocument();
+  });
+
+  it('REGRESSION: closing modal after placing item does NOT revoke placed model URL', async () => {
+    const testBlobUrl = 'blob:http://localhost/armchair-stay-alive';
+    vi.mocked(photoTo3dApi.createReconstructionJob).mockResolvedValue({
+      id: 'job-stay-alive',
+      owner_id: 1,
+      photo_upload_id: null,
+      target_category: 'seating',
+      prompt_label: 'Living Room Armchair',
+      status: 'queued',
+      provider: 'mock',
+      model_name: 'mock-model-v1',
+      file_size_bytes: 48000,
+      approximate_dimensions: { width_m: 0.9, height_m: 0.85, depth_m: 0.85 },
+      suggested_catalogue_fallback_id: 'chair-accent-armchair',
+      error_category: '',
+      error_message: '',
+      latency_ms: 100,
+      model_download_url: '/api/v1/furniture/reconstruction/jobs/job-stay-alive/model/',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      completed_at: null,
+    });
+
+    vi.mocked(photoTo3dApi.pollReconstructionJob).mockResolvedValue({
+      id: 'job-stay-alive',
+      owner_id: 1,
+      photo_upload_id: null,
+      target_category: 'seating',
+      prompt_label: 'Living Room Armchair',
+      status: 'completed',
+      provider: 'mock',
+      model_name: 'mock-model-v1',
+      file_size_bytes: 48000,
+      approximate_dimensions: { width_m: 0.9, height_m: 0.85, depth_m: 0.85 },
+      suggested_catalogue_fallback_id: 'chair-accent-armchair',
+      error_category: '',
+      error_message: '',
+      latency_ms: 100,
+      model_download_url: '/api/v1/furniture/reconstruction/jobs/job-stay-alive/model/',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockResolvedValue(testBlobUrl);
+
+    const { rerender } = render(<PhotoTo3DModal isOpen={true} onClose={vi.fn()} />);
+
+    // Generate model
+    fireEvent.click(screen.getByRole('button', { name: /Generate 3D Model/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Place in Room Canvas/i })).toBeInTheDocument();
+    });
+
+    // Place in room canvas
+    fireEvent.click(screen.getByRole('button', { name: /Place in Room Canvas/i }));
+
+    // Verify object placed in store
+    const objects = useEditorStore.getState().scene.objects;
+    expect(objects.length).toBe(1);
+    expect(objects[0].modelUrl).toBe(testBlobUrl);
+
+    // Simulate modal close / unmount
+    rerender(<PhotoTo3DModal isOpen={false} onClose={vi.fn()} />);
+
+    // URL must NOT be revoked!
+    expect(revokeSpy).not.toHaveBeenCalled();
+    expect(reconstructedAssetManager.getUrlForJob('job-stay-alive')).toBe(testBlobUrl);
+  });
+
+  it('REGRESSION: closing modal without placing model revokes the temporary preview URL', async () => {
+    const previewBlobUrl = 'blob:http://localhost/temp-preview-to-revoke';
+    vi.mocked(photoTo3dApi.createReconstructionJob).mockResolvedValue({
+      id: 'job-revoke-me',
+      owner_id: 1,
+      photo_upload_id: null,
+      target_category: 'tables',
+      prompt_label: 'Dining Table',
+      status: 'queued',
+      provider: 'mock',
+      model_name: 'mock-model',
+      file_size_bytes: 32000,
+      approximate_dimensions: { width_m: 1.2, height_m: 0.45, depth_m: 0.6 },
+      suggested_catalogue_fallback_id: 'table-coffee-round',
+      error_category: '',
+      error_message: '',
+      latency_ms: 100,
+      model_download_url: '/api/v1/furniture/reconstruction/jobs/job-revoke-me/model/',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      completed_at: null,
+    });
+
+    vi.mocked(photoTo3dApi.pollReconstructionJob).mockResolvedValue({
+      id: 'job-revoke-me',
+      owner_id: 1,
+      photo_upload_id: null,
+      target_category: 'tables',
+      prompt_label: 'Dining Table',
+      status: 'completed',
+      provider: 'mock',
+      model_name: 'mock-model',
+      file_size_bytes: 32000,
+      approximate_dimensions: { width_m: 1.2, height_m: 0.45, depth_m: 0.6 },
+      suggested_catalogue_fallback_id: 'table-coffee-round',
+      error_category: '',
+      error_message: '',
+      latency_ms: 100,
+      model_download_url: '/api/v1/furniture/reconstruction/jobs/job-revoke-me/model/',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockResolvedValue(previewBlobUrl);
+
+    const { rerender } = render(<PhotoTo3DModal isOpen={true} onClose={vi.fn()} />);
+
+    // Generate model
+    fireEvent.click(screen.getByRole('button', { name: /Generate 3D Model/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Place in Room Canvas/i })).toBeInTheDocument();
+    });
+
+    // Preview URL is registered
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(1);
+
+    // User closes modal without placing (Discard / Cancel / X)
+    rerender(<PhotoTo3DModal isOpen={false} onClose={vi.fn()} />);
+
+    // Verify preview URL was revoked immediately
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(previewBlobUrl);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
   });
 });

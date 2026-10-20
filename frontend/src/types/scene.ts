@@ -29,6 +29,7 @@ export interface FurniturePlacement {
   dimensions: Vector3Tuple;      // [width, height, depth] in metres
   materialOverrides?: MaterialOverrides;
   modelUrl?: string;             // Optional custom reconstructed GLB/GLTF model URL
+  reconstructionJobId?: string;  // Stable UUID reference to FurnitureReconstructionJob
   isCustomReconstruction?: boolean; // Flag identifying custom photo-reconstructed items
 }
 

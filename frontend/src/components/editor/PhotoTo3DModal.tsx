@@ -19,6 +19,7 @@ import {
   fetchReconstructedModelBlobUrl,
   type ReconstructionJob 
 } from '../../services/photoTo3dApi';
+import { reconstructedAssetManager, type PreviewLease } from '../../services/reconstructedAssetManager';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
 import { ModelPreviewCanvas } from './ModelPreviewCanvas';
@@ -88,17 +89,19 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
   const [placedSuccess, setPlacedSuccess] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewLeaseRef = useRef<PreviewLease | null>(null);
   const addCustomPlacement = useEditorStore((state) => state.addCustomPlacement);
   const addFurniture = useEditorStore((state) => state.addFurniture);
 
-  // Clean up blob URL on unmount
+  // Clean up unplaced preview lease on unmount (e.g. cancellation or discard)
   useEffect(() => {
     return () => {
-      if (modelBlobUrl && modelBlobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(modelBlobUrl);
+      if (previewLeaseRef.current) {
+        previewLeaseRef.current.release();
+        previewLeaseRef.current = null;
       }
     };
-  }, [modelBlobUrl]);
+  }, []);
 
   const handleCategoryChange = (newCat: 'seating' | 'tables' | 'storage' | 'beds' | 'decor') => {
     setCategory(newCat);
@@ -191,8 +194,17 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
 
       // 4. Download private validated model blob
       setStatusMessage('Validating and streaming GLB model...');
-      const blobUrl = await fetchReconstructedModelBlobUrl(finishedJob.id);
-      setModelBlobUrl(blobUrl);
+      const rawBlobUrl = await fetchReconstructedModelBlobUrl(finishedJob.id);
+
+      // Release any previous unplaced preview lease from this dialog instance
+      if (previewLeaseRef.current) {
+        previewLeaseRef.current.release();
+        previewLeaseRef.current = null;
+      }
+
+      const lease = reconstructedAssetManager.acquirePreview(finishedJob.id, rawBlobUrl);
+      previewLeaseRef.current = lease;
+      setModelBlobUrl(lease.blobUrl);
 
       // Update dimensions if extracted by validator
       if (finishedJob.approximate_dimensions?.width_m) {
@@ -211,6 +223,16 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
     }
   };
 
+  const handleReconfigure = () => {
+    // Release preview lease for unplaced model before re-configuring
+    if (previewLeaseRef.current) {
+      previewLeaseRef.current.release();
+      previewLeaseRef.current = null;
+    }
+    setModelBlobUrl(null);
+    setStep('configure');
+  };
+
   const handlePlaceInRoom = () => {
     if (useFallbackAsset && job?.suggested_catalogue_fallback_id) {
       const fallbackItem = SAMPLE_CATALOG.find(
@@ -219,13 +241,20 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
       if (fallbackItem) {
         addFurniture(fallbackItem);
       }
+      // If user placed catalogue item instead, release the reconstructed preview lease
+      if (previewLeaseRef.current) {
+        previewLeaseRef.current.release();
+        previewLeaseRef.current = null;
+      }
     } else {
-      // Place custom reconstructed model
+      // Place custom reconstructed model:
+      // addCustomPlacement claims ownership in reconstructedAssetManager using the new placement ID
       addCustomPlacement({
         assetId: job?.suggested_catalogue_fallback_id || `custom-${category}`,
         name: promptLabel.trim() || `Reconstructed ${category}`,
         dimensions,
         modelUrl: modelBlobUrl || undefined,
+        reconstructionJobId: job?.id,
         materialOverrides: {
           color,
           roughness,
@@ -233,6 +262,13 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
         },
         isCustomReconstruction: true,
       });
+
+      // Now that the room placement owns the asset, release the modal's preview lease.
+      // Because the placement is an active owner, the blob URL remains active and is NOT revoked!
+      if (previewLeaseRef.current) {
+        previewLeaseRef.current.release();
+        previewLeaseRef.current = null;
+      }
     }
 
     setPlacedSuccess(true);
@@ -756,7 +792,7 @@ const PhotoTo3DDialog: React.FC<Omit<PhotoTo3DModalProps, 'isOpen'>> = ({
             <>
               <button
                 type="button"
-                onClick={() => setStep('configure')}
+                onClick={handleReconfigure}
                 className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5" />

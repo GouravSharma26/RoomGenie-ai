@@ -1,9 +1,10 @@
-import React, { useRef, Suspense, useMemo } from 'react';
+import React, { useRef, Suspense, useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import type { FurniturePlacement } from '../../types/scene';
 import { useEditorStore } from '../store/editorStore';
 import { SAMPLE_CATALOG } from '../data/catalog';
+import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
 
 interface FurnitureItemProps {
   placement: FurniturePlacement;
@@ -88,6 +89,36 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const handlePointerOut = () => {
     hoverObject(null);
   };
+
+  // Hydrate custom reconstructed GLB model if reconstructionJobId is set and modelUrl is pending
+  useEffect(() => {
+    if (!placement.reconstructionJobId) return;
+
+    let isSubscribed = true;
+    const activeUrl = reconstructedAssetManager.getUrlForJob(placement.reconstructionJobId);
+
+    if (activeUrl && placement.modelUrl !== activeUrl) {
+      useEditorStore.getState().updatePlacementModelUrl(placement.id, activeUrl);
+      return;
+    }
+
+    if (!placement.modelUrl && !activeUrl) {
+      reconstructedAssetManager
+        .fetchOrGetModelUrl(placement.reconstructionJobId, placement.id)
+        .then((url) => {
+          if (isSubscribed) {
+            useEditorStore.getState().updatePlacementModelUrl(placement.id, url);
+          }
+        })
+        .catch((err) => {
+          console.warn(`[FurnitureItem] Could not hydrate model for job ${placement.reconstructionJobId}:`, err);
+        });
+    }
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [placement.id, placement.reconstructionJobId, placement.modelUrl]);
 
   // Render stylized procedural geometry as native mesh or fallback
   const renderProceduralGeometry = () => {
