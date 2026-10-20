@@ -17,7 +17,9 @@ from apps.furniture.reconstruction.tripo import (
     stream_download_model,
     sanitize_sensitive_text,
     validate_download_url,
+    validate_and_resolve_download_url,
     SafeRedirectHandler,
+    SafeHTTPSHandler,
 )
 from apps.furniture.reconstruction.services import (
     resolve_catalogue_fallback,
@@ -1070,6 +1072,70 @@ class TripoAdapterStreamingAndGatingTests(APITestCase):
         )
         self.assertIsNotNone(redirect_req)
         self.assertEqual(redirect_req.full_url, "https://assets.cloudfront.net/model.glb")
+
+    def test_validate_and_resolve_download_url_pins_public_ip(self):
+        mock_dns = [(2, 0, 0, '', ('104.18.27.71', 443))]
+        with patch('socket.getaddrinfo', return_value=mock_dns):
+            url, pinned_ip, hostname, port = validate_and_resolve_download_url(
+                "https://tripo-models.tripo3d.ai/model.glb",
+                check_dns=True
+            )
+            self.assertEqual(url, "https://tripo-models.tripo3d.ai/model.glb")
+            self.assertEqual(pinned_ip, "104.18.27.71")
+            self.assertEqual(hostname, "tripo-models.tripo3d.ai")
+            self.assertEqual(port, 443)
+
+    def test_safe_https_handler_pins_validated_ip_and_preserves_sni_and_cert_check(self):
+        pinned_ip = "104.18.27.71"
+        hostname = "tripo-models.tripo3d.ai"
+        handler = SafeHTTPSHandler(
+            allowed_hosts=[hostname],
+            check_dns=False,
+            pinned_ip_override=pinned_ip
+        )
+        req = urllib.request.Request(f"https://{hostname}/model.glb")
+
+        mock_sock = MagicMock()
+        mock_create_conn = MagicMock(return_value=mock_sock)
+        mock_wrap_socket = MagicMock(return_value=mock_sock)
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.reason = "OK"
+        mock_response.msg = {}
+        mock_response.headers = {}
+        mock_response.read.return_value = b"glb_bytes"
+
+        with patch('socket.create_connection', mock_create_conn), \
+             patch('ssl.SSLContext.wrap_socket', mock_wrap_socket), \
+             patch('http.client.HTTPSConnection.getresponse', return_value=mock_response):
+            resp = handler.https_open(req)
+            self.assertIsNotNone(resp)
+            # 1. Proves connection was established directly to the pinned IP address (NO unchecked DNS query)
+            mock_create_conn.assert_called_once()
+            call_args = mock_create_conn.call_args[0]
+            self.assertEqual(call_args[0], (pinned_ip, 443))
+
+            # 2. Proves TLS SNI extension and cert hostname match the original hostname
+            mock_wrap_socket.assert_called_once()
+            wrap_kwargs = mock_wrap_socket.call_args[1]
+            self.assertEqual(wrap_kwargs['server_hostname'], hostname)
+
+    def test_dns_rebinding_simulation_blocks_connection_to_rebound_private_ip(self):
+        # Even if a malicious attacker tries to return a private IP address via DNS,
+        # it is rejected immediately before socket connection establishment
+        mock_dns = [(2, 0, 0, '', ('169.254.169.254', 443))]
+        with patch('socket.getaddrinfo', return_value=mock_dns):
+            with self.assertRaises(GLBValidationError) as ctx:
+                stream_download_model("https://tripo-models.tripo3d.ai/model.glb", check_dns=True)
+            self.assertIn("disallowed local/private address", str(ctx.exception).lower())
+
+    def test_pinned_ip_override_blocks_private_ip_tampering(self):
+        with self.assertRaises(GLBValidationError) as ctx:
+            validate_and_resolve_download_url(
+                "https://tripo-models.tripo3d.ai/model.glb",
+                pinned_ip_override="127.0.0.1"
+            )
+        self.assertIn("disallowed private or local address", str(ctx.exception).lower())
 
 
 class ReconstructionJobLifecycleTests(APITestCase):

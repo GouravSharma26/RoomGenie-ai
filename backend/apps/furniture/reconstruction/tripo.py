@@ -1,8 +1,10 @@
+import http.client
 import ipaddress
 import json
 import logging
 import re
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -28,21 +30,19 @@ def sanitize_sensitive_text(text: str, secret: str = '') -> str:
     return sanitized[:255]
 
 
-def validate_download_url(
+def validate_and_resolve_download_url(
     model_url: str,
     allowed_hosts: list[str] | None = None,
     allow_private_ips: bool = False,
-    check_dns: bool = True
-) -> str:
+    check_dns: bool = True,
+    pinned_ip_override: str | None = None
+) -> tuple[str, str, str, int]:
     """
-    Validates model download URLs against SSRF, unauthorized destinations, and non-HTTPS protocols.
-    Enforces:
-    1. Scheme MUST be HTTPS.
-    2. Explicit provider/CDN host policy whitelist.
-    3. Rejects userinfo in URLs.
-    4. Rejects non-standard ports (only port 443 permitted).
-    5. Rejects localhost, loopback, private RFC1918, link-local, and reserved IP addresses.
-    6. DNS resolution verification: ensures resolved IP is not a private/local network address.
+    Validates model download URLs against SSRF, unauthorized destinations, and non-HTTPS protocols,
+    and resolves/pins the validated IP address to eliminate DNS TOCTOU / rebinding races.
+
+    Returns:
+        tuple of (validated_model_url, pinned_ip, server_hostname, port)
     """
     if not model_url or not isinstance(model_url, str):
         raise GLBValidationError("Model download URL must be a non-empty string.")
@@ -65,7 +65,8 @@ def validate_download_url(
     if parsed.username or parsed.password:
         raise GLBValidationError("Model download URL contains disallowed user credentials.")
 
-    if parsed.port is not None and parsed.port != 443:
+    port = parsed.port if parsed.port is not None else 443
+    if port != 443:
         raise GLBValidationError(
             f"Disallowed port ({parsed.port}) in model download URL. Only standard HTTPS port 443 is permitted."
         )
@@ -75,16 +76,16 @@ def validate_download_url(
         raise GLBValidationError(f"Disallowed destination in model download URL: {hostname}")
 
     # 2. Check for IP literals and block private/loopback/link-local ranges
-    ip = None
+    ip_literal = None
     try:
-        ip = ipaddress.ip_address(hostname)
+        ip_literal = ipaddress.ip_address(hostname)
     except ValueError:
         # Hostname is a domain name, not an IP literal
-        ip = None
+        ip_literal = None
 
-    if ip is not None and not allow_private_ips:
-        if (ip.is_private or ip.is_loopback or ip.is_link_local or
-            ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+    if ip_literal is not None and not allow_private_ips:
+        if (ip_literal.is_private or ip_literal.is_loopback or ip_literal.is_link_local or
+            ip_literal.is_reserved or ip_literal.is_multicast or ip_literal.is_unspecified):
             raise GLBValidationError(
                 f"Model download destination '{hostname}' is a disallowed private or local IP address."
             )
@@ -118,12 +119,26 @@ def validate_download_url(
             f"Model download host '{hostname}' is not in the allowed provider/CDN whitelist."
         )
 
-    # 4. Resolve DNS to ensure destination cannot rebind to local or private networks
-    if check_dns and not allow_private_ips:
+    # 4. Resolve DNS and pin destination IP to eliminate TOCTOU / rebinding races
+    if pinned_ip_override:
+        # Validate override IP
+        override_ip_obj = ipaddress.ip_address(pinned_ip_override)
+        if not allow_private_ips and (
+            override_ip_obj.is_private or override_ip_obj.is_loopback or override_ip_obj.is_link_local or
+            override_ip_obj.is_reserved or override_ip_obj.is_multicast or override_ip_obj.is_unspecified
+        ):
+            raise GLBValidationError(
+                f"Pinned IP override '{pinned_ip_override}' is a disallowed private or local address."
+            )
+        pinned_ip = pinned_ip_override
+    elif ip_literal is not None:
+        pinned_ip = str(ip_literal)
+    elif check_dns and not allow_private_ips:
         try:
-            addr_entries = socket.getaddrinfo(hostname, 443, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+            addr_entries = socket.getaddrinfo(hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
             if not addr_entries:
                 raise GLBValidationError(f"Failed to resolve hostname '{hostname}' for model download.")
+            validated_ips: list[str] = []
             for entry in addr_entries:
                 resolved_ip_str = entry[4][0]
                 resolved_ip = ipaddress.ip_address(resolved_ip_str)
@@ -132,10 +147,32 @@ def validate_download_url(
                     raise GLBValidationError(
                         f"Model download destination '{hostname}' resolved to disallowed local/private address ({resolved_ip_str})."
                     )
+                validated_ips.append(resolved_ip_str)
+            # Pin the first validated safe public IP
+            pinned_ip = validated_ips[0]
         except socket.gaierror as e:
             raise GLBValidationError(f"DNS resolution failed for model download host '{hostname}': {e}") from e
+    else:
+        # Fallback when DNS check is explicitly disabled (e.g. mock test environment)
+        pinned_ip = hostname
 
-    return model_url
+    return model_url, pinned_ip, hostname, port
+
+
+def validate_download_url(
+    model_url: str,
+    allowed_hosts: list[str] | None = None,
+    allow_private_ips: bool = False,
+    check_dns: bool = True
+) -> str:
+    """Helper that validates download URL and returns validated URL string."""
+    validated_url, _, _, _ = validate_and_resolve_download_url(
+        model_url,
+        allowed_hosts=allowed_hosts,
+        allow_private_ips=allow_private_ips,
+        check_dns=check_dns
+    )
+    return validated_url
 
 
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -164,8 +201,64 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
             )
 
         # Validate target redirect URL before sending any request
-        validate_download_url(newurl, allowed_hosts=self.allowed_hosts, check_dns=self.check_dns)
+        validate_and_resolve_download_url(newurl, allowed_hosts=self.allowed_hosts, check_dns=self.check_dns)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class SafeHTTPSHandler(urllib.request.HTTPSHandler):
+    """
+    HTTPSHandler that enforces IP pinning on socket creation while preserving
+    TLS Server Name Indication (SNI) and certificate validation for the original hostname.
+    Eliminates DNS TOCTOU (Time-of-Check to Time-of-Use) rebinding attacks.
+    """
+    def __init__(
+        self,
+        allowed_hosts: list[str] | None = None,
+        context: ssl.SSLContext | None = None,
+        check_dns: bool = True,
+        pinned_ip_override: str | None = None
+    ):
+        super().__init__(context=context)
+        self.allowed_hosts = allowed_hosts
+        self.check_dns = check_dns
+        self.pinned_ip_override = pinned_ip_override
+
+    def https_open(self, req):
+        if not hasattr(req, 'timeout'):
+            req.timeout = socket._GLOBAL_DEFAULT_TIMEOUT
+        url = req.get_full_url()
+        _, pinned_ip, server_hostname, port = validate_and_resolve_download_url(
+            url,
+            allowed_hosts=self.allowed_hosts,
+            check_dns=self.check_dns,
+            pinned_ip_override=self.pinned_ip_override
+        )
+
+        class PinnedConnection(http.client.HTTPSConnection):
+            def connect(conn_self):
+                # Connect raw socket directly to the validated pinned IP.
+                # No second DNS resolution can occur.
+                conn_self.sock = conn_self._create_connection(
+                    (pinned_ip, port), conn_self.timeout, conn_self.source_address
+                )
+                try:
+                    conn_self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except OSError:
+                    pass
+
+                if conn_self._tunnel_host:
+                    conn_self._tunnel()
+                    sni_name = conn_self._tunnel_host
+                else:
+                    sni_name = server_hostname
+
+                # Wrap with TLS verifying certificate matches server_hostname and sending SNI
+                conn_self.sock = conn_self._context.wrap_socket(
+                    conn_self.sock,
+                    server_hostname=sni_name
+                )
+
+        return self.do_open(PinnedConnection, req, context=self._context)
 
 
 def stream_download_model(
@@ -174,24 +267,36 @@ def stream_download_model(
     chunk_size: int = 64 * 1024,
     timeout: float = 30.0,
     allowed_hosts: list[str] | None = None,
-    check_dns: bool = True
+    check_dns: bool = True,
+    pinned_ip_override: str | None = None
 ) -> bytes:
     """
     Streams a 3D model from a remote URL in chunks.
     1. Validates the URL against HTTPS, allowed CDN/provider domains, and SSRF restrictions.
-    2. Builds an opener with SafeRedirectHandler to validate redirect destinations.
-    3. Enforces maximum size bounds during streaming without reading the entire payload into memory.
-    4. Treats Content-Length as advisory and immediately terminates/closes the response if exceeded.
+    2. Uses SafeHTTPSHandler to pin the connection to the validated IP, preventing DNS TOCTOU rebinding.
+    3. Builds an opener with SafeRedirectHandler to validate all redirect targets.
+    4. Enforces maximum size bounds during streaming without reading the entire payload into memory.
+    5. Treats Content-Length as advisory and immediately terminates/closes the response if exceeded.
     """
-    # Validate destination before opening connection
-    validate_download_url(model_url, allowed_hosts=allowed_hosts, check_dns=check_dns)
+    # Pre-validate destination before opening connection
+    validate_and_resolve_download_url(
+        model_url,
+        allowed_hosts=allowed_hosts,
+        check_dns=check_dns,
+        pinned_ip_override=pinned_ip_override
+    )
 
     req = urllib.request.Request(
         model_url,
         headers={"User-Agent": "RoomGenie-AI/1.0"}
     )
     redirect_handler = SafeRedirectHandler(allowed_hosts=allowed_hosts, check_dns=check_dns)
-    opener = urllib.request.build_opener(redirect_handler)
+    https_handler = SafeHTTPSHandler(
+        allowed_hosts=allowed_hosts,
+        check_dns=check_dns,
+        pinned_ip_override=pinned_ip_override
+    )
+    opener = urllib.request.build_opener(redirect_handler, https_handler)
     resp = opener.open(req, timeout=timeout)
     try:
         # 1. Advisory Content-Length header check

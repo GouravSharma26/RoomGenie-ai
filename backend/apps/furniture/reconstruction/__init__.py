@@ -9,7 +9,9 @@ from apps.furniture.reconstruction.tripo import (
     TripoImageTo3DAdapter,
     stream_download_model,
     validate_download_url,
+    validate_and_resolve_download_url,
     SafeRedirectHandler,
+    SafeHTTPSHandler,
 )
 from apps.furniture.reconstruction.services import (
     resolve_catalogue_fallback,
@@ -30,7 +32,9 @@ __all__ = [
     'TripoImageTo3DAdapter',
     'stream_download_model',
     'validate_download_url',
+    'validate_and_resolve_download_url',
     'SafeRedirectHandler',
+    'SafeHTTPSHandler',
     'resolve_catalogue_fallback',
     'get_image_to_3d_adapter',
     'create_reconstruction_job',
