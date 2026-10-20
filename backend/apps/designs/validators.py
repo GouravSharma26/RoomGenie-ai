@@ -1,4 +1,5 @@
 import math
+from typing import Any
 from rest_framework import serializers
 
 SUPPORTED_SCHEMA_VERSIONS = {1}
@@ -122,7 +123,7 @@ def validate_canonical_scene(data: dict) -> dict:
         'height': (MIN_ROOM_HEIGHT, MAX_ROOM_HEIGHT),
     }.items():
         val = room.get(dim_key)
-        if not is_finite_number(val):
+        if val is None or not is_finite_number(val):
             raise serializers.ValidationError(
                 f"room.{dim_key} must be a finite positive number."
             )
@@ -234,7 +235,7 @@ def validate_canonical_scene(data: dict) -> dict:
 
         # Material Overrides (optional)
         mat_overrides = obj.get('materialOverrides')
-        cleaned_mat = {}
+        cleaned_mat: dict[str, Any] = {}
         if isinstance(mat_overrides, dict):
             if 'color' in mat_overrides and isinstance(mat_overrides['color'], str):
                 cleaned_mat['color'] = mat_overrides['color'][:30]

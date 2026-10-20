@@ -200,7 +200,7 @@ def validate_and_simulate_actions(
         # 1. ADD FURNITURE
         if action_type == 'add_furniture':
             asset_id = action.get('asset_id')
-            asset = FurnitureAsset.objects.filter(id=asset_id, is_active=True).first()
+            asset = FurnitureAsset.objects.filter(id=asset_id, is_active=True).first()  # pyrefly: ignore[missing-attribute]
             if not asset:
                 errors.append(f"Action [{action_idx}]: Asset '{asset_id}' does not exist in catalogue.")
                 continue
@@ -281,7 +281,7 @@ def validate_and_simulate_actions(
                 errors.append(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
                 continue
 
-            asset = FurnitureAsset.objects.filter(id=new_asset_id, is_active=True).first()
+            asset = FurnitureAsset.objects.filter(id=new_asset_id, is_active=True).first()  # pyrefly: ignore[missing-attribute]
             if not asset:
                 errors.append(f"Action [{action_idx}]: Replacement asset '{new_asset_id}' not in catalogue.")
                 continue
@@ -330,23 +330,32 @@ def validate_and_simulate_actions(
         after_budget = before_budget
 
     # Compute deterministic integer paise difference
-    diff_paise = after_budget.get('total_paise', 0) - before_budget.get('total_paise', 0)
+    after_raw = after_budget.get('total_paise', 0)
+    after_paise: int = int(after_raw) if isinstance(after_raw, (int, float, str)) else 0
+    before_raw = before_budget.get('total_paise', 0)
+    before_paise: int = int(before_raw) if isinstance(before_raw, (int, float, str)) else 0
+    diff_paise = after_paise - before_paise
     diff_inr = f"{Decimal(diff_paise) / Decimal(100):+.2f}"
+
+    constraints_raw = after_budget.get('room_constraints')
+    constraints: dict[str, Any] = constraints_raw if isinstance(constraints_raw, dict) else {}
+    room_containment_valid = bool(constraints.get('is_valid', True))
+    room_violations = list(constraints.get('violations', []))
 
     budget_diff = {
         'currency': 'INR',
-        'before_total_paise': before_budget.get('total_paise', 0),
-        'before_paise': before_budget.get('total_paise', 0),
+        'before_total_paise': before_paise,
+        'before_paise': before_paise,
         'before_total_inr': before_budget.get('total_inr', '0.00'),
-        'after_total_paise': after_budget.get('total_paise', 0),
-        'after_paise': after_budget.get('total_paise', 0),
+        'after_total_paise': after_paise,
+        'after_paise': after_paise,
         'after_total_inr': after_budget.get('total_inr', '0.00'),
         'diff_paise': diff_paise,
         'diff_inr': diff_inr,
         'before_items_count': before_budget.get('total_items', 0),
         'after_items_count': after_budget.get('total_items', 0),
-        'room_containment_valid': after_budget.get('room_constraints', {}).get('is_valid', True),
-        'room_violations': after_budget.get('room_constraints', {}).get('violations', []),
+        'room_containment_valid': room_containment_valid,
+        'room_violations': room_violations,
     }
 
     if not budget_diff['room_containment_valid']:

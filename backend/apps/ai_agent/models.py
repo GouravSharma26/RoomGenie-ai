@@ -96,4 +96,5 @@ class AgentRun(models.Model):
         ordering = ['created_at']
 
     def __str__(self):
-        return f"AgentRun {self.id} [{self.status}]: {self.user_prompt[:40]}"
+        prompt_preview = str(self.user_prompt)[:40] if self.user_prompt else ''
+        return f"AgentRun {self.id} [{self.status}]: {prompt_preview}"

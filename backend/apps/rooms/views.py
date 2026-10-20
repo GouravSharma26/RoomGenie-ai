@@ -21,7 +21,7 @@ class RoomViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Room.objects.filter(owner=self.request.user)
+        return Room.objects.filter(owner=self.request.user)  # pyrefly: ignore[missing-attribute]
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -73,7 +73,7 @@ class RoomPhotoUploadView(APIView):
 
         room = None
         if room_id:
-            room = Room.objects.filter(id=room_id, owner=request.user).first()
+            room = Room.objects.filter(id=room_id, owner=request.user).first()  # pyrefly: ignore[missing-attribute]
 
         upload_record = save_temporary_room_photo(
             user=request.user,

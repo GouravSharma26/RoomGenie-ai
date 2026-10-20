@@ -8,12 +8,28 @@ site-package-path = [
     "backend/.venv/Lib/site-packages",
 ]
 
-[errors]
+# Targeted sub-configurations for specific dynamic Django/DRF patterns
+
+# 1. Django AppConfig subclasses define class-level default_auto_field strings overriding AppConfig descriptor
+[[sub-config]]
+matches = "backend/**/apps.py"
+
+[sub-config.errors]
+bad-override = false
+
+# 2. Test suites pass intentional type anomalies and inspect dynamic DRF Response objects
+[[sub-config]]
+matches = "backend/**/tests.py"
+
+[sub-config.errors]
 missing-attribute = false
 bad-index = false
-bad-context-manager = false
-bad-override = false
-unsupported-operation = false
-bad-argument-type = false
 bad-assignment = false
-untyped-import = false
+
+[[sub-config]]
+matches = "backend/config/tests.py"
+
+[sub-config.errors]
+missing-attribute = false
+bad-index = false
+bad-assignment = false

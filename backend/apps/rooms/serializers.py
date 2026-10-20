@@ -41,7 +41,7 @@ class RoomPhotoUploadSerializer(serializers.Serializer):
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
             raise serializers.ValidationError("Authentication required to link a room.")
-        room = Room.objects.filter(id=value, owner=user).first()
+        room = Room.objects.filter(id=value, owner=user).first()  # pyrefly: ignore[missing-attribute]
         if not room:
             raise serializers.ValidationError("Specified room does not exist or you do not have permission to access it.")
         return value

@@ -111,7 +111,7 @@ def calculate_scene_budget(
     asset_ids = {obj.get('assetId') for obj in raw_objects if obj.get('assetId')}
     assets_by_id = {
         asset.id: asset
-        for asset in FurnitureAsset.objects.filter(id__in=asset_ids)
+        for asset in FurnitureAsset.objects.filter(id__in=asset_ids)  # pyrefly: ignore[missing-attribute]
     }
 
     total_paise = 0

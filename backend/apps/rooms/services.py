@@ -186,8 +186,8 @@ def save_temporary_room_photo(user, uploaded_file, room=None) -> RoomPhotoUpload
         file_created = True
 
         # Atomically persist database record
-        with transaction.atomic():
-            record = RoomPhotoUpload.objects.create(
+        with transaction.atomic():  # pyrefly: ignore[bad-context-manager]
+            record = RoomPhotoUpload.objects.create(  # pyrefly: ignore[missing-attribute]
                 id=upload_id,
                 owner=user,
                 room=room,
@@ -221,10 +221,12 @@ def cleanup_expired_room_photos(max_age_seconds: int | None = None, dry_run: boo
     """
     now = timezone.now()
     if max_age_seconds is not None:
+        if max_age_seconds <= 0:
+            raise ValueError("max_age_seconds must be a positive integer greater than zero.")
         cutoff = now - timedelta(seconds=max_age_seconds)
-        expired_qs = RoomPhotoUpload.objects.filter(created_at__lt=cutoff, is_deleted=False)
+        expired_qs = RoomPhotoUpload.objects.filter(created_at__lt=cutoff, is_deleted=False)  # pyrefly: ignore[missing-attribute]
     else:
-        expired_qs = RoomPhotoUpload.objects.filter(expires_at__lt=now, is_deleted=False)
+        expired_qs = RoomPhotoUpload.objects.filter(expires_at__lt=now, is_deleted=False)  # pyrefly: ignore[missing-attribute]
 
     total_scanned = 0
     purged_count = 0
@@ -235,7 +237,16 @@ def cleanup_expired_room_photos(max_age_seconds: int | None = None, dry_run: boo
         total_scanned += 1
         p = Path(upload.file_path)
 
-        if p.exists() and p.is_file():
+        try:
+            file_exists = p.exists()
+            is_regular_file = p.is_file() if file_exists else False
+        except OSError as exc:
+            logger.warning(f"Filesystem error inspecting room photo {p}: {exc}")
+            failed_count += 1
+            # Leave record retryable for future cleanup runs
+            continue
+
+        if file_exists and is_regular_file:
             if dry_run:
                 purged_count += 1
                 continue

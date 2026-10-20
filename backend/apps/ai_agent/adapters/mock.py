@@ -19,7 +19,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
     ) -> DesignProposalResult:
         start_time = time.time()
         prompt_lower = user_prompt.lower()
-        actions = []
+        actions: list[dict[str, Any]] = []
 
         existing_objects = current_scene.get('objects', []) if isinstance(current_scene, dict) else []
         room = current_scene.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}) if isinstance(current_scene, dict) else {'width': 5.0, 'length': 4.0, 'height': 2.8}
@@ -27,7 +27,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         from apps.furniture.models import FurnitureAsset
 
         def pick_asset_id(canonical_id: str, fallback_id: str) -> str:
-            if FurnitureAsset.objects.filter(id=canonical_id).exists():
+            if FurnitureAsset.objects.filter(id=canonical_id).exists():  # pyrefly: ignore[missing-attribute]
                 return canonical_id
             return fallback_id
 

@@ -50,7 +50,7 @@ class FurnitureAsset(models.Model):
         """Helper property to calculate exact INR rupees as Decimal, or None if unpriced."""
         if self.price_paise is None:
             return None
-        return Decimal(self.price_paise) / Decimal(100)
+        return Decimal(int(getattr(self, 'price_paise'))) / Decimal(100)
 
     @property
     def is_priced(self) -> bool:

@@ -1,5 +1,6 @@
 import io
 import os
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -8,9 +9,11 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import DatabaseError
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -253,8 +256,11 @@ class RoomPhotoUploadTests(APITestCase):
         file_path = record.file_path
         self.assertTrue(os.path.exists(file_path))
 
-        # Manually trigger cleanup for files older than -1 seconds (all files)
-        purged = cleanup_expired_room_photos(max_age_seconds=-1)
+        # Mark expired in the past
+        record.expires_at = timezone.now() - timedelta(seconds=10)
+        record.save(update_fields=['expires_at'])
+
+        purged = cleanup_expired_room_photos()
         self.assertGreaterEqual(purged['purged_count'], 1)
         self.assertEqual(purged['failed_count'], 0)
 
@@ -271,9 +277,13 @@ class RoomPhotoUploadTests(APITestCase):
         record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
         self.assertTrue(os.path.exists(record.file_path))
 
+        # Mark expired in the past
+        record.expires_at = timezone.now() - timedelta(seconds=10)
+        record.save(update_fields=['expires_at'])
+
         # 1. Test Dry Run: output indicates dry run, disk file still exists, DB is_deleted remains False
         out = io.StringIO()
-        call_command('cleanup_expired_photos', '--dry-run', '--max-age-seconds=-1', stdout=out)
+        call_command('cleanup_expired_photos', '--dry-run', stdout=out)
         output_str = out.getvalue()
         self.assertIn("DRY-RUN", output_str)
         self.assertIn("purged=1", output_str)
@@ -283,7 +293,7 @@ class RoomPhotoUploadTests(APITestCase):
 
         # 2. Real Run: deletes disk file and marks record as deleted
         out_real = io.StringIO()
-        call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out_real)
+        call_command('cleanup_expired_photos', stdout=out_real)
         output_real_str = out_real.getvalue()
         self.assertIn("purged=1", output_real_str)
         self.assertIn("failed=0", output_real_str)
@@ -296,11 +306,13 @@ class RoomPhotoUploadTests(APITestCase):
         img_file = self.make_test_image("unlink_err.jpg", "JPEG")
         res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
         record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+        record.expires_at = timezone.now() - timedelta(seconds=10)
+        record.save(update_fields=['expires_at'])
 
         # Mock Path.unlink to raise OSError (e.g. permission error, locked file)
         with patch.object(Path, 'unlink', side_effect=OSError("Permission denied on disk")):
             out = io.StringIO()
-            call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out)
+            call_command('cleanup_expired_photos', stdout=out)
             output_str = out.getvalue()
             self.assertIn("failed=1", output_str)
 
@@ -318,6 +330,8 @@ class RoomPhotoUploadTests(APITestCase):
         img_file = self.make_test_image("already_gone.jpg", "JPEG")
         res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
         record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+        record.expires_at = timezone.now() - timedelta(seconds=10)
+        record.save(update_fields=['expires_at'])
 
         # Manually delete file behind Django's back
         if os.path.exists(record.file_path):
@@ -325,13 +339,95 @@ class RoomPhotoUploadTests(APITestCase):
         self.assertFalse(os.path.exists(record.file_path))
 
         out = io.StringIO()
-        call_command('cleanup_expired_photos', '--max-age-seconds=-1', stdout=out)
+        call_command('cleanup_expired_photos', stdout=out)
         output_str = out.getvalue()
         self.assertIn("missing=1", output_str)
         self.assertIn("failed=0", output_str)
 
         record.refresh_from_db()
         self.assertTrue(record.is_deleted)
+
+    def test_cleanup_rejects_negative_or_zero_max_age_without_changes(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file = self.make_test_image("active_photo.jpg", "JPEG")
+        res = self.client.post(self.upload_url, {'photo': img_file}, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        record = RoomPhotoUpload.objects.get(id=res.data['upload_id'])
+        file_path = record.file_path
+
+        # 1. Management command rejects negative values
+        out_err = io.StringIO()
+        with self.assertRaises(CommandError) as ctx_neg:
+            call_command('cleanup_expired_photos', '--max-age-seconds=-10', stderr=out_err)
+        self.assertIn("positive integer", str(ctx_neg.exception))
+
+        # 2. Management command rejects zero
+        with self.assertRaises(CommandError) as ctx_zero:
+            call_command('cleanup_expired_photos', '--max-age-seconds=0', stderr=out_err)
+        self.assertIn("positive integer", str(ctx_zero.exception))
+
+        # 3. Service function rejects negative values
+        with self.assertRaises(ValueError) as ctx_serv_neg:
+            cleanup_expired_room_photos(max_age_seconds=-1)
+        self.assertIn("positive integer", str(ctx_serv_neg.exception))
+
+        # 4. Service function rejects zero
+        with self.assertRaises(ValueError) as ctx_serv_zero:
+            cleanup_expired_room_photos(max_age_seconds=0)
+        self.assertIn("positive integer", str(ctx_serv_zero.exception))
+
+        # Assert zero file or database changes occurred
+        self.assertTrue(os.path.exists(file_path), "Active file must not be deleted on invalid cleanup age")
+        record.refresh_from_db()
+        self.assertFalse(record.is_deleted, "Record is_deleted flag must remain False")
+
+        # Cleanup file after test
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+    def test_cleanup_handles_inspection_filesystem_errors_safely(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        img_file1 = self.make_test_image("inspect_err1.jpg", "JPEG")
+        res1 = self.client.post(self.upload_url, {'photo': img_file1}, format='multipart')
+        record1 = RoomPhotoUpload.objects.get(id=res1.data['upload_id'])
+        record1.expires_at = timezone.now() - timedelta(seconds=10)
+        record1.save(update_fields=['expires_at'])
+
+        img_file2 = self.make_test_image("inspect_err2.jpg", "JPEG")
+        res2 = self.client.post(self.upload_url, {'photo': img_file2}, format='multipart')
+        record2 = RoomPhotoUpload.objects.get(id=res2.data['upload_id'])
+        record2.expires_at = timezone.now() - timedelta(seconds=10)
+        record2.save(update_fields=['expires_at'])
+
+        original_exists = Path.exists
+
+        def mock_exists(path_self):
+            # Simulate filesystem/stat/permission error on record1 during inspection
+            if str(path_self) == record1.file_path:
+                raise OSError("Filesystem I/O error during inspection")
+            return original_exists(path_self)
+
+        with patch.object(Path, 'exists', autospec=True, side_effect=mock_exists):
+            summary = cleanup_expired_room_photos()
+
+        # Batch continued and did not abort!
+        self.assertEqual(summary['total_scanned'], 2)
+        self.assertEqual(summary['failed_count'], 1)
+        self.assertEqual(summary['purged_count'], 1)
+
+        # record1 was left retryable (not marked deleted in DB, file kept)
+        record1.refresh_from_db()
+        self.assertFalse(record1.is_deleted)
+        self.assertTrue(os.path.exists(record1.file_path))
+
+        # record2 was purged successfully
+        record2.refresh_from_db()
+        self.assertTrue(record2.is_deleted)
+        self.assertFalse(os.path.exists(record2.file_path))
+
+        # Cleanup test file
+        if os.path.exists(record1.file_path):
+            os.remove(record1.file_path)
 
     def test_early_content_length_rejection_413(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')

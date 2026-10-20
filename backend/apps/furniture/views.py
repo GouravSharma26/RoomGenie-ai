@@ -25,7 +25,7 @@ class FurnitureAssetViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = FurnitureAsset.objects.filter(is_active=True)
+        queryset = FurnitureAsset.objects.filter(is_active=True)  # pyrefly: ignore[missing-attribute]
 
         # 1. Category filter
         category = self.request.query_params.get('category')
@@ -45,7 +45,7 @@ class FurnitureAssetViewSet(viewsets.ReadOnlyModelViewSet):
         search = self.request.query_params.get('search') or self.request.query_params.get('q')
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) |
+                Q(name__icontains=search) |  # pyrefly: ignore[unsupported-operation]
                 Q(description__icontains=search) |
                 Q(category__icontains=search) |
                 Q(style_tags__icontains=search)
@@ -149,7 +149,7 @@ class BudgetEstimateView(APIView):
 
             # 2. Enforce strict ownership on every saved-design lookup (never retrieve another user's design)
             from apps.designs.models import Design
-            design = Design.objects.filter(id=design_id, owner=request.user).first()
+            design = Design.objects.filter(id=design_id, owner=request.user).first()  # pyrefly: ignore[missing-attribute]
             if not design:
                 return Response(
                     {"detail": f"Design '{design_id}' not found."},

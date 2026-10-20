@@ -25,7 +25,7 @@ class AgentSessionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return AgentSession.objects.filter(owner=self.request.user)
+        return AgentSession.objects.filter(owner=self.request.user)  # pyrefly: ignore[missing-attribute]
 
     def perform_create(self, serializer):
         design = serializer.validated_data.get('design')
@@ -71,7 +71,7 @@ class AgentPromptView(APIView):
 
         # Catalogue context summary for model
         catalogue_items = list(
-            FurnitureAsset.objects.filter(is_active=True).values(
+            FurnitureAsset.objects.filter(is_active=True).values(  # pyrefly: ignore[missing-attribute]
                 'id', 'name', 'category', 'width', 'height', 'depth', 'price_paise'
             )
         )
@@ -95,7 +95,7 @@ class AgentPromptView(APIView):
         sim_result = validate_and_simulate_actions(current_scene, proposal.proposed_actions)
 
         # Persist AgentRun with base and candidate snapshots
-        run = AgentRun.objects.create(
+        run = AgentRun.objects.create(  # pyrefly: ignore[missing-attribute]
             session=session,
             user_prompt=prompt,
             status=AgentRun.STATUS_PROPOSED,
@@ -135,10 +135,10 @@ class AgentApplyRunView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, run_id):
-        with transaction.atomic():
+        with transaction.atomic():  # pyrefly: ignore[bad-context-manager]
             # Acquire exclusive row lock on the AgentRun record
             run = (
-                AgentRun.objects
+                AgentRun.objects  # pyrefly: ignore[missing-attribute]
                 .select_for_update()
                 .filter(id=run_id, session__owner=request.user)
                 .select_related('session')
@@ -161,7 +161,7 @@ class AgentApplyRunView(APIView):
             design = None
             if run.session.design_id:
                 design = (
-                    Design.objects
+                    Design.objects  # pyrefly: ignore[missing-attribute]
                     .select_for_update()
                     .filter(id=run.session.design_id)
                     .first()
@@ -237,9 +237,9 @@ class AgentRejectRunView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, run_id):
-        with transaction.atomic():
+        with transaction.atomic():  # pyrefly: ignore[bad-context-manager]
             run = (
-                AgentRun.objects
+                AgentRun.objects  # pyrefly: ignore[missing-attribute]
                 .select_for_update()
                 .filter(id=run_id, session__owner=request.user)
                 .first()

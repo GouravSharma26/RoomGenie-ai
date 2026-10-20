@@ -7,7 +7,7 @@ from apps.rooms.models import Room
 class DesignSerializer(serializers.ModelSerializer):
     owner_username = serializers.CharField(source='owner.username', read_only=True)
     room_id = serializers.PrimaryKeyRelatedField(
-        queryset=Room.objects.all(),
+        queryset=Room.objects.all(),  # pyrefly: ignore[missing-attribute]
         source='room',
         required=False,
         allow_null=True

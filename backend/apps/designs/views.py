@@ -16,7 +16,7 @@ class DesignViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Design.objects.filter(owner=self.request.user)
+        return Design.objects.filter(owner=self.request.user)  # pyrefly: ignore[missing-attribute]
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -27,7 +27,7 @@ class DesignViewSet(viewsets.ModelViewSet):
         Duplicate an existing design into a new record owned by the requesting user.
         """
         design = self.get_object()  # Enforces ownership check
-        new_design = Design.objects.create(
+        new_design = Design.objects.create(  # pyrefly: ignore[missing-attribute]
             owner=request.user,
             room=design.room,
             title=f"Copy of {design.title}",

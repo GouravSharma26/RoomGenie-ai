@@ -152,11 +152,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         count = 0
         for item in SEED_DATA:
-            asset, created = FurnitureAsset.objects.update_or_create(
+            asset, created = FurnitureAsset.objects.update_or_create(  # pyrefly: ignore[missing-attribute]
                 id=item['id'],
                 defaults=item
             )
             count += 1
             action = 'Created' if created else 'Updated'
-            self.stdout.write(self.style.SUCCESS(f"{action} furniture asset: {asset.name} ({asset.id})"))
-        self.stdout.write(self.style.SUCCESS(f"Successfully seeded {count} furniture catalogue assets."))
+            self.stdout.write(self.style.SUCCESS(f"{action} furniture asset: {asset.name} ({asset.id})"))  # pyrefly: ignore[missing-attribute]
+        self.stdout.write(self.style.SUCCESS(f"Successfully seeded {count} furniture catalogue assets."))  # pyrefly: ignore[missing-attribute]

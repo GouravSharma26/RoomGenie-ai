@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from apps.rooms.services import cleanup_expired_room_photos
 
 
@@ -22,8 +22,11 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         max_age = options['max_age_seconds']
 
+        if max_age is not None and max_age <= 0:
+            raise CommandError("--max-age-seconds must be a positive integer greater than zero.")
+
         if dry_run:
-            self.stdout.write(self.style.WARNING("Running cleanup in DRY-RUN mode..."))
+            self.stdout.write(self.style.WARNING("Running cleanup in DRY-RUN mode..."))  # pyrefly: ignore[missing-attribute]
 
         summary = cleanup_expired_room_photos(max_age_seconds=max_age, dry_run=dry_run)
 
@@ -36,6 +39,6 @@ class Command(BaseCommand):
         )
 
         if summary['failed_count'] > 0:
-            self.stdout.write(self.style.WARNING(msg))
+            self.stdout.write(self.style.WARNING(msg))  # pyrefly: ignore[missing-attribute]
         else:
-            self.stdout.write(self.style.SUCCESS(msg))
+            self.stdout.write(self.style.SUCCESS(msg))  # pyrefly: ignore[missing-attribute]

@@ -56,7 +56,9 @@ class AgentSessionSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
         if request and hasattr(request, 'user') and request.user.is_authenticated:
-            self.fields['design'].queryset = Design.objects.filter(owner=request.user)
+            design_field = getattr(self, 'fields', {}).get('design')
+            if design_field is not None:
+                design_field.queryset = Design.objects.filter(owner=request.user)  # pyrefly: ignore[missing-attribute]
 
     def validate_design(self, value):
         if value is None:
