@@ -62,7 +62,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'confidence': 0.94,
                     'bounding_box': {'ymin': 0.35, 'xmin': 0.20, 'ymax': 0.85, 'xmax': 0.80},
                     'approximate_dimensions_m': {'width_m': 1.6, 'length_m': 2.1, 'height_m': 0.95},
-                    'suggested_catalogue_asset_id': pick_asset('bed-queen-wood', 'bed-platform-wood'),
+                    'suggested_catalogue_asset_id': pick_asset('bed-queen-platform', 'bed-queen-wood'),
                 },
                 {
                     'category': 'table',
@@ -73,7 +73,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'confidence': 0.88,
                     'bounding_box': {'ymin': 0.48, 'xmin': 0.08, 'ymax': 0.78, 'xmax': 0.22},
                     'approximate_dimensions_m': {'width_m': 0.5, 'length_m': 0.45, 'height_m': 0.55},
-                    'suggested_catalogue_asset_id': pick_asset('table-nightstand-minimal', 'table-coffee-round'),
+                    'suggested_catalogue_asset_id': pick_asset('table-bedside-nightstand', 'table-nightstand-minimal'),
                 },
                 {
                     'category': 'storage',
@@ -102,7 +102,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'confidence': 0.92,
                     'bounding_box': {'ymin': 0.40, 'xmin': 0.25, 'ymax': 0.82, 'xmax': 0.75},
                     'approximate_dimensions_m': {'width_m': 1.4, 'length_m': 0.75, 'height_m': 0.75},
-                    'suggested_catalogue_asset_id': pick_asset('table-desk-minimal', 'table-dining-rect'),
+                    'suggested_catalogue_asset_id': pick_asset('desk-workspace-study', 'table-desk-minimal'),
                 },
                 {
                     'category': 'seating',
@@ -143,7 +143,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'confidence': 0.95,
                     'bounding_box': {'ymin': 0.42, 'xmin': 0.25, 'ymax': 0.82, 'xmax': 0.80},
                     'approximate_dimensions_m': {'width_m': 2.2, 'length_m': 0.95, 'height_m': 0.85},
-                    'suggested_catalogue_asset_id': pick_asset('sofa-3seater-fabric', 'sofa-3seater-fabric'),
+                    'suggested_catalogue_asset_id': pick_asset('sofa-modern-3seater', 'sofa-3seater-fabric'),
                 },
                 {
                     'category': 'table',
@@ -154,7 +154,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'confidence': 0.90,
                     'bounding_box': {'ymin': 0.62, 'xmin': 0.38, 'ymax': 0.88, 'xmax': 0.64},
                     'approximate_dimensions_m': {'width_m': 0.85, 'length_m': 0.85, 'height_m': 0.45},
-                    'suggested_catalogue_asset_id': pick_asset('table-coffee-round', 'table-coffee-round'),
+                    'suggested_catalogue_asset_id': pick_asset('table-oak-coffee', 'table-coffee-round'),
                 },
                 {
                     'category': 'seating',

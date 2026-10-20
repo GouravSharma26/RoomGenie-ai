@@ -545,10 +545,19 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
         )
 
         for asset_id, name, cat in [
+            ('sofa-modern-3seater', 'Modern 3-Seater Sofa', 'seating'),
+            ('table-oak-coffee', 'Minimalist Coffee Table', 'tables'),
+            ('desk-workspace-study', 'Ergonomic Study Desk', 'tables'),
+            ('chair-accent-armchair', 'Lounge Accent Armchair', 'seating'),
+            ('storage-bookshelf-tall', '4-Tier Architectural Bookshelf', 'storage'),
+            ('bed-queen-platform', 'Nordic Queen Platform Bed', 'beds'),
+            ('storage-wardrobe-compact', 'Compact 2-Door Wardrobe', 'storage'),
+            ('table-bedside-nightstand', 'Minimalist Nightstand', 'tables'),
+            ('decor-plant-floor-vase', 'Botanical Ceramic Floor Planter', 'decor'),
+            ('decor-divider-architectural', 'Custom Slatted Partition Screen', 'decor'),
+            # Legacy alias seeds for backward compatibility checks
             ('sofa-3seater-fabric', '3-Seater Fabric Sofa', 'seating'),
             ('table-coffee-round', 'Round Coffee Table', 'tables'),
-            ('chair-accent-armchair', 'Lounge Accent Armchair', 'seating'),
-            ('storage-bookshelf-tall', 'Media Console / Bookshelf', 'storage'),
             ('bed-queen-wood', 'Queen Size Platform Bed', 'beds'),
             ('table-nightstand-minimal', 'Bedside Nightstand', 'tables'),
             ('table-desk-minimal', 'Writing & Computer Desk', 'tables'),
@@ -794,7 +803,7 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
             'objects': [
                 {
                     'id': 'preserved-item-1',
-                    'assetId': 'sofa-3seater-fabric',
+                    'assetId': 'sofa-modern-3seater',
                     'position': [0.0, 0.44, 0.0],
                     'rotationEuler': [0.0, 0.0, 0.0],
                     'scale': [1.0, 1.0, 1.0],
@@ -912,7 +921,7 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
             'category': 'seating',
             'label': 'Living Sofa',
             'confidence': 0.95,
-            'suggested_catalogue_asset_id': 'sofa-3seater-fabric',
+            'suggested_catalogue_asset_id': 'sofa-modern-3seater',
         })
         self.assertTrue(valid_item.is_valid(), valid_item.errors)
 
@@ -925,6 +934,29 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
         })
         self.assertFalse(invalid_item.is_valid())
         self.assertIn('suggested_catalogue_asset_id', invalid_item.errors)
+
+    def test_all_authoritative_catalogue_assets_validate_successfully(self):
+        from apps.rooms.serializers import DetectedFurnitureSerializer
+        authoritative_ids = [
+            'sofa-modern-3seater',
+            'table-oak-coffee',
+            'desk-workspace-study',
+            'chair-accent-armchair',
+            'storage-bookshelf-tall',
+            'bed-queen-platform',
+            'storage-wardrobe-compact',
+            'table-bedside-nightstand',
+            'decor-plant-floor-vase',
+            'decor-divider-architectural',
+        ]
+        for aid in authoritative_ids:
+            item = DetectedFurnitureSerializer(data={
+                'category': 'seating',
+                'label': f'Item {aid}',
+                'confidence': 0.90,
+                'suggested_catalogue_asset_id': aid,
+            })
+            self.assertTrue(item.is_valid(), f"Authoritative asset ID {aid} failed serializer validation: {item.errors}")
 
     def test_schema_validates_bounding_boxes_and_approximate_dimensions(self):
         from apps.rooms.serializers import BoundingRegionSerializer, ApproximateDimensionsSerializer, DetectedFurnitureSerializer
@@ -952,7 +984,7 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
             'confidence': 0.90,
             'bounding_box': {'ymin': 0.3, 'xmin': 0.2, 'ymax': 0.8, 'xmax': 0.7},
             'approximate_dimensions_m': {'width_m': 2.0, 'length_m': 0.9, 'height_m': 0.8},
-            'suggested_catalogue_asset_id': 'sofa-3seater-fabric',
+            'suggested_catalogue_asset_id': 'sofa-modern-3seater',
         })
         self.assertTrue(full_item.is_valid(), full_item.errors)
 

@@ -26,6 +26,7 @@ import {
   type ColorPaletteItem
 } from '../../services/visionApi';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
+import { resolveCatalogueAssetId, isCatalogueAssetMapped } from '../../editor3d/data/catalogueMapping';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 
 interface RoomPhotoVisionModalProps {
@@ -56,6 +57,8 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
   const [applyRoomDimensions, setApplyRoomDimensions] = useState<boolean>(true);
   const [showConfirmPrompt, setShowConfirmPrompt] = useState<boolean>(false);
   const [appliedCount, setAppliedCount] = useState<number>(0);
+  const [unmappedCount, setUnmappedCount] = useState<number>(0);
+  const [unmappedLabels, setUnmappedLabels] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +96,9 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
     setErrorMsg(null);
     setAnalysisResult(null);
     setItemsToApply([]);
+    setAppliedCount(0);
+    setUnmappedCount(0);
+    setUnmappedLabels([]);
     setStep('upload');
     setShowConfirmPrompt(false);
   };
@@ -116,10 +122,12 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
 
       setAnalysisResult(analysisRes);
 
-      // 3. Populate editable items with initial selection flags
+      // 3. Populate editable items with resolved canonical catalogue IDs
       const detected = (analysisRes.observations?.detected_furniture || []).map((item) => ({
         ...item,
         selected: true,
+        // Canonical mapping: resolve aliases and match to SAMPLE_CATALOG
+        suggested_catalogue_asset_id: resolveCatalogueAssetId(item.suggested_catalogue_asset_id),
       }));
       setItemsToApply(detected);
       setStep('review');
@@ -150,7 +158,8 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
   const handleApplyToScene = () => {
     if (!analysisResult?.observations) return;
 
-    let count = 0;
+    let placedCount = 0;
+    const skippedLabels: string[] = [];
 
     // 1. Update room dimensions if user opted in and dimensions exist
     const approxDims = analysisResult.observations.estimated_dimensions_approx_m;
@@ -162,20 +171,29 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
       });
     }
 
-    // 2. Add approved furniture items to the 3D scene
+    // 2. Add approved furniture items to the 3D scene, tracking mapped vs unmapped
     const selectedItems = itemsToApply.filter((item) => item.selected);
     for (const item of selectedItems) {
       const assetId = item.suggested_catalogue_asset_id;
-      if (!assetId) continue;
+      const resolvedId = resolveCatalogueAssetId(assetId);
 
-      const catalogMatch = SAMPLE_CATALOG.find((cat) => cat.id === assetId);
+      if (!resolvedId) {
+        skippedLabels.push(item.label);
+        continue;
+      }
+
+      const catalogMatch = SAMPLE_CATALOG.find((cat) => cat.id === resolvedId);
       if (catalogMatch) {
         addFurniture(catalogMatch);
-        count++;
+        placedCount++;
+      } else {
+        skippedLabels.push(item.label);
       }
     }
 
-    setAppliedCount(count);
+    setAppliedCount(placedCount);
+    setUnmappedCount(skippedLabels.length);
+    setUnmappedLabels(skippedLabels);
     setShowConfirmPrompt(false);
     setStep('confirmed');
   };
@@ -472,12 +490,15 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
                 <div className="space-y-2">
                   {itemsToApply.map((item, index) => {
                     const approx = item.approximate_dimensions_m;
+                    const isMapped = isCatalogueAssetMapped(item.suggested_catalogue_asset_id);
                     return (
                       <div
                         key={index}
                         className={`p-3.5 rounded-xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
                           item.selected
-                            ? 'bg-slate-950/80 border-indigo-500/40 shadow-sm'
+                            ? isMapped
+                              ? 'bg-slate-950/80 border-indigo-500/40 shadow-sm'
+                              : 'bg-amber-950/20 border-amber-500/40 shadow-sm'
                             : 'bg-slate-950/20 border-slate-800/80 opacity-60'
                         }`}
                       >
@@ -489,7 +510,7 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
                             className="mt-1 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0 cursor-pointer"
                           />
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="text-xs font-bold text-white">{item.label}</span>
                               <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium capitalize">
                                 {item.category}
@@ -497,6 +518,12 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
                               <span className="text-[10px] text-emerald-400 font-medium">
                                 {Math.round(item.confidence * 100)}%
                               </span>
+                              {!isMapped && item.selected && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                                  Unmapped 3D Model
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
                               {item.estimated_spatial_zone && (
@@ -508,6 +535,11 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
                                 </span>
                               )}
                             </div>
+                            {!isMapped && item.selected && (
+                              <p className="text-[11px] text-amber-300/90 flex items-center gap-1">
+                                <span>No 3D catalogue model mapped. Select a replacement model below to add it to your 3D scene.</span>
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -517,9 +549,14 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
                             value={item.suggested_catalogue_asset_id || ''}
                             onChange={(e) => updateItemCatalogueAsset(index, e.target.value)}
                             disabled={!item.selected}
-                            className="bg-slate-900 border border-slate-700 text-xs text-white rounded-lg px-2.5 py-1 focus:border-indigo-500 outline-none max-w-[200px]"
+                            aria-label={`Catalogue model for ${item.label}`}
+                            className={`bg-slate-900 border text-xs text-white rounded-lg px-2.5 py-1 focus:border-indigo-500 outline-none max-w-[200px] ${
+                              !isMapped && item.selected
+                                ? 'border-amber-500/70 text-amber-200'
+                                : 'border-slate-700'
+                            }`}
                           >
-                            <option value="">Do Not Add 3D Model</option>
+                            <option value="">No 3D Model (Skip 3D Scene)</option>
                             {SAMPLE_CATALOG.map((cat) => (
                               <option key={cat.id} value={cat.id}>
                                 {cat.name} ({cat.category})
@@ -559,14 +596,37 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
           {/* STEP 4: CONFIRMED STATE */}
           {step === 'confirmed' && (
             <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10">
-                <CheckCircle2 className="w-8 h-8" />
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
+                appliedCount > 0
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-emerald-500/10'
+                  : 'bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-amber-500/10'
+              }`}>
+                {appliedCount > 0 ? <CheckCircle2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
               </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-white">Suggestions Applied to 3D Scene</h3>
-                <p className="text-xs text-slate-400 max-w-sm">
-                  Successfully added {appliedCount} approved furniture model{appliedCount === 1 ? '' : 's'} to your interactive 3D room canvas.
+              <div className="space-y-1 max-w-md">
+                <h3 className="text-base font-bold text-white">
+                  {appliedCount > 0 ? 'Suggestions Applied to 3D Scene' : 'Scene Processing Complete'}
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {appliedCount > 0
+                    ? `Successfully added ${appliedCount} approved furniture model${appliedCount === 1 ? '' : 's'} to your interactive 3D room canvas.`
+                    : 'No new 3D furniture models were added to your scene.'}
                 </p>
+                {unmappedCount > 0 && (
+                  <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-left text-xs text-amber-300">
+                    <span className="font-semibold block text-amber-200">
+                      {unmappedCount} selected item{unmappedCount === 1 ? '' : 's'} skipped (no 3D model mapped):
+                    </span>
+                    <span className="text-[11px] text-amber-300/80">
+                      {unmappedLabels.join(', ')}
+                    </span>
+                  </div>
+                )}
+                {applyRoomDimensions && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Room dimensions were updated based on approximate observations.
+                  </p>
+                )}
               </div>
               <div className="pt-2">
                 <button
@@ -645,44 +705,74 @@ export const RoomPhotoVisionModal: React.FC<RoomPhotoVisionModalProps> = ({
         </div>
 
         {/* Explicit Confirmation Dialog Overlay */}
-        {showConfirmPrompt && (
-          <div className="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-              <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
-                <ArrowRight className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-white">
-                  Confirm 3D Room Updates
-                </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  You are about to add{' '}
-                  <strong className="text-white">
-                    {itemsToApply.filter((i) => i.selected).length} furniture items
-                  </strong>{' '}
-                  to your active 3D room canvas
-                  {applyRoomDimensions ? ' and update the room dimensions' : ''}.
-                  Existing furniture items will not be overwritten.
-                </p>
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  onClick={() => setShowConfirmPrompt(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
-                >
-                  Back to Review
-                </button>
-                <button
-                  onClick={handleApplyToScene}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20 transition flex items-center gap-1.5"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Yes, Apply to Scene</span>
-                </button>
+        {showConfirmPrompt && (() => {
+          const selectedItems = itemsToApply.filter((i) => i.selected);
+          const mappedItems = selectedItems.filter((i) => isCatalogueAssetMapped(i.suggested_catalogue_asset_id));
+          const unmappedItems = selectedItems.filter((i) => !isCatalogueAssetMapped(i.suggested_catalogue_asset_id));
+
+          return (
+            <div className="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+                  <ArrowRight className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-white">
+                    Confirm 3D Room Updates
+                  </h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    You are about to add{' '}
+                    <strong className="text-white">
+                      {selectedItems.length} furniture item{selectedItems.length === 1 ? '' : 's'}
+                    </strong>{' '}
+                    to your active 3D room canvas
+                    {applyRoomDimensions ? ' and update the room dimensions' : ''}.
+                    {mappedItems.length < selectedItems.length ? (
+                      <span className="block mt-1 text-amber-300">
+                        ({mappedItems.length} mapped 3D model{mappedItems.length === 1 ? '' : 's'} will be placed; {unmappedItems.length} unmapped item{unmappedItems.length === 1 ? '' : 's'} will be skipped)
+                      </span>
+                    ) : (
+                      <span className="block mt-1 text-emerald-400">
+                        (All {mappedItems.length} items map directly to active 3D catalogue models)
+                      </span>
+                    )}
+                    {' '}Existing furniture items will not be overwritten.
+                  </p>
+                </div>
+
+                {unmappedItems.length > 0 && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <span className="font-semibold block text-amber-200">
+                        {unmappedItems.length} selected item{unmappedItems.length === 1 ? '' : 's'} unmapped ({unmappedItems.map(i => i.label).join(', ')}):
+                      </span>
+                      <span className="text-[11px] text-amber-300/80">
+                        These items have no 3D catalogue model assigned and will be skipped unless you pick a model from the dropdown.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => setShowConfirmPrompt(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                  >
+                    Back to Review
+                  </button>
+                  <button
+                    onClick={handleApplyToScene}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20 transition flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Yes, Apply to Scene</span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

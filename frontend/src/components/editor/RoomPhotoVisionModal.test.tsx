@@ -363,4 +363,242 @@ describe('RoomPhotoVisionModal Component', () => {
       expect(screen.getByText(/gemini_api_key_not_configured/i)).toBeInTheDocument();
     });
   });
+
+  it('maps backend legacy alias IDs to canonical catalogue models and adds them to scene', async () => {
+    vi.mocked(visionApi.uploadRoomPhoto).mockResolvedValue({
+      upload_id: 'u-alias',
+      file_path: '/path.jpg',
+      original_filename: 'room.jpg',
+      file_size_bytes: 1000,
+      content_type: 'image/jpeg',
+      image_format: 'JPEG',
+      width: 800,
+      height: 600,
+      expires_at: new Date(Date.now() + 3600000).toISOString(),
+      message: 'ok',
+    });
+
+    vi.mocked(visionApi.analyzeRoomPhoto).mockResolvedValue({
+      id: 'a-alias',
+      photo_upload_id: 'u-alias',
+      room_id: null,
+      status: 'completed',
+      provider: 'mock',
+      model_name: 'mock-v1',
+      fallback_used: false,
+      latency_ms: 50,
+      created_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      observations: {
+        room_type: 'living_room',
+        overall_confidence: 0.95,
+        detected_furniture: [
+          {
+            category: 'seating',
+            label: 'Legacy Fabric Sofa',
+            confidence: 0.94,
+            // Legacy backend alias
+            suggested_catalogue_asset_id: 'sofa-3seater-fabric',
+          },
+          {
+            category: 'tables',
+            label: 'Legacy Coffee Table',
+            confidence: 0.90,
+            // Legacy backend alias
+            suggested_catalogue_asset_id: 'table-coffee-round',
+          },
+        ],
+        color_palette: [],
+        recommendations: [],
+        requires_user_confirmation: true,
+      },
+    });
+
+    render(<RoomPhotoVisionModal isOpen={true} onClose={vi.fn()} />);
+
+    const file = new File(['data'], 'room.jpg', { type: 'image/jpeg' });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Upload & Analyze/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Legacy Fabric Sofa')).toBeInTheDocument();
+      expect(screen.getByText('Legacy Coffee Table')).toBeInTheDocument();
+    });
+
+    // Neither should have an unmapped warning badge because aliases are resolved
+    expect(screen.queryByText(/Unmapped 3D Model/i)).not.toBeInTheDocument();
+
+    // Confirm and apply
+    fireEvent.click(screen.getByRole('button', { name: /Apply Confirmed Items/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Yes, Apply to Scene/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Suggestions Applied to 3D Scene/i)).toBeInTheDocument();
+      expect(screen.getByText(/Successfully added 2 approved furniture models/i)).toBeInTheDocument();
+    });
+
+    const objects = useEditorStore.getState().scene.objects;
+    expect(objects).toHaveLength(2);
+    expect(objects[0].assetId).toBe('sofa-modern-3seater');
+    expect(objects[1].assetId).toBe('table-oak-coffee');
+  });
+
+  it('displays unmapped warning when suggestion has unknown catalogue ID, warns in confirm dialog, and tracks unmapped count accurately', async () => {
+    vi.mocked(visionApi.uploadRoomPhoto).mockResolvedValue({
+      upload_id: 'u-unmapped',
+      file_path: '/path.jpg',
+      original_filename: 'room.jpg',
+      file_size_bytes: 1000,
+      content_type: 'image/jpeg',
+      image_format: 'JPEG',
+      width: 800,
+      height: 600,
+      expires_at: new Date(Date.now() + 3600000).toISOString(),
+      message: 'ok',
+    });
+
+    vi.mocked(visionApi.analyzeRoomPhoto).mockResolvedValue({
+      id: 'a-unmapped',
+      photo_upload_id: 'u-unmapped',
+      room_id: null,
+      status: 'completed',
+      provider: 'mock',
+      model_name: 'mock-v1',
+      fallback_used: false,
+      latency_ms: 50,
+      created_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      observations: {
+        room_type: 'living_room',
+        overall_confidence: 0.9,
+        detected_furniture: [
+          {
+            category: 'lighting',
+            label: 'Vintage Chandelier',
+            confidence: 0.85,
+            suggested_catalogue_asset_id: 'unknown-vintage-chandelier-id-999',
+          },
+        ],
+        color_palette: [],
+        recommendations: [],
+        requires_user_confirmation: true,
+      },
+    });
+
+    render(<RoomPhotoVisionModal isOpen={true} onClose={vi.fn()} />);
+
+    const file = new File(['data'], 'room.jpg', { type: 'image/jpeg' });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Upload & Analyze/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Vintage Chandelier')).toBeInTheDocument();
+      expect(screen.getByText(/Unmapped 3D Model/i)).toBeInTheDocument();
+      expect(screen.getByText(/No 3D catalogue model mapped/i)).toBeInTheDocument();
+    });
+
+    // Click Apply Confirmed Items
+    fireEvent.click(screen.getByRole('button', { name: /Apply Confirmed Items/i }));
+
+    // Confirm dialog should display warning about 1 unmapped item
+    expect(screen.getByText(/1 selected item unmapped \(Vintage Chandelier\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 mapped 3D models will be placed; 1 unmapped item will be skipped/i)).toBeInTheDocument();
+
+    // Confirm application
+    fireEvent.click(screen.getByRole('button', { name: /Yes, Apply to Scene/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Scene Processing Complete/i)).toBeInTheDocument();
+      expect(screen.getByText(/No new 3D furniture models were added to your scene/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 selected item skipped \(no 3D model mapped\):/i)).toBeInTheDocument();
+      expect(screen.getByText(/Vintage Chandelier/i)).toBeInTheDocument();
+    });
+
+    // Scene objects remain empty
+    expect(useEditorStore.getState().scene.objects).toHaveLength(0);
+  });
+
+  it('allows user to map an unmapped suggestion to a valid catalogue model via dropdown before applying', async () => {
+    vi.mocked(visionApi.uploadRoomPhoto).mockResolvedValue({
+      upload_id: 'u-remap',
+      file_path: '/path.jpg',
+      original_filename: 'room.jpg',
+      file_size_bytes: 1000,
+      content_type: 'image/jpeg',
+      image_format: 'JPEG',
+      width: 800,
+      height: 600,
+      expires_at: new Date(Date.now() + 3600000).toISOString(),
+      message: 'ok',
+    });
+
+    vi.mocked(visionApi.analyzeRoomPhoto).mockResolvedValue({
+      id: 'a-remap',
+      photo_upload_id: 'u-remap',
+      room_id: null,
+      status: 'completed',
+      provider: 'mock',
+      model_name: 'mock-v1',
+      fallback_used: false,
+      latency_ms: 50,
+      created_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      observations: {
+        room_type: 'living_room',
+        overall_confidence: 0.9,
+        detected_furniture: [
+          {
+            category: 'seating',
+            label: 'Custom Reading Chair',
+            confidence: 0.91,
+            suggested_catalogue_asset_id: null,
+          },
+        ],
+        color_palette: [],
+        recommendations: [],
+        requires_user_confirmation: true,
+      },
+    });
+
+    render(<RoomPhotoVisionModal isOpen={true} onClose={vi.fn()} />);
+
+    const file = new File(['data'], 'room.jpg', { type: 'image/jpeg' });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Upload & Analyze/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Custom Reading Chair')).toBeInTheDocument();
+      expect(screen.getByText(/Unmapped 3D Model/i)).toBeInTheDocument();
+    });
+
+    // Remap via dropdown to chair-accent-armchair
+    const select = screen.getByLabelText(/Catalogue model for Custom Reading Chair/i) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'chair-accent-armchair' } });
+
+    // Warning badge disappears once mapped
+    expect(screen.queryByText(/Unmapped 3D Model/i)).not.toBeInTheDocument();
+
+    // Confirm and apply
+    fireEvent.click(screen.getByRole('button', { name: /Apply Confirmed Items/i }));
+
+    // Confirmation dialog should confirm all items map directly
+    expect(screen.getByText(/All 1 items map directly to active 3D catalogue models/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Yes, Apply to Scene/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Suggestions Applied to 3D Scene/i)).toBeInTheDocument();
+      expect(screen.getByText(/Successfully added 1 approved furniture model/i)).toBeInTheDocument();
+    });
+
+    expect(useEditorStore.getState().scene.objects).toHaveLength(1);
+    expect(useEditorStore.getState().scene.objects[0].assetId).toBe('chair-accent-armchair');
+  });
 });
+
