@@ -35,7 +35,6 @@ export const CATALOGUE_ID_ALIASES: Record<string, AuthoritativeCatalogueId> = {
   'table-coffee': 'table-oak-coffee',
   'desk-workspace-study': 'desk-workspace-study',
   'table-desk-minimal': 'desk-workspace-study',
-  'table-dining-rect': 'desk-workspace-study',
   'table-bedside-nightstand': 'table-bedside-nightstand',
   'table-nightstand-minimal': 'table-bedside-nightstand',
 
@@ -68,9 +67,10 @@ export const CATALOGUE_ID_ALIASES: Record<string, AuthoritativeCatalogueId> = {
 export function resolveCatalogueAssetId(rawId: string | null | undefined): string | null {
   if (!rawId) return null;
   const trimmed = rawId.trim();
+  if (!trimmed) return null;
 
-  // 1. Direct alias match
-  if (CATALOGUE_ID_ALIASES[trimmed]) {
+  // 1. Direct alias match using Object.hasOwn to ignore inherited Object prototype properties
+  if (Object.hasOwn(CATALOGUE_ID_ALIASES, trimmed)) {
     return CATALOGUE_ID_ALIASES[trimmed];
   }
 

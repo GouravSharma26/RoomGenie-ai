@@ -45,4 +45,26 @@ describe('Authoritative Catalogue ID Mappings', () => {
     expect(resolveCatalogueAssetId('fictional-futuristic-sofa-999')).toBeNull();
     expect(isCatalogueAssetMapped('fictional-futuristic-sofa-999')).toBe(false);
   });
+
+  it('rejects inherited Object prototype properties and prevents prototype poisoning', () => {
+    const dangerousKeys = [
+      'constructor',
+      'toString',
+      'valueOf',
+      'hasOwnProperty',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+      '__proto__',
+    ];
+    for (const key of dangerousKeys) {
+      expect(resolveCatalogueAssetId(key)).toBeNull();
+      expect(isCatalogueAssetMapped(key)).toBe(false);
+    }
+  });
+
+  it('ensures distinct furniture types like table-dining-rect remain unmapped rather than mapped to study desk', () => {
+    expect(resolveCatalogueAssetId('table-dining-rect')).toBeNull();
+    expect(isCatalogueAssetMapped('table-dining-rect')).toBe(false);
+  });
 });
