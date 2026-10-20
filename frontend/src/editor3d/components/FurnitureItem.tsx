@@ -111,12 +111,18 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
           }
         })
         .catch((err) => {
-          console.warn(`[FurnitureItem] Could not hydrate model for job ${placement.reconstructionJobId}:`, err);
+          if (err?.name !== 'FetchCancelledError') {
+            console.warn(`[FurnitureItem] Could not hydrate model for job ${placement.reconstructionJobId}:`, err);
+          }
         });
     }
 
     return () => {
       isSubscribed = false;
+      const isStillInScene = useEditorStore.getState().scene.objects.some((o) => o.id === placement.id);
+      if (!isStillInScene) {
+        reconstructedAssetManager.releasePlacement(placement.id);
+      }
     };
   }, [placement.id, placement.reconstructionJobId, placement.modelUrl]);
 

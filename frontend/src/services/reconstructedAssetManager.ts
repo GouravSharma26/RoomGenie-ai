@@ -8,9 +8,13 @@
  * 1. Reference Tracking: Prevents premature revocation when a model is placed in the room.
  * 2. Automatic Cleanup: Revokes blob URLs via URL.revokeObjectURL when all owners
  *    (modal previews, room placements) have released them.
- * 3. Request De-duplication: Ensures concurrent requests for the same reconstruction job
- *    only perform a single authenticated API call.
- * 4. Persistence Hydration: Automatically fetches private GLBs when restoring scenes
+ * 3. In-flight Race Safety: Tracks pending owners while fetch is in-flight. If a placement
+ *    is deleted, cleared, or replaced before fetch resolves, the obsolete owner is discarded
+ *    and the blob URL is revoked if no valid owners remain.
+ * 4. Request De-duplication: Ensures concurrent requests for the same reconstruction job
+ *    only perform a single authenticated API call, without breaking other waiting placements
+ *    if one placement is cancelled.
+ * 5. Persistence Hydration: Automatically fetches private GLBs when restoring scenes
  *    with stable reconstructionJobId references.
  */
 
@@ -28,8 +32,16 @@ export interface PreviewLease {
   release: () => void;
 }
 
+export class FetchCancelledError extends Error {
+  constructor(ownerId: string, jobId: string) {
+    super(`Fetch cancelled for owner ${ownerId} on job ${jobId}`);
+    this.name = 'FetchCancelledError';
+  }
+}
+
 class ReconstructedAssetManager {
   private activeAssetsByJob = new Map<string, ActiveAsset>();
+  private pendingOwnersByJob = new Map<string, Set<string>>();
   private inFlightFetches = new Map<string, Promise<string>>();
 
   /**
@@ -94,9 +106,17 @@ class ReconstructedAssetManager {
 
   /**
    * Releases an owner's claim on a job's blob URL.
-   * If owners count drops to 0, revokes the blob URL and purges it from cache.
+   * Removes from pending fetches if still in-flight, or from active owners if resolved.
+   * If active owners count drops to 0, revokes the blob URL and purges it from cache.
    */
   public releaseOwner(jobId: string, ownerId: string): boolean {
+    // 1. Remove from pending owners if in-flight
+    const pending = this.pendingOwnersByJob.get(jobId);
+    if (pending) {
+      pending.delete(ownerId);
+    }
+
+    // 2. Remove from active owners if resolved
     const asset = this.activeAssetsByJob.get(jobId);
     if (!asset) return false;
 
@@ -117,9 +137,16 @@ class ReconstructedAssetManager {
   }
 
   /**
-   * Releases all claims held by a specific placement ID (e.g. when an item is deleted).
+   * Releases all claims held by a specific placement ID (e.g. when an item is deleted
+   * or cleared, whether active or pending in-flight).
    */
   public releasePlacement(placementId: string): void {
+    // Remove from all pending fetches
+    for (const pendingSet of this.pendingOwnersByJob.values()) {
+      pendingSet.delete(placementId);
+    }
+
+    // Remove from all active assets
     const jobsToCheck = Array.from(this.activeAssetsByJob.keys());
     for (const jobId of jobsToCheck) {
       const asset = this.activeAssetsByJob.get(jobId);
@@ -141,35 +168,94 @@ class ReconstructedAssetManager {
   /**
    * Fetches or retrieves the model URL for a given job.
    * De-duplicates concurrent fetches so only 1 network request is made.
+   * Ensures cancellation safety: if the placement is removed before the fetch resolves,
+   * it throws FetchCancelledError and does not retain the asset.
    */
   public async fetchOrGetModelUrl(jobId: string, ownerId: string): Promise<string> {
+    // 1. Check if already cached in active assets
     const existing = this.activeAssetsByJob.get(jobId);
     if (existing) {
       existing.owners.add(ownerId);
       return existing.blobUrl;
     }
 
-    const inFlight = this.inFlightFetches.get(jobId);
-    if (inFlight) {
-      const url = await inFlight;
-      const cached = this.activeAssetsByJob.get(jobId);
-      if (cached) {
-        cached.owners.add(ownerId);
-      }
-      return url;
+    // 2. Register owner in pendingOwnersByJob
+    let pending = this.pendingOwnersByJob.get(jobId);
+    if (!pending) {
+      pending = new Set<string>();
+      this.pendingOwnersByJob.set(jobId, pending);
+    }
+    pending.add(ownerId);
+
+    // 3. Get or initiate the shared fetch promise
+    let fetchPromise = this.inFlightFetches.get(jobId);
+    if (!fetchPromise) {
+      fetchPromise = this.executeFetch(jobId);
+      this.inFlightFetches.set(jobId, fetchPromise);
     }
 
-    const fetchPromise = (async () => {
-      try {
-        const blobUrl = await fetchReconstructedModelBlobUrl(jobId);
-        return this.registerBlobUrl(jobId, blobUrl, ownerId);
-      } finally {
-        this.inFlightFetches.delete(jobId);
-      }
-    })();
+    const blobUrl = await fetchPromise;
 
-    this.inFlightFetches.set(jobId, fetchPromise);
-    return fetchPromise;
+    // 4. Verify whether this specific owner is still valid after awaiting
+    const isNowActive = this.activeAssetsByJob.get(jobId)?.owners.has(ownerId);
+    if (!isNowActive) {
+      throw new FetchCancelledError(ownerId, jobId);
+    }
+
+    return blobUrl;
+  }
+
+  /**
+   * Internal worker executing the network fetch and handling post-fetch resolution.
+   */
+  private async executeFetch(jobId: string): Promise<string> {
+    try {
+      const blobUrl = await fetchReconstructedModelBlobUrl(jobId);
+
+      // Snapshot valid pending owners at time of resolution
+      const pending = this.pendingOwnersByJob.get(jobId);
+      const validOwners = pending ? Array.from(pending) : [];
+
+      // Check if another concurrent operation already registered an active asset (e.g. preview)
+      const existingActive = this.activeAssetsByJob.get(jobId);
+      if (existingActive) {
+        for (const owner of validOwners) {
+          existingActive.owners.add(owner);
+        }
+        if (existingActive.blobUrl !== blobUrl && blobUrl.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch {
+            // Ignore
+          }
+        }
+        return existingActive.blobUrl;
+      }
+
+      // If no valid owners remain, revoke the newly fetched URL immediately
+      if (validOwners.length === 0) {
+        if (blobUrl.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch {
+            // Ignore
+          }
+        }
+        return blobUrl;
+      }
+
+      // Register active asset with only valid non-cancelled owners
+      this.activeAssetsByJob.set(jobId, {
+        jobId,
+        blobUrl,
+        owners: new Set(validOwners),
+      });
+
+      return blobUrl;
+    } finally {
+      this.inFlightFetches.delete(jobId);
+      this.pendingOwnersByJob.delete(jobId);
+    }
   }
 
   /**
@@ -188,6 +274,21 @@ class ReconstructedAssetManager {
   }
 
   /**
+   * Returns pending owner IDs for a job still in-flight (for inspection/testing).
+   */
+  public getPendingOwnersForJob(jobId: string): string[] {
+    const pending = this.pendingOwnersByJob.get(jobId);
+    return pending ? Array.from(pending) : [];
+  }
+
+  /**
+   * Returns whether a fetch is currently in-flight for a job.
+   */
+  public hasPendingFetch(jobId: string): boolean {
+    return this.inFlightFetches.has(jobId);
+  }
+
+  /**
    * Returns number of active assets in memory.
    */
   public getActiveAssetCount(): number {
@@ -198,6 +299,9 @@ class ReconstructedAssetManager {
    * Releases all assets and revokes all active blob URLs (e.g., test cleanup or app unmount).
    */
   public releaseAll(): void {
+    this.pendingOwnersByJob.clear();
+    this.inFlightFetches.clear();
+
     for (const asset of this.activeAssetsByJob.values()) {
       if (asset.blobUrl.startsWith('blob:')) {
         try {
@@ -208,7 +312,6 @@ class ReconstructedAssetManager {
       }
     }
     this.activeAssetsByJob.clear();
-    this.inFlightFetches.clear();
   }
 }
 

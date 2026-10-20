@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { reconstructedAssetManager } from './reconstructedAssetManager';
+import { reconstructedAssetManager, FetchCancelledError } from './reconstructedAssetManager';
 import * as photoTo3dApi from './photoTo3dApi';
 import { useEditorStore } from '../editor3d/store/editorStore';
 import { serializeCanonicalScene, parseCanonicalScene } from '../editor3d/validation/sceneValidation';
@@ -9,7 +9,17 @@ vi.mock('./photoTo3dApi', () => ({
   fetchReconstructedModelBlobUrl: vi.fn(),
 }));
 
-describe('reconstructedAssetManager Lifecycle & Regressions', () => {
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: any) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('reconstructedAssetManager Lifecycle & In-Flight Race Regressions', () => {
   let revokeSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -32,6 +42,8 @@ describe('reconstructedAssetManager Lifecycle & Regressions', () => {
     revokeSpy.mockRestore();
     reconstructedAssetManager.releaseAll();
   });
+
+  // --- Synchronous Lifecycle & Store Integration ---
 
   it('cancelling before placement cleans up temporary preview URLs immediately', () => {
     const jobId = 'job-cancel-test';
@@ -220,55 +232,241 @@ describe('reconstructedAssetManager Lifecycle & Regressions', () => {
     expect(restoredObj.modelUrl).toBeUndefined();
   });
 
-  it('de-duplicates concurrent fetch requests for the same reconstruction job', async () => {
-    const jobId = 'job-concurrency-test';
-    const resolvedBlobUrl = 'blob:http://localhost/concurrent-model-glb';
+  // --- In-Flight Race Condition & Deferred Promise Regression Tests ---
 
-    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(resolvedBlobUrl), 50))
-    );
+  it('DETERMINISTIC RACE: delete a placement before its model fetch resolves', async () => {
+    const jobId = 'job-deferred-delete';
+    const blobUrl = 'blob:http://localhost/deferred-delete-glb';
+    const deferred = createDeferred<string>();
 
-    // Initiate two simultaneous fetches
-    const promise1 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, 'placement-a');
-    const promise2 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, 'placement-b');
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValue(deferred.promise);
 
-    const [url1, url2] = await Promise.all([promise1, promise2]);
+    // 1. Add placement to store
+    const placementId = useEditorStore.getState().addCustomPlacement({
+      assetId: 'custom-sofa',
+      name: 'Modern Sofa',
+      dimensions: [1.8, 0.8, 0.9],
+      reconstructionJobId: jobId,
+    });
 
-    expect(url1).toBe(resolvedBlobUrl);
-    expect(url2).toBe(resolvedBlobUrl);
+    // 2. Start hydration fetch
+    const fetchPromise = reconstructedAssetManager.fetchOrGetModelUrl(jobId, placementId);
 
-    // fetchReconstructedModelBlobUrl should have only been invoked ONCE
-    expect(photoTo3dApi.fetchReconstructedModelBlobUrl).toHaveBeenCalledTimes(1);
-    expect(photoTo3dApi.fetchReconstructedModelBlobUrl).toHaveBeenCalledWith(jobId);
+    // Verify pending fetch tracking
+    expect(reconstructedAssetManager.hasPendingFetch(jobId)).toBe(true);
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).toContain(placementId);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
 
-    // Both placements are registered owners
-    const owners = reconstructedAssetManager.getOwnersForJob(jobId);
-    expect(owners).toContain('placement-a');
-    expect(owners).toContain('placement-b');
+    // 3. User deletes the placement while fetch is still in-flight
+    useEditorStore.getState().deleteObject(placementId);
+
+    // Verify pending owner was cancelled
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).not.toContain(placementId);
+
+    // 4. Resolve the network fetch
+    deferred.resolve(blobUrl);
+
+    // The fetch promise for the cancelled placement should throw FetchCancelledError
+    await expect(fetchPromise).rejects.toThrow(FetchCancelledError);
+
+    // 5. Verify the returned blob URL was immediately revoked and NOT cached in active assets
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+    expect(reconstructedAssetManager.getUrlForJob(jobId)).toBeNull();
   });
 
-  it('cleans up previous preview when a new preview is generated without placement', () => {
-    const job1 = 'job-preview-1';
-    const url1 = 'blob:http://localhost/preview1-glb';
-    const job2 = 'job-preview-2';
-    const url2 = 'blob:http://localhost/preview2-glb';
+  it('DETERMINISTIC RACE: clear scene while hydration fetch is pending', async () => {
+    const jobId = 'job-deferred-clear';
+    const blobUrl = 'blob:http://localhost/deferred-clear-glb';
+    const deferred = createDeferred<string>();
 
-    // 1. First preview
-    const lease1 = reconstructedAssetManager.acquirePreview(job1, url1);
-    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(1);
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValue(deferred.promise);
 
-    // 2. User reconfigures and generates second model (releasing first)
-    lease1.release();
+    const pid1 = useEditorStore.getState().addCustomPlacement({
+      assetId: 'item-1',
+      name: 'Item 1',
+      dimensions: [1, 1, 1],
+      reconstructionJobId: jobId,
+    });
+    const pid2 = useEditorStore.getState().addCustomPlacement({
+      assetId: 'item-2',
+      name: 'Item 2',
+      dimensions: [1, 1, 1],
+      reconstructionJobId: jobId,
+    });
+
+    const promise1 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pid1);
+    const promise2 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pid2);
+
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).toEqual(
+      expect.arrayContaining([pid1, pid2])
+    );
+
+    // Clear entire scene while in-flight
+    useEditorStore.getState().clearScene();
+
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId).length).toBe(0);
+
+    deferred.resolve(blobUrl);
+
+    await expect(promise1).rejects.toThrow(FetchCancelledError);
+    await expect(promise2).rejects.toThrow(FetchCancelledError);
+
     expect(revokeSpy).toHaveBeenCalledTimes(1);
-    expect(revokeSpy).toHaveBeenCalledWith(url1);
-
-    const lease2 = reconstructedAssetManager.acquirePreview(job2, url2);
-    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(1);
-    expect(reconstructedAssetManager.getUrlForJob(job2)).toBe(url2);
-
-    lease2.release();
-    expect(revokeSpy).toHaveBeenCalledTimes(2);
-    expect(revokeSpy).toHaveBeenCalledWith(url2);
+    expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
     expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+  });
+
+  it('DETERMINISTIC RACE: loadScene (scene replace) while hydration fetch is pending', async () => {
+    const jobId = 'job-deferred-replace';
+    const blobUrl = 'blob:http://localhost/deferred-replace-glb';
+    const deferred = createDeferred<string>();
+
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValue(deferred.promise);
+
+    const oldPid = useEditorStore.getState().addCustomPlacement({
+      assetId: 'old-item',
+      name: 'Old Item',
+      dimensions: [1, 1, 1],
+      reconstructionJobId: jobId,
+    });
+
+    const oldPromise = reconstructedAssetManager.fetchOrGetModelUrl(jobId, oldPid);
+
+    // Replace scene with new scene containing no reconstructed items
+    const freshScene: CanonicalScene = {
+      schemaVersion: 1,
+      unit: 'm',
+      room: { width: 4.0, length: 4.0, height: 2.5 },
+      objects: [],
+    };
+    useEditorStore.getState().loadScene(freshScene);
+
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).not.toContain(oldPid);
+
+    deferred.resolve(blobUrl);
+
+    await expect(oldPromise).rejects.toThrow(FetchCancelledError);
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+  });
+
+  it('DETERMINISTIC RACE: two placements share a fetch; delete one before resolution and verify the other still loads', async () => {
+    const jobId = 'job-shared-race';
+    const blobUrl = 'blob:http://localhost/shared-race-glb';
+    const deferred = createDeferred<string>();
+
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValue(deferred.promise);
+
+    const pid1 = useEditorStore.getState().addCustomPlacement({
+      assetId: 'shared-1',
+      name: 'Shared 1',
+      dimensions: [1, 1, 1],
+      reconstructionJobId: jobId,
+    });
+    const pid2 = useEditorStore.getState().addCustomPlacement({
+      assetId: 'shared-2',
+      name: 'Shared 2',
+      dimensions: [1, 1, 1],
+      reconstructionJobId: jobId,
+    });
+
+    const promise1 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pid1);
+    const promise2 = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pid2);
+
+    expect(photoTo3dApi.fetchReconstructedModelBlobUrl).toHaveBeenCalledTimes(1);
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).toEqual(
+      expect.arrayContaining([pid1, pid2])
+    );
+
+    // Delete placement 1 before resolution
+    useEditorStore.getState().deleteObject(pid1);
+
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).not.toContain(pid1);
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId)).toContain(pid2);
+
+    // Resolve network fetch
+    deferred.resolve(blobUrl);
+
+    // Placement 1 was cancelled
+    await expect(promise1).rejects.toThrow(FetchCancelledError);
+
+    // Placement 2 successfully loads!
+    const result2 = await promise2;
+    expect(result2).toBe(blobUrl);
+
+    // URL must NOT be revoked because placement 2 is an active owner
+    expect(revokeSpy).not.toHaveBeenCalled();
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(1);
+    expect(reconstructedAssetManager.getOwnersForJob(jobId)).toEqual([pid2]);
+
+    // When placement 2 is later deleted, resources are released and revoked
+    useEditorStore.getState().deleteObject(pid2);
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+  });
+
+  it('DETERMINISTIC RACE: all waiting owners disappear before resolution; verify resulting URL is revoked and not cached', async () => {
+    const jobId = 'job-all-disappear';
+    const blobUrl = 'blob:http://localhost/disappeared-glb';
+    const deferred = createDeferred<string>();
+
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValue(deferred.promise);
+
+    const pA = 'placement-a';
+    const pB = 'placement-b';
+
+    const promiseA = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pA);
+    const promiseB = reconstructedAssetManager.fetchOrGetModelUrl(jobId, pB);
+
+    // Both disappear
+    reconstructedAssetManager.releasePlacement(pA);
+    reconstructedAssetManager.releasePlacement(pB);
+
+    expect(reconstructedAssetManager.getPendingOwnersForJob(jobId).length).toBe(0);
+
+    deferred.resolve(blobUrl);
+
+    await expect(promiseA).rejects.toThrow(FetchCancelledError);
+    await expect(promiseB).rejects.toThrow(FetchCancelledError);
+
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+    expect(reconstructedAssetManager.hasPendingFetch(jobId)).toBe(false);
+  });
+
+  it('a later request for the same job still works cleanly after cancellation or failure', async () => {
+    const jobId = 'job-retry-cleanly';
+    const failDeferred = createDeferred<string>();
+
+    // 1. Initial attempt fails with network error
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValueOnce(failDeferred.promise);
+
+    const failPromise = reconstructedAssetManager.fetchOrGetModelUrl(jobId, 'p-fail');
+    failDeferred.reject(new Error('Simulated network timeout'));
+
+    await expect(failPromise).rejects.toThrow('Simulated network timeout');
+
+    // Verify in-flight maps and pending owners are completely clean
+    expect(reconstructedAssetManager.hasPendingFetch(jobId)).toBe(false);
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(0);
+
+    // 2. Second attempt succeeds
+    const successDeferred = createDeferred<string>();
+    vi.mocked(photoTo3dApi.fetchReconstructedModelBlobUrl).mockReturnValueOnce(successDeferred.promise);
+
+    const successPromise = reconstructedAssetManager.fetchOrGetModelUrl(jobId, 'p-success');
+    expect(reconstructedAssetManager.hasPendingFetch(jobId)).toBe(true);
+
+    successDeferred.resolve('blob:http://localhost/retry-success-glb');
+    const finalUrl = await successPromise;
+
+    expect(finalUrl).toBe('blob:http://localhost/retry-success-glb');
+    expect(reconstructedAssetManager.getActiveAssetCount()).toBe(1);
+    expect(reconstructedAssetManager.getOwnersForJob(jobId)).toContain('p-success');
   });
 });
