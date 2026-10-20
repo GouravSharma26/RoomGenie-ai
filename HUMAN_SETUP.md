@@ -26,7 +26,10 @@ If Git, Node.js, Python, PostgreSQL, or Docker is missing and the agent cannot i
 The project must work in mock mode without API keys. Only when you choose to enable live AI features:
 
 - Create/configure your own Google AI Studio/Gemini API key and add it to the backend `.env` as `GEMINI_API_KEY`.
-- For photo-to-3D, only if you approve possible credit charges, create/configure a Tripo API key and add it as `TRIPO_API_KEY`.
+- For photo-to-3D, live provider access is strictly gated by default to prevent accidental credit spend. To enable live external requests:
+  1. Set `IMAGE_TO_3D_PROVIDER_MODE=tripo` in your `.env`.
+  2. Set `TRIPO_API_KEY=<your-key>` in `.env`.
+  3. Explicitly set `IMAGE_TO_3D_ALLOW_PAID_REQUESTS=true` in `.env` to authorize paid outbound requests. If this flag is omitted or `false`, the backend will always fall back safely to the offline procedural mock adapter.
 - Keep keys out of chat messages, Markdown, screenshots, Git commits, and frontend environment variables.
 - Review current pricing, data use, and privacy terms before sending real room photos to any hosted provider.
 

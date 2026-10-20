@@ -170,6 +170,9 @@ GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 IMAGE_TO_3D_PROVIDER_MODE = os.getenv('IMAGE_TO_3D_PROVIDER_MODE', 'mock').lower()
 TRIPO_API_KEY = os.getenv('TRIPO_API_KEY', '')
 TRIPO_MODEL = os.getenv('TRIPO_MODEL', 'v3.1-20260211')
+IMAGE_TO_3D_ALLOW_PAID_REQUESTS = os.getenv('IMAGE_TO_3D_ALLOW_PAID_REQUESTS', 'false').lower() in ('true', '1', 'yes')
+IMAGE_TO_3D_MAX_OUTPUT_SIZE = int(os.getenv('IMAGE_TO_3D_MAX_OUTPUT_SIZE', str(15 * 1024 * 1024)))  # 15 MB default
+IMAGE_TO_3D_TIMEOUT_SECONDS = int(os.getenv('IMAGE_TO_3D_TIMEOUT_SECONDS', '60'))
 
 # Media and Ephemeral Upload Storage
 MEDIA_ROOT = os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media'))

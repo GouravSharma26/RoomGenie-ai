@@ -1,5 +1,9 @@
+import io
+import json
+import math
 import struct
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
@@ -7,7 +11,15 @@ from rest_framework.test import APITestCase
 from apps.furniture.models import FurnitureAsset, FurnitureReconstructionJob
 from apps.furniture.reconstruction.validator import GLBValidator, GLBValidationError
 from apps.furniture.reconstruction.mock import MockImageTo3DAdapter, build_procedural_furniture_glb
-from apps.furniture.reconstruction.tripo import TripoImageTo3DAdapter
+from apps.furniture.reconstruction.tripo import TripoImageTo3DAdapter, stream_download_model, sanitize_sensitive_text
+from apps.furniture.reconstruction.services import (
+    resolve_catalogue_fallback,
+    get_image_to_3d_adapter,
+    create_reconstruction_job,
+    run_reconstruction_job,
+    delete_reconstruction_job_file,
+    validate_reference_dimensions,
+)
 from apps.designs.models import Design
 
 User = get_user_model()
@@ -566,8 +578,85 @@ class GLBValidatorTests(APITestCase):
         corrupted = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, len(corrupted)) + corrupted[12:]
         with self.assertRaises(GLBValidationError) as ctx:
             GLBValidator.validate(corrupted)
-        # Should raise either chunk header truncated or unparsed trailing bytes
         self.assertTrue("trailing bytes" in str(ctx.exception) or "truncated" in str(ctx.exception).lower())
+
+    @staticmethod
+    def _build_synthetic_glb(json_obj: dict, bin_data: bytes | None = None) -> bytes:
+        json_bytes = json.dumps(json_obj).encode('utf-8')
+        json_pad = (4 - (len(json_bytes) % 4)) % 4
+        json_bytes += b' ' * json_pad
+
+        if bin_data is not None:
+            bin_pad = (4 - (len(bin_data) % 4)) % 4
+            bin_chunk = bin_data + (b'\x00' * bin_pad)
+        else:
+            bin_chunk = b''
+
+        total_len = 12 + 8 + len(json_bytes)
+        if bin_data is not None:
+            total_len += 8 + len(bin_chunk)
+
+        header = struct.pack('<III', GLBValidator.MAGIC_GLTF, 2, total_len)
+        chunk0 = struct.pack('<II', len(json_bytes), GLBValidator.CHUNK_TYPE_JSON) + json_bytes
+        if bin_data is not None:
+            chunk1 = struct.pack('<II', len(bin_chunk), GLBValidator.CHUNK_TYPE_BIN) + bin_chunk
+            return header + chunk0 + chunk1
+        return header + chunk0
+
+    def test_missing_bin_chunk_when_buffers_declared(self):
+        # Buffer 0 declared without URI, but GLB has no BIN chunk
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=None)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("missing binary data", str(ctx.exception).lower())
+
+    def test_insufficient_bin_chunk_data(self):
+        # Buffer 0 declares 256 bytes, but BIN chunk only contains 64 bytes
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 256}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("insufficient binary data", str(ctx.exception).lower())
+
+    def test_bufferview_exceeds_bin_chunk_data(self):
+        # Buffer 0 has 64 bytes, but bufferView declares offset 32 + length 48 = 80 bytes
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 32, "byteLength": 48}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("insufficient binary data", str(ctx.exception).lower())
+
+    def test_invalid_buffer_length_rejected(self):
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": -10}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("invalid bytelength", str(ctx.exception).lower())
+
+    def test_bufferview_references_invalid_buffer_index(self):
+        json_obj = {
+            "asset": {"version": "2.0"},
+            "buffers": [{"byteLength": 64}],
+            "bufferViews": [{"buffer": 3, "byteOffset": 0, "byteLength": 16}]
+        }
+        raw_glb = self._build_synthetic_glb(json_obj, bin_data=b"\x00" * 64)
+        with self.assertRaises(GLBValidationError) as ctx:
+            GLBValidator.validate(raw_glb)
+        self.assertIn("invalid buffer index", str(ctx.exception).lower())
 
 
 class MockImageTo3DAdapterTests(APITestCase):
@@ -589,7 +678,6 @@ class MockImageTo3DAdapterTests(APITestCase):
             self.assertEqual(res.format, 'glb')
             self.assertEqual(res.provider, 'mock')
             self.assertGreater(len(res.model_bytes), 0)
-            # Must strictly pass GLBValidator
             val = GLBValidator.validate(res.model_bytes)
             self.assertTrue(val['valid'])
             self.assertTrue(val['has_binary_chunk'])
@@ -620,7 +708,6 @@ class MockImageTo3DAdapterTests(APITestCase):
             image_path='sample.jpg',
             context={'simulate_invalid_glb': True}
         )
-        # Returns HTML/bad bytes
         with self.assertRaises(GLBValidationError):
             GLBValidator.validate(res.model_bytes)
 
@@ -633,13 +720,33 @@ class MockImageTo3DAdapterTests(APITestCase):
             GLBValidator.validate(res.model_bytes, max_size_bytes=15 * 1024 * 1024)
 
 
-class TripoAdapterFallbackTests(APITestCase):
+class TripoAdapterStreamingAndGatingTests(APITestCase):
     """
-    Tests ensuring TripoImageTo3DAdapter safely falls back to mock and redacts secrets.
+    Tests ensuring Tripo provider enforces explicit paid authorization,
+    bounds model streaming downloads, and redacts secrets.
     """
 
+    def test_paid_requests_disabled_by_default(self):
+        from django.conf import settings
+        self.assertFalse(getattr(settings, 'IMAGE_TO_3D_ALLOW_PAID_REQUESTS', False))
+
+    @patch('urllib.request.urlopen')
+    def test_tripo_proves_no_http_request_when_authorization_disabled(self, mock_urlopen):
+        # Even with a live key, if allow_paid=False, NO HTTP call must be made
+        adapter = TripoImageTo3DAdapter(api_key='live_tripo_key_abcdef', allow_paid=False)
+        res = adapter.generate_furniture_model(
+            image_path='sample.jpg',
+            category='seating',
+            prompt_label='Nordic armchair'
+        )
+        mock_urlopen.assert_not_called()
+        self.assertEqual(res.provider, 'mock')
+        self.assertTrue(res.raw_metadata.get('fallback_used'))
+        self.assertEqual(res.raw_metadata.get('fallback_reason'), 'paid_requests_not_authorized')
+
     def test_tripo_falls_back_when_key_unconfigured_or_placeholder(self):
-        adapter = TripoImageTo3DAdapter(api_key='tsk_placeholder_12345')
+        # Even if allow_paid=True, if key is placeholder or empty, fallback to mock without HTTP
+        adapter = TripoImageTo3DAdapter(api_key='tsk_placeholder_12345', allow_paid=True)
         res = adapter.generate_furniture_model(
             image_path='sample.jpg',
             category='seating',
@@ -648,23 +755,61 @@ class TripoAdapterFallbackTests(APITestCase):
         self.assertEqual(res.provider, 'mock')
         self.assertTrue(res.raw_metadata.get('fallback_used'))
         self.assertEqual(res.raw_metadata.get('fallback_reason'), 'tripo_api_key_not_configured')
-        # Ensure returned model is valid GLB
-        val = GLBValidator.validate(res.model_bytes)
-        self.assertTrue(val['valid'])
 
-    def test_tripo_error_redacts_api_key(self):
-        secret_key = "secret_live_api_key_9999"
-        adapter = TripoImageTo3DAdapter(api_key=secret_key)
-        # Simulating live call without network should trigger exception and fall back
+    @patch('urllib.request.urlopen')
+    def test_tripo_attempts_request_when_allow_paid_true(self, mock_urlopen):
+        secret_key = "live_tripo_secret_7777"
+        mock_urlopen.side_effect = RuntimeError("Simulated network failure")
+
+        adapter = TripoImageTo3DAdapter(api_key=secret_key, allow_paid=True)
         res = adapter.generate_furniture_model(
             image_path='sample.jpg',
             category='tables',
             context={'file_token': 'dummy'}
         )
+        # Verify network attempt was made
+        mock_urlopen.assert_called()
         self.assertEqual(res.provider, 'mock')
         self.assertTrue(res.raw_metadata.get('fallback_used'))
         reason = res.raw_metadata.get('fallback_reason', '')
+        # Secret key must not leak in fallback reason
         self.assertNotIn(secret_key, reason)
+
+    def test_stream_download_enforces_max_size_and_closes_response(self):
+        # Mock response that yields 2KB in 512B chunks when limit is 1KB
+        chunk_data = b"X" * 512
+        mock_resp = MagicMock()
+        mock_resp.headers = {}
+        mock_resp.read.side_effect = [chunk_data, chunk_data, chunk_data, b""]
+
+        with patch('urllib.request.urlopen', return_value=mock_resp):
+            with self.assertRaises(GLBValidationError) as ctx:
+                stream_download_model("http://example.com/oversized.glb", max_size_bytes=1000, chunk_size=512)
+            self.assertIn("exceeded maximum allowed limit", str(ctx.exception))
+            # Must close response cleanly
+            mock_resp.close.assert_called()
+
+    def test_stream_download_handles_response_without_content_length(self):
+        # Response without Content-Length header, valid within limit
+        valid_bytes = b"Y" * 800
+        mock_resp = MagicMock()
+        mock_resp.headers = {}  # No Content-Length
+        mock_resp.read.side_effect = [valid_bytes, b""]
+
+        with patch('urllib.request.urlopen', return_value=mock_resp):
+            downloaded = stream_download_model("http://example.com/chunked.glb", max_size_bytes=1024, chunk_size=512)
+            self.assertEqual(downloaded, valid_bytes)
+            mock_resp.close.assert_called()
+
+    def test_stream_download_rejects_oversized_content_length_header(self):
+        mock_resp = MagicMock()
+        mock_resp.headers = {'Content-Length': '25000000'}  # 25MB
+
+        with patch('urllib.request.urlopen', return_value=mock_resp):
+            with self.assertRaises(GLBValidationError) as ctx:
+                stream_download_model("http://example.com/big.glb", max_size_bytes=15 * 1024 * 1024)
+            self.assertIn("exceeds maximum allowed limit", str(ctx.exception))
+            mock_resp.close.assert_called()
 
 
 class ReconstructionJobLifecycleTests(APITestCase):
@@ -681,7 +826,6 @@ class ReconstructionJobLifecycleTests(APITestCase):
         )
 
     def test_job_creation_and_state_transitions(self):
-        from apps.furniture.reconstruction.services import create_reconstruction_job
         job = create_reconstruction_job(
             user=self.user,
             target_category='seating',
@@ -710,11 +854,6 @@ class ReconstructionJobLifecycleTests(APITestCase):
             job.transition_to(FurnitureReconstructionJob.STATUS_QUEUED)
 
     def test_run_reconstruction_job_successful_pipeline(self):
-        from apps.furniture.reconstruction.services import (
-            create_reconstruction_job,
-            run_reconstruction_job,
-            delete_reconstruction_job_file
-        )
         job = create_reconstruction_job(
             user=self.user,
             target_category='tables',
@@ -747,7 +886,6 @@ class ReconstructionJobLifecycleTests(APITestCase):
         self.assertFalse(abs_path.exists())
 
     def test_run_reconstruction_job_handles_provider_failure_without_stuck_state(self):
-        from apps.furniture.reconstruction.services import create_reconstruction_job, run_reconstruction_job
         job = create_reconstruction_job(
             user=self.user,
             target_category='beds',
@@ -763,12 +901,10 @@ class ReconstructionJobLifecycleTests(APITestCase):
         self.assertEqual(failed_job.error_category, 'provider_error')
         self.assertIn('GPU service unavailable', failed_job.error_message)
         self.assertIsNotNone(failed_job.completed_at)
-        # Verify no orphan file created
         self.assertEqual(failed_job.model_file_path, '')
         self.assertEqual(failed_job.suggested_catalogue_fallback_id, 'bed-queen-platform')
 
-    def test_run_reconstruction_job_handles_validation_failure_and_cleans_up(self):
-        from apps.furniture.reconstruction.services import create_reconstruction_job, run_reconstruction_job
+    def test_rejected_response_never_persists_as_completed_file(self):
         job = create_reconstruction_job(
             user=self.user,
             target_category='storage',
@@ -784,13 +920,85 @@ class ReconstructionJobLifecycleTests(APITestCase):
         self.assertEqual(failed_job.error_category, 'validation_failed')
         self.assertIsNotNone(failed_job.completed_at)
         self.assertEqual(failed_job.model_file_path, '')
+        abs_path = failed_job.get_absolute_model_path()
+        self.assertIsNone(abs_path)
+
+    def test_get_image_to_3d_adapter_rejects_unknown_mode(self):
+        with self.assertRaises(ValueError) as ctx:
+            get_image_to_3d_adapter('quantum_render_3d')
+        self.assertIn("Unsupported image-to-3D provider mode", str(ctx.exception))
+
+    def test_create_reconstruction_job_rejects_unknown_provider(self):
+        with self.assertRaises(ValueError) as ctx:
+            create_reconstruction_job(self.user, provider='dalle_3d')
+        self.assertIn("Unsupported image-to-3D provider", str(ctx.exception))
+
+    def test_validate_reference_dimensions(self):
+        # 1. Valid dimensions
+        valid = validate_reference_dimensions({'width_m': 1.25, 'height_m': 0.85, 'depth_m': 0.90})
+        self.assertEqual(valid, {'width_m': 1.25, 'height_m': 0.85, 'depth_m': 0.90})
+
+        # 2. Empty / None
+        self.assertEqual(validate_reference_dimensions(None), {})
+        self.assertEqual(validate_reference_dimensions({}), {})
+
+        # 3. Negative dimension
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': -1.5})
+
+        # 4. Zero dimension
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': 0.0})
+
+        # 5. Boolean value
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': True})
+
+        # 6. NaN or Infinite
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': float('nan')})
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': float('inf')})
+
+        # 7. Out of bounds (< 0.05m or > 10.0m)
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': 0.01})
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions({'width_m': 15.0})
+
+        # 8. Non-dict
+        with self.assertRaises(ValueError):
+            validate_reference_dimensions("invalid_type")
+
+    def test_resolve_catalogue_fallback_verifies_active_asset(self):
+        # Create active desk and active sofa
+        FurnitureAsset.objects.create(
+            id='desk-workspace-study',
+            name='Study Desk',
+            category='tables',
+            width=Decimal('1.4'),
+            height=Decimal('0.75'),
+            depth=Decimal('0.7'),
+            is_active=True
+        )
+        res_desk = resolve_catalogue_fallback('tables', 'Study Desk')
+        self.assertEqual(res_desk, 'desk-workspace-study')
 
     def test_catalogue_fallback_keyword_resolution(self):
-        from apps.furniture.reconstruction.services import resolve_catalogue_fallback
         self.assertEqual(resolve_catalogue_fallback('seating', 'Velvet Armchair'), 'chair-accent-armchair')
         self.assertEqual(resolve_catalogue_fallback('tables', 'Computer Desk'), 'desk-workspace-study')
         self.assertEqual(resolve_catalogue_fallback('storage', 'Wooden Wardrobe'), 'storage-wardrobe-2door')
         self.assertEqual(resolve_catalogue_fallback('decor', 'Tall Indoor Plant'), 'decor-plant-floor-vase')
         self.assertEqual(resolve_catalogue_fallback('unknown', ''), 'sofa-modern-3seater')
+
+    def test_sanitize_sensitive_text_redacts_credentials_and_urls(self):
+        text = "Request to https://api.tripo3d.ai/v2/task failed with Bearer secret_token_12345 and api_key=super_secret_key"
+        sanitized = sanitize_sensitive_text(text, secret="super_secret_key")
+        self.assertNotIn("secret_token_12345", sanitized)
+        self.assertNotIn("super_secret_key", sanitized)
+        self.assertNotIn("https://api.tripo3d.ai", sanitized)
+        self.assertIn("[REDACTED]", sanitized)
+        self.assertIn("[URL_REDACTED]", sanitized)
+
 
 

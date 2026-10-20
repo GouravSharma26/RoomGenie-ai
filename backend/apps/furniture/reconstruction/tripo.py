@@ -1,5 +1,9 @@
-import os
+import json
+import logging
+import re
 import time
+import urllib.error
+import urllib.request
 from typing import Any
 from django.conf import settings
 
@@ -7,20 +11,97 @@ from apps.furniture.reconstruction.base import BaseImageTo3DAdapter, Reconstruct
 from apps.furniture.reconstruction.mock import MockImageTo3DAdapter
 from apps.furniture.reconstruction.validator import GLBValidator, GLBValidationError
 
+logger = logging.getLogger(__name__)
+
+
+def sanitize_sensitive_text(text: str, secret: str = '') -> str:
+    """Strips API keys, bearer tokens, and sensitive query strings from messages."""
+    sanitized = text
+    if secret:
+        sanitized = sanitized.replace(secret, "[REDACTED]")
+    sanitized = re.sub(r'Bearer\s+[a-zA-Z0-9_\-\.]+', 'Bearer [REDACTED]', sanitized)
+    sanitized = re.sub(r'(api[-_]?key|key|token|secret)\s*[:=]\s*[^\s,;]+', r'\1=[REDACTED]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'https?://[^\s"]+', '[URL_REDACTED]', sanitized)
+    return sanitized[:255]
+
+
+def stream_download_model(
+    model_url: str,
+    max_size_bytes: int = 15 * 1024 * 1024,
+    chunk_size: int = 64 * 1024,
+    timeout: float = 30.0
+) -> bytes:
+    """
+    Streams a 3D model from a remote URL in chunks.
+    Enforces maximum size bounds during streaming without reading the entire payload into memory.
+    Treats Content-Length as advisory and immediately terminates/closes the response if exceeded.
+    """
+    req = urllib.request.Request(
+        model_url,
+        headers={"User-Agent": "RoomGenie-AI/1.0"}
+    )
+    resp = urllib.request.urlopen(req, timeout=timeout)
+    try:
+        # 1. Advisory Content-Length header check
+        content_length_header = None
+        if hasattr(resp, 'headers') and hasattr(resp.headers, 'get'):
+            content_length_header = resp.headers.get('Content-Length')
+        elif hasattr(resp, 'getheader'):
+            content_length_header = resp.getheader('Content-Length')
+
+        if content_length_header is not None:
+            declared_len = None
+            try:
+                declared_len = int(content_length_header)
+            except (ValueError, TypeError):
+                declared_len = None
+
+            if declared_len is not None and declared_len > max_size_bytes:
+                raise GLBValidationError(
+                    f"Model Content-Length header ({declared_len} bytes) exceeds maximum allowed limit of {max_size_bytes} bytes."
+                )
+
+        # 2. Stream chunk-by-chunk and strictly enforce byte bounds
+        chunks = bytearray()
+        while True:
+            chunk = resp.read(chunk_size)
+            if not chunk or not isinstance(chunk, (bytes, bytearray)):
+                break
+            chunks.extend(chunk)
+            if len(chunks) > max_size_bytes:
+                raise GLBValidationError(
+                    f"Model download exceeded maximum allowed limit of {max_size_bytes} bytes during streaming (received {len(chunks)} bytes)."
+                )
+        return bytes(chunks)
+    finally:
+        resp.close()
+
 
 class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
     """
     Image-to-3D adapter for Tripo API (model v3.1-20260211).
-    Performs external AI reconstruction when TRIPO_API_KEY is configured.
-    Falls back gracefully to MockImageTo3DAdapter if no key is present or on failure,
-    preserving application stability and logging audit metadata safely without secrets.
+    External paid AI requests are STRICTLY gated by:
+    1. IMAGE_TO_3D_ALLOW_PAID_REQUESTS=True in settings
+    2. Valid TRIPO_API_KEY (non-empty, non-placeholder)
+    
+    If either is missing, falls back deterministically to MockImageTo3DAdapter,
+    ensuring zero accidental external credit consumption during tests or development.
     """
 
     BASE_URL = "https://api.tripo3d.ai/v2/openapi"
 
-    def __init__(self, api_key: str | None = None, model_name: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        allow_paid: bool | None = None
+    ):
         self.api_key = api_key if api_key is not None else getattr(settings, 'TRIPO_API_KEY', '')
         self.model_name = model_name or getattr(settings, 'TRIPO_MODEL', 'v3.1-20260211')
+        if allow_paid is not None:
+            self.allow_paid = allow_paid
+        else:
+            self.allow_paid = getattr(settings, 'IMAGE_TO_3D_ALLOW_PAID_REQUESTS', False)
         self.mock_fallback = MockImageTo3DAdapter()
 
     def generate_furniture_model(
@@ -34,8 +115,24 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
         start_time = time.time()
         context = context or {}
 
-        # 1. Fallback to Mock if API key is not configured or in development mode
+        # 1. Require explicit paid provider authorization
+        if not self.allow_paid:
+            logger.info("Tripo paid requests disabled by policy; falling back to mock provider.")
+            result = self.mock_fallback.generate_furniture_model(
+                image_path=image_path,
+                category=category,
+                prompt_label=prompt_label,
+                reference_dimensions=reference_dimensions,
+                context=context
+            )
+            result.provider = 'mock'
+            result.raw_metadata['fallback_used'] = True
+            result.raw_metadata['fallback_reason'] = 'paid_requests_not_authorized'
+            return result
+
+        # 2. Check for configured live API key
         if not self.api_key or self.api_key.startswith('tsk_placeholder'):
+            logger.info("Tripo API key unconfigured; falling back to mock provider.")
             result = self.mock_fallback.generate_furniture_model(
                 image_path=image_path,
                 category=category,
@@ -48,11 +145,7 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
             result.raw_metadata['fallback_reason'] = 'tripo_api_key_not_configured'
             return result
 
-        # 2. Live Tripo integration
-        import urllib.request
-        import urllib.error
-        import json
-
+        # 3. Live Tripo integration
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -66,7 +159,6 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
                 "model_version": self.model_name,
                 "file": {
                     "type": "jpg",
-                    # When live, requires uploaded GCS/S3 image URL or multipart upload token
                     "file_token": context.get("file_token", "")
                 }
             }
@@ -88,10 +180,11 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
             task_id = task_data['data']['task_id']
 
             # Step B: Poll task status with hard timeout (max 60 seconds)
+            poll_timeout = float(getattr(settings, 'IMAGE_TO_3D_TIMEOUT_SECONDS', 60))
             poll_start = time.time()
             model_url = None
 
-            while time.time() - poll_start < 60.0:
+            while time.time() - poll_start < poll_timeout:
                 poll_req = urllib.request.Request(
                     f"{self.BASE_URL}/task/{task_id}",
                     headers=headers,
@@ -110,14 +203,14 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
                 time.sleep(2.0)
 
             if not model_url:
-                raise TimeoutError("Tripo 3D model reconstruction timed out after 60 seconds.")
+                raise TimeoutError(f"Tripo 3D model reconstruction timed out after {poll_timeout:.0f} seconds.")
 
-            # Step C: Download output model and validate
-            with urllib.request.urlopen(model_url, timeout=30.0) as model_resp:
-                raw_glb_bytes = model_resp.read()
+            # Step C: Stream output model download with bounded byte limits
+            max_size = int(getattr(settings, 'IMAGE_TO_3D_MAX_OUTPUT_SIZE', 15 * 1024 * 1024))
+            raw_glb_bytes = stream_download_model(model_url, max_size_bytes=max_size, timeout=30.0)
 
-            # Strict GLB validation
-            validation = GLBValidator.validate(raw_glb_bytes)
+            # Step D: Strict glTF 2.0 Binary validation
+            validation = GLBValidator.validate(raw_glb_bytes, max_size_bytes=max_size)
 
             latency = int((time.time() - start_time) * 1000)
             dims = validation.get('approximate_dimensions') or reference_dimensions or {'width_m': 1.0, 'height_m': 1.0, 'depth_m': 1.0}
@@ -134,9 +227,10 @@ class TripoImageTo3DAdapter(BaseImageTo3DAdapter):
             )
 
         except Exception as exc:
-            # Do not leak API key in error message
-            safe_err = str(exc).replace(self.api_key, "[REDACTED]")
-            # Fall back to mock adapter with safe audit reasoning
+            # Redact secrets, auth tokens, and sensitive URLs
+            safe_err = sanitize_sensitive_text(str(exc), secret=self.api_key)
+            logger.warning("Tripo reconstruction failed, falling back to mock: %s", safe_err)
+
             fallback_res = self.mock_fallback.generate_furniture_model(
                 image_path=image_path,
                 category=category,

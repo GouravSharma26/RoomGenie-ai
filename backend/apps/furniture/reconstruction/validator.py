@@ -85,11 +85,11 @@ class GLBValidator:
                 f"GLB total byte length ({total_bytes} bytes) is not 4-byte aligned."
             )
 
-        # 6. Parse and validate chunks
         offset = 12
         chunk_index = 0
         json_chunk_data = None
         has_bin_chunk = False
+        bin_chunk_len = 0
 
         while offset < total_bytes:
             if offset + 8 > total_bytes:
@@ -141,6 +141,7 @@ class GLBValidator:
                 # Second chunk is optional, but if present must be BIN
                 if chunk_type == cls.CHUNK_TYPE_BIN:
                     has_bin_chunk = True
+                    bin_chunk_len = len(chunk_bytes)
                 else:
                     # Any other chunk type
                     pass
@@ -155,7 +156,10 @@ class GLBValidator:
         if json_chunk_data is None:
             raise GLBValidationError("GLB file contains no valid JSON chunk.")
 
-        # 7. Extract approximate dimensions if accessors have bounds
+        # 7. Cross-check declared glTF buffers and bufferViews against binary chunk data
+        cls._validate_buffers_and_views(json_chunk_data, has_bin_chunk, bin_chunk_len)
+
+        # 8. Extract approximate dimensions if accessors have bounds
         approx_dims = cls._extract_approximate_dimensions(json_chunk_data)
 
         return {
@@ -166,6 +170,124 @@ class GLBValidator:
             'has_binary_chunk': has_bin_chunk,
             'approximate_dimensions': approx_dims,
         }
+
+    @classmethod
+    def _validate_buffers_and_views(
+        cls,
+        json_data: dict[str, Any],
+        has_bin_chunk: bool,
+        bin_chunk_len: int
+    ) -> None:
+        """
+        Cross-checks declared glTF buffers, buffer views, and accessors against available
+        binary chunk data. Rejects models that reference missing, corrupted, or insufficient binary data.
+        """
+        buffers = json_data.get('buffers')
+        buffer_views = json_data.get('bufferViews')
+
+        # 1. Validate buffers declaration
+        if buffers is not None:
+            if not isinstance(buffers, list):
+                raise GLBValidationError("glTF 'buffers' field must be a list.")
+
+            for idx, buf in enumerate(buffers):
+                if not isinstance(buf, dict):
+                    raise GLBValidationError(f"glTF buffer at index {idx} must be an object.")
+                byte_length = buf.get('byteLength')
+                if not isinstance(byte_length, int) or byte_length <= 0:
+                    raise GLBValidationError(
+                        f"glTF buffer at index {idx} has invalid byteLength: {byte_length}. Must be a positive integer."
+                    )
+
+                has_uri = 'uri' in buf and buf['uri'] is not None
+
+                # In a GLB container, buffer 0 typically represents the BIN chunk (omits uri)
+                if idx == 0 and not has_uri:
+                    if not has_bin_chunk:
+                        raise GLBValidationError(
+                            "glTF buffer 0 references binary chunk, but GLB file contains no BIN chunk (missing binary data)."
+                        )
+                    if byte_length > bin_chunk_len:
+                        raise GLBValidationError(
+                            f"glTF buffer 0 declared byteLength ({byte_length} bytes) exceeds available BIN chunk size ({bin_chunk_len} bytes) (insufficient binary data)."
+                        )
+                elif idx > 0 and not has_uri:
+                    raise GLBValidationError(
+                        f"glTF buffer at index {idx} missing URI. Only buffer 0 may reference the GLB binary chunk."
+                    )
+
+        # 2. Validate bufferViews
+        if buffer_views is not None:
+            if not isinstance(buffer_views, list):
+                raise GLBValidationError("glTF 'bufferViews' field must be a list.")
+
+            if buffer_views and (not buffers or not isinstance(buffers, list)):
+                raise GLBValidationError(
+                    "glTF defines bufferViews but contains no buffers definition (missing binary data)."
+                )
+
+            for idx, bv in enumerate(buffer_views):
+                if not isinstance(bv, dict):
+                    raise GLBValidationError(f"glTF bufferView at index {idx} must be an object.")
+
+                buf_idx = bv.get('buffer')
+                if not isinstance(buf_idx, int) or buf_idx < 0 or buf_idx >= len(buffers):
+                    raise GLBValidationError(
+                        f"glTF bufferView at index {idx} references invalid buffer index {buf_idx}."
+                    )
+
+                bv_len = bv.get('byteLength')
+                if not isinstance(bv_len, int) or bv_len <= 0:
+                    raise GLBValidationError(
+                        f"glTF bufferView at index {idx} has invalid byteLength: {bv_len}. Must be a positive integer."
+                    )
+
+                bv_offset = bv.get('byteOffset', 0)
+                if not isinstance(bv_offset, int) or bv_offset < 0:
+                    raise GLBValidationError(
+                        f"glTF bufferView at index {idx} has invalid byteOffset: {bv_offset}. Must be non-negative integer."
+                    )
+
+                target_buf = buffers[buf_idx]
+                target_buf_len = target_buf.get('byteLength', 0)
+                if bv_offset + bv_len > target_buf_len:
+                    raise GLBValidationError(
+                        f"glTF bufferView {idx} range ({bv_offset} + {bv_len} = {bv_offset + bv_len} bytes) exceeds target buffer {buf_idx} byteLength ({target_buf_len} bytes) (insufficient binary data)."
+                    )
+
+                # Cross-check directly against binary chunk for buffer 0 without URI
+                if buf_idx == 0 and not target_buf.get('uri'):
+                    if bv_offset + bv_len > bin_chunk_len:
+                        raise GLBValidationError(
+                            f"glTF bufferView {idx} range ({bv_offset + bv_len} bytes) exceeds available BIN chunk size ({bin_chunk_len} bytes) (insufficient binary data)."
+                        )
+
+        # 3. Validate accessors referencing bufferViews
+        accessors = json_data.get('accessors')
+        if accessors is not None:
+            if not isinstance(accessors, list):
+                raise GLBValidationError("glTF 'accessors' field must be a list.")
+
+            for idx, acc in enumerate(accessors):
+                if not isinstance(acc, dict):
+                    continue
+                if 'bufferView' in acc:
+                    bv_idx = acc['bufferView']
+                    if not buffer_views or not isinstance(bv_idx, int) or bv_idx < 0 or bv_idx >= len(buffer_views):
+                        raise GLBValidationError(
+                            f"glTF accessor at index {idx} references invalid bufferView index {bv_idx}."
+                        )
+                    acc_offset = acc.get('byteOffset', 0)
+                    if not isinstance(acc_offset, int) or acc_offset < 0:
+                        raise GLBValidationError(
+                            f"glTF accessor at index {idx} has invalid byteOffset: {acc_offset}."
+                        )
+                    target_bv_len = buffer_views[bv_idx].get('byteLength', 0)
+                    if acc_offset >= target_bv_len:
+                        raise GLBValidationError(
+                            f"glTF accessor {idx} byteOffset ({acc_offset}) exceeds target bufferView {bv_idx} byteLength ({target_bv_len})."
+                        )
+
 
     @staticmethod
     def _extract_approximate_dimensions(json_data: dict[str, Any]) -> dict[str, float] | None:
