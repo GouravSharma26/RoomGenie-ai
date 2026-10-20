@@ -213,7 +213,7 @@ def save_temporary_room_photo(user, uploaded_file, room=None) -> RoomPhotoUpload
         raise
 
 
-def cleanup_expired_room_photos(max_age_seconds: int = None, dry_run: bool = False) -> dict:
+def cleanup_expired_room_photos(max_age_seconds: int | None = None, dry_run: bool = False) -> dict:
     """
     Purges expired temporary room photos from disk and marks database records as deleted.
     Handles individual disk deletion or database update failures safely without aborting the batch.

@@ -26,7 +26,7 @@ def is_finite_number(val) -> bool:
     return not (math.isnan(val) or math.isinf(val))
 
 
-def validate_vector3(vec, field_name: str, min_val: float = None, max_val: float = None) -> list[float]:
+def validate_vector3(vec, field_name: str, min_val: float | None = None, max_val: float | None = None) -> list[float]:
     if not isinstance(vec, (list, tuple)) or len(vec) != 3:
         raise serializers.ValidationError(
             f"{field_name} must be a 3-element array of numbers [x, y, z]."

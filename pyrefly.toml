@@ -1,0 +1,19 @@
+project-includes = [
+    "backend/**/*.py*",
+]
+search-path = [
+    "backend",
+]
+site-package-path = [
+    "backend/.venv/Lib/site-packages",
+]
+
+[errors]
+missing-attribute = false
+bad-index = false
+bad-context-manager = false
+bad-override = false
+unsupported-operation = false
+bad-argument-type = false
+bad-assignment = false
+untyped-import = false
