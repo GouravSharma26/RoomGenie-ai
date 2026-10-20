@@ -19,6 +19,7 @@ interface EditorHeaderProps {
   onOpenBudgetBreakdown?: () => void;
   onOpenAiAssistant?: () => void;
   onOpenPhotoVision?: () => void;
+  onOpenPhotoTo3D?: () => void;
 }
 
 export const EditorHeader: React.FC<EditorHeaderProps> = ({
@@ -27,6 +28,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   onOpenBudgetBreakdown,
   onOpenAiAssistant,
   onOpenPhotoVision,
+  onOpenPhotoTo3D,
 }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
@@ -169,6 +171,18 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
           >
             <Camera className="w-3.5 h-3.5 text-pink-400" />
             <span>Room Photo</span>
+          </button>
+        )}
+
+        {/* Photo-to-3D Reconstruction Trigger */}
+        {onOpenPhotoTo3D && (
+          <button
+            onClick={onOpenPhotoTo3D}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Reconstruct 3D furniture models from photographs"
+          >
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Photo to 3D</span>
           </button>
         )}
 

@@ -27,6 +27,14 @@ interface EditorState {
   // Actions
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
   addFurniture: (item: FurnitureCatalogItem) => void;
+  addCustomPlacement: (params: {
+    assetId: string;
+    name: string;
+    dimensions: Vector3Tuple;
+    modelUrl?: string;
+    materialOverrides?: { color?: string; roughness?: number; metalness?: number };
+    isCustomReconstruction?: boolean;
+  }) => string;
   selectObject: (id: string | null) => void;
   hoverObject: (id: string | null) => void;
   updatePlacementPosition: (id: string, position: Vector3Tuple) => void;
@@ -119,6 +127,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         rotationEuler: [0, 0, 0],
         scale: [1, 1, 1],
         materialOverrides: { color: item.defaultColor },
+        modelUrl: item.modelUrl,
       };
 
       return {
@@ -129,6 +138,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedId: id,
       };
     });
+  },
+
+  addCustomPlacement: (params) => {
+    const id = `reconstruction-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    set((state) => {
+      const offsetMultiplier = state.scene.objects.length * 0.3;
+      const initialPos: Vector3Tuple = [
+        (offsetMultiplier % (state.scene.room.width / 3)) - (state.scene.room.width / 6),
+        0,
+        (offsetMultiplier % (state.scene.room.length / 3)) - (state.scene.room.length / 6),
+      ];
+
+      const clampedPos = clampPositionToRoom(
+        initialPos,
+        params.dimensions,
+        state.scene.room,
+        [1, 1, 1],
+        [0, 0, 0]
+      );
+
+      const newObject: FurniturePlacement = {
+        id,
+        assetId: params.assetId,
+        name: params.name,
+        dimensions: params.dimensions,
+        position: clampedPos,
+        rotationEuler: [0, 0, 0],
+        scale: [1, 1, 1],
+        materialOverrides: params.materialOverrides || { color: '#6366f1' },
+        modelUrl: params.modelUrl,
+        isCustomReconstruction: params.isCustomReconstruction ?? true,
+      };
+
+      return {
+        scene: {
+          ...state.scene,
+          objects: [...state.scene.objects, newObject],
+        },
+        selectedId: id,
+      };
+    });
+    return id;
   },
 
   selectObject: (id) => set({ selectedId: id }),

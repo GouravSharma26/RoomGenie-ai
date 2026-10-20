@@ -28,6 +28,8 @@ export interface FurniturePlacement {
   scale: Vector3Tuple;           // [sx, sy, sz] uniform/axis multipliers
   dimensions: Vector3Tuple;      // [width, height, depth] in metres
   materialOverrides?: MaterialOverrides;
+  modelUrl?: string;             // Optional custom reconstructed GLB/GLTF model URL
+  isCustomReconstruction?: boolean; // Flag identifying custom photo-reconstructed items
 }
 
 export interface CanonicalScene {

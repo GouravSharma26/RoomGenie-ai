@@ -50,9 +50,9 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 ## Photo-to-3D and AR
 
-- [ ] Reconstruction has job state tracking and a catalogue fallback.
-- [ ] Approximate outputs are clearly labelled.
-- [ ] Generated assets are checked for supported format, size, and usable dimensions.
+- [x] Reconstruction has job state tracking and a catalogue fallback (Phase 6 complete: FurnitureReconstructionJob with queued/processing/completed/failed state machine, select_for_update atomic claiming, deterministic mock engine and Tripo adapter, and canonical catalogue fallback matching).
+- [x] Approximate outputs are clearly labelled (Prominent "Approximate AI Reconstruction" notice badge in PhotoTo3DModal and review viewport; reference dimensions validated and user-editable).
+- [x] Generated assets are checked for supported format, size, and usable dimensions (GLBValidator strictly validates Khronos glTF 2.0 chunk headers, bin buffer views, accessor alignments, finite positive bounding boxes, and maximum byte size limits).
 - [ ] Target AR device and operating-system version are documented.
 - [ ] AR placement has been manually tested on the target device.
 - [ ] Unsupported devices receive a clear fallback message.

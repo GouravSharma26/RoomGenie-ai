@@ -237,15 +237,16 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   };
 
   const catalogItem = SAMPLE_CATALOG.find((item) => item.id === placement.assetId);
+  const effectiveModelUrl = placement.modelUrl || catalogItem?.modelUrl;
 
   // Render GLB asset if available with automatic procedural geometry fallback
   const renderFurniture = () => {
-    if (catalogItem?.modelUrl) {
+    if (effectiveModelUrl) {
       return (
         <ModelErrorBoundary fallback={renderProceduralGeometry()}>
           <Suspense fallback={renderProceduralGeometry()}>
             <GLTFModel
-              url={catalogItem.modelUrl}
+              url={effectiveModelUrl}
               color={color}
               roughness={roughness}
               metalness={metalness}

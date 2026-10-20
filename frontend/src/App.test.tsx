@@ -163,6 +163,10 @@ vi.mock('./editor3d/components/RoomCanvas', () => ({
   RoomCanvas: () => <div data-testid="mock-room-canvas">3D Viewport Active</div>,
 }));
 
+vi.mock('./components/editor/ModelPreviewCanvas', () => ({
+  ModelPreviewCanvas: () => <div data-testid="mock-preview-canvas">3D Preview</div>,
+}));
+
 describe('RoomGenie AI App Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -178,12 +182,27 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 5 Active')).toBeInTheDocument();
+    expect(screen.getByText('Phase 6 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Room Photo/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Photo to 3D/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /AI Designer/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Load/i })).toBeInTheDocument();
     expect(screen.getByTestId('mock-room-canvas')).toBeInTheDocument();
+  });
+
+  it('opens Photo-to-3D Reconstruction modal when button is clicked', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Photo to 3D/i }));
+    expect(screen.getByRole('heading', { name: /Photo-to-3D Furniture Reconstruction/i })).toBeInTheDocument();
+    expect(screen.getByText(/Approximate 3D/i)).toBeInTheDocument();
   });
 
   it('opens Room Photo Vision Analysis modal when button is clicked', async () => {

@@ -22,6 +22,7 @@ import { DesignPersistenceModal } from './components/editor/DesignPersistenceMod
 import { BudgetBreakdownModal } from './components/editor/BudgetBreakdownModal';
 import { AiAgentDrawer } from './components/editor/AiAgentDrawer';
 import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
+import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -33,6 +34,7 @@ export default function App() {
   const [isBudgetOpen, setIsBudgetOpen] = useState<boolean>(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
   const [isPhotoVisionOpen, setIsPhotoVisionOpen] = useState<boolean>(false);
+  const [isPhotoTo3DOpen, setIsPhotoTo3DOpen] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -70,7 +72,7 @@ export default function App() {
                 RoomGenie AI
               </span>
               <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                Phase 5 Active
+                Phase 6 Active
               </span>
             </div>
           </div>
@@ -120,6 +122,7 @@ export default function App() {
             onOpenBudgetBreakdown={() => setIsBudgetOpen(true)}
             onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
             onOpenPhotoVision={() => setIsPhotoVisionOpen(true)}
+            onOpenPhotoTo3D={() => setIsPhotoTo3DOpen(true)}
           />
 
           {/* 3D Viewport with Left and Right Toolbars */}
@@ -136,6 +139,7 @@ export default function App() {
           <BudgetBreakdownModal isOpen={isBudgetOpen} onClose={() => setIsBudgetOpen(false)} />
           <AiAgentDrawer isOpen={isAiAssistantOpen} onClose={() => setIsAiAssistantOpen(false)} />
           <RoomPhotoVisionModal isOpen={isPhotoVisionOpen} onClose={() => setIsPhotoVisionOpen(false)} />
+          <PhotoTo3DModal isOpen={isPhotoTo3DOpen} onClose={() => setIsPhotoTo3DOpen(false)} />
         </div>
       ) : (
         /* System Status Dashboard View */
