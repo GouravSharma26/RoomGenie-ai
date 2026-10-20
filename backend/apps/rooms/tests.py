@@ -17,8 +17,11 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
-from apps.rooms.models import Room, RoomPhotoUpload
-from apps.rooms.services import cleanup_expired_room_photos, save_temporary_room_photo
+from apps.rooms.models import Room, RoomPhotoUpload, RoomPhotoAnalysis
+from apps.designs.models import Design
+from apps.rooms.services import cleanup_expired_room_photos, save_temporary_room_photo, run_room_photo_analysis
+from apps.rooms.vision.base import BaseRoomVisionAdapter, RoomAnalysisResult
+from apps.rooms.vision.mock import MockRoomVisionAdapter
 
 
 class RoomPersistenceTests(APITestCase):
@@ -508,3 +511,319 @@ class RoomPhotoUploadTests(APITestCase):
         existing_files_after = set(temp_dir.glob('*')) if temp_dir.exists() else set()
         new_files = existing_files_after - existing_files_before
         self.assertEqual(len(new_files), 0, f"Found orphaned files left on disk: {new_files}")
+
+
+class RoomPhotoVisionAnalysisTests(APITestCase):
+    def setUp(self):
+        self.user_a = User.objects.create_user(username='vision_user_a', password='PasswordA2026!')
+        self.token_a = Token.objects.create(user=self.user_a)
+
+        self.user_b = User.objects.create_user(username='vision_user_b', password='PasswordB2026!')
+        self.token_b = Token.objects.create(user=self.user_b)
+
+        self.upload_url = reverse('rooms:room-photo-upload')
+        self.analyze_url = reverse('rooms:room-photo-analyze')
+        self.analyses_list_url = reverse('rooms:room-analysis-list')
+
+        self.room_a = Room.objects.create(
+            owner=self.user_a,
+            name="Living Space",
+            width=Decimal('5.50'),
+            length=Decimal('4.20'),
+            height=Decimal('2.80')
+        )
+        self.room_b = Room.objects.create(
+            owner=self.user_b,
+            name="User B Bedroom",
+            width=Decimal('4.00'),
+            length=Decimal('3.50'),
+            height=Decimal('2.70')
+        )
+
+    def tearDown(self):
+        # Cleanup temporary files created in test media directories
+        for user in [self.user_a, self.user_b]:
+            user_media = Path(settings.MEDIA_ROOT) / 'temp_room_photos' / str(user.id)
+            if user_media.exists() and user_media.is_dir():
+                for f in user_media.glob('*'):
+                    try:
+                        if f.is_file():
+                            f.unlink()
+                    except OSError:
+                        pass
+                try:
+                    user_media.rmdir()
+                except OSError:
+                    pass
+
+    def upload_test_photo(self, user_token, filename="living.jpg", room_id=None):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {user_token.key}')
+        file_io = io.BytesIO()
+        img = Image.new('RGB', (800, 600), color=(180, 200, 220))
+        img.save(file_io, format='JPEG')
+        file_io.seek(0)
+        uploaded = SimpleUploadedFile(filename, file_io.read(), content_type='image/jpeg')
+
+        payload = {'photo': uploaded}
+        if room_id:
+            payload['room_id'] = str(room_id)
+        res = self.client.post(self.upload_url, payload, format='multipart')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        return res.data['upload_id']
+
+    def test_room_vision_analysis_success_with_mock_provider(self):
+        upload_id = self.upload_test_photo(self.token_a, "living.jpg", room_id=self.room_a.id)
+
+        res = self.client.post(self.analyze_url, {
+            'upload_id': upload_id,
+            'room_id': str(self.room_a.id),
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.data
+
+        self.assertEqual(data['status'], 'completed')
+        self.assertEqual(data['provider'], 'mock')
+        self.assertEqual(data['photo_upload_id'], str(upload_id))
+        self.assertEqual(data['room_id'], str(self.room_a.id))
+
+        obs = data['observations']
+        self.assertEqual(obs['room_type'], 'living_room')
+        self.assertGreater(obs['overall_confidence'], 0.5)
+        self.assertTrue(obs['requires_user_confirmation'])
+        self.assertIn("cannot be reliably inferred", obs['uncertainty_notes'])
+
+        # Architectural features
+        arch = obs['architectural_features']
+        self.assertIn('flooring', arch)
+        self.assertIn('wall_finish', arch)
+        self.assertIn('lighting', arch)
+        self.assertGreaterEqual(arch['windows_count'], 1)
+
+        # Detected furniture
+        furniture = obs['detected_furniture']
+        self.assertIsInstance(furniture, list)
+        self.assertGreater(len(furniture), 0)
+        first_item = furniture[0]
+        self.assertIn('category', first_item)
+        self.assertIn('label', first_item)
+        self.assertIn('estimated_spatial_zone', first_item)
+        self.assertIn('confidence', first_item)
+
+        # Check DB record
+        record = RoomPhotoAnalysis.objects.get(id=data['id'])
+        self.assertEqual(record.status, 'completed')
+        self.assertEqual(record.owner, self.user_a)
+
+    def test_room_vision_analysis_hints_bedroom_and_office(self):
+        # 1. Bedroom hint
+        upload_id_bed = self.upload_test_photo(self.token_a, "bed_snap.jpg")
+        res_bed = self.client.post(self.analyze_url, {
+            'upload_id': upload_id_bed,
+            'room_type_hint': 'bedroom',
+        }, format='json')
+        self.assertEqual(res_bed.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_bed.data['observations']['room_type'], 'bedroom')
+        bed_categories = [f['category'] for f in res_bed.data['observations']['detected_furniture']]
+        self.assertIn('bed', bed_categories)
+
+        # 2. Office hint
+        upload_id_off = self.upload_test_photo(self.token_a, "office_snap.jpg")
+        res_off = self.client.post(self.analyze_url, {
+            'upload_id': upload_id_off,
+            'room_type_hint': 'home_office',
+        }, format='json')
+        self.assertEqual(res_off.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_off.data['observations']['room_type'], 'home_office')
+        off_categories = [f['category'] for f in res_off.data['observations']['detected_furniture']]
+        self.assertTrue('table' in off_categories or 'seating' in off_categories)
+
+    def test_room_vision_analysis_authorization_cross_user_rejected(self):
+        upload_id = self.upload_test_photo(self.token_a, "private_photo.jpg")
+
+        # User B attempts to analyze User A's photo
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_b.key}')
+        res = self.client.post(self.analyze_url, {
+            'upload_id': upload_id,
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not found or access denied", str(res.data))
+
+        # User A analyzes their photo successfully
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res_ok = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+        analysis_id = res_ok.data['id']
+
+        # User B attempts to retrieve User A's analysis record
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_b.key}')
+        res_detail = self.client.get(reverse('rooms:room-analysis-detail', kwargs={'analysis_id': analysis_id}))
+        self.assertEqual(res_detail.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_room_vision_analysis_unauthenticated_rejected(self):
+        self.client.credentials()  # Clear credentials
+        res = self.client.post(self.analyze_url, {'upload_id': '00000000-0000-0000-0000-000000000000'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_room_vision_analysis_cross_user_room_rejected(self):
+        upload_id = self.upload_test_photo(self.token_a, "room_auth.jpg")
+
+        # User A attempts to attach User B's room
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res = self.client.post(self.analyze_url, {
+            'upload_id': upload_id,
+            'room_id': str(self.room_b.id),
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("does not exist or you do not have permission", str(res.data))
+
+    def test_room_vision_analysis_expired_photo_rejected(self):
+        upload_id = self.upload_test_photo(self.token_a, "expired.jpg")
+        record = RoomPhotoUpload.objects.get(id=upload_id)
+        record.expires_at = timezone.now() - timedelta(seconds=60)
+        record.save(update_fields=['expires_at'])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("expired", str(res.data).lower())
+
+    def test_room_vision_analysis_deleted_or_missing_file_rejected(self):
+        upload_id = self.upload_test_photo(self.token_a, "deleted.jpg")
+        record = RoomPhotoUpload.objects.get(id=upload_id)
+
+        # 1. Mark is_deleted=True
+        record.is_deleted = True
+        record.save(update_fields=['is_deleted'])
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res_del = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+        self.assertEqual(res_del.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cleaned up", str(res_del.data).lower())
+
+        # 2. File missing from disk
+        record.is_deleted = False
+        record.save(update_fields=['is_deleted'])
+        if os.path.exists(record.file_path):
+            os.remove(record.file_path)
+
+        res_miss = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+        self.assertEqual(res_miss.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("missing", str(res_miss.data).lower())
+
+    def test_room_vision_analysis_provider_failure_handled_gracefully(self):
+        upload_id = self.upload_test_photo(self.token_a, "prov_fail.jpg")
+
+        class FailingVisionAdapter(BaseRoomVisionAdapter):
+            def analyze_room_photo(self, image_path, context=None):
+                raise RuntimeError("External vision provider connection timed out.")
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        with patch('apps.rooms.services.get_room_vision_adapter', return_value=FailingVisionAdapter()):
+            res = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("failed", str(res.data).lower())
+
+        # Verify a failed analysis record was persisted
+        failed_record = RoomPhotoAnalysis.objects.filter(photo_upload_id=upload_id).first()
+        self.assertIsNotNone(failed_record)
+        self.assertEqual(failed_record.status, 'failed')
+        self.assertIn("timed out", failed_record.error_message)
+
+    def test_room_vision_analysis_malformed_model_output_rejected(self):
+        upload_id = self.upload_test_photo(self.token_a, "malformed.jpg")
+
+        class MalformedVisionAdapter(BaseRoomVisionAdapter):
+            def analyze_room_photo(self, image_path, context=None):
+                # Return observations missing required fields and out-of-range confidence
+                return RoomAnalysisResult(
+                    observations={
+                        'overall_confidence': 1.5,  # Exceeds max_value 1.0
+                        'detected_furniture': "not-a-list",
+                    },
+                    provider='bad_provider',
+                    model='bad_model',
+                    latency_ms=10
+                )
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        with patch('apps.rooms.services.get_room_vision_adapter', return_value=MalformedVisionAdapter()):
+            res = self.client.post(self.analyze_url, {'upload_id': upload_id}, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("malformed", str(res.data).lower())
+
+        failed_record = RoomPhotoAnalysis.objects.filter(photo_upload_id=upload_id).first()
+        self.assertIsNotNone(failed_record)
+        self.assertEqual(failed_record.status, 'failed')
+
+    def test_room_vision_analysis_does_not_mutate_saved_3d_scene_or_room(self):
+        upload_id = self.upload_test_photo(self.token_a, "preserve_scene.jpg", room_id=self.room_a.id)
+
+        initial_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.5, 'length': 4.2, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'preserved-item-1',
+                    'assetId': 'sofa-3seater-fabric',
+                    'position': [0.0, 0.44, 0.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'scale': [1.0, 1.0, 1.0],
+                }
+            ]
+        }
+        design = Design.objects.create(
+            owner=self.user_a,
+            room=self.room_a,
+            title="Untouched Design",
+            scene_json=initial_scene
+        )
+
+        initial_room_width = self.room_a.width
+        initial_room_length = self.room_a.length
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res = self.client.post(self.analyze_url, {
+            'upload_id': upload_id,
+            'room_id': str(self.room_a.id),
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # Assert Design scene_json is completely unmutated
+        design.refresh_from_db()
+        self.assertEqual(design.scene_json, initial_scene)
+
+        # Assert Room dimensions are completely unmutated
+        self.room_a.refresh_from_db()
+        self.assertEqual(self.room_a.width, initial_room_width)
+        self.assertEqual(self.room_a.length, initial_room_length)
+
+    def test_room_vision_analysis_list_and_detail_views(self):
+        upload_id = self.upload_test_photo(self.token_a, "audit_test.jpg", room_id=self.room_a.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+
+        post_res = self.client.post(self.analyze_url, {
+            'upload_id': upload_id,
+            'room_id': str(self.room_a.id),
+        }, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_200_OK)
+        analysis_id = post_res.data['id']
+
+        # 1. Detail view
+        detail_res = self.client.get(reverse('rooms:room-analysis-detail', kwargs={'analysis_id': analysis_id}))
+        self.assertEqual(detail_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_res.data['id'], analysis_id)
+
+        # 2. List view
+        list_res = self.client.get(self.analyses_list_url)
+        self.assertEqual(list_res.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(list_res.data), 1)
+
+        # 3. Filtered list by room_id
+        list_filter_res = self.client.get(f"{self.analyses_list_url}?room_id={self.room_a.id}")
+        self.assertEqual(list_filter_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item['room_id'] == str(self.room_a.id) for item in list_filter_res.data))
+

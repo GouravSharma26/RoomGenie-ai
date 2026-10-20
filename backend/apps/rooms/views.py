@@ -3,13 +3,15 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from apps.rooms.models import Room, RoomPhotoUpload
+from apps.rooms.models import Room, RoomPhotoUpload, RoomPhotoAnalysis
 from apps.rooms.serializers import (
     RoomSerializer,
     RoomPhotoUploadSerializer,
     RoomPhotoUploadResponseSerializer,
+    RoomPhotoAnalysisRequestSerializer,
+    RoomPhotoAnalysisResponseSerializer,
 )
-from apps.rooms.services import save_temporary_room_photo
+from apps.rooms.services import save_temporary_room_photo, run_room_photo_analysis
 
 
 class RoomViewSet(viewsets.ModelViewSet):
@@ -98,3 +100,119 @@ class RoomPhotoUploadView(APIView):
 
         output_serializer = RoomPhotoUploadResponseSerializer(response_data)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class RoomPhotoAnalysisView(APIView):
+    """
+    POST /api/v1/rooms/analyze-photo/
+    Executes room-photo vision analysis on a previously uploaded photo.
+    - Owner-verified server-side reference to uploaded image.
+    - Runs analysis via vision provider adapter (Mock by default, or live Gemini when configured).
+    - Returns structured room observations (detected furniture, architectural features, colors, uncertainty notes).
+    - NEVER mutates any saved 3D scene (Design or Room).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = RoomPhotoAnalysisRequestSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        upload_id = serializer.validated_data['upload_id']
+        room_id = serializer.validated_data.get('room_id')
+        room_type_hint = serializer.validated_data.get('room_type_hint', '')
+
+        analysis = run_room_photo_analysis(
+            user=request.user,
+            upload_id=upload_id,
+            room_id=room_id,
+            room_type_hint=room_type_hint,
+        )
+
+        response_data = {
+            'id': analysis.id,
+            'photo_upload_id': analysis.photo_upload_id,
+            'room_id': analysis.room_id,
+            'status': analysis.status,
+            'provider': analysis.provider,
+            'model_name': analysis.model_name,
+            'observations': analysis.observations,
+            'error_message': analysis.error_message,
+            'latency_ms': analysis.latency_ms,
+            'created_at': analysis.created_at,
+            'completed_at': analysis.completed_at,
+            'message': 'Room photo vision analysis completed successfully.',
+        }
+
+        output_serializer = RoomPhotoAnalysisResponseSerializer(response_data)
+        return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+
+class RoomPhotoAnalysisDetailView(APIView):
+    """
+    GET /api/v1/rooms/analyses/<uuid:analysis_id>/
+    Retrieves a past room vision analysis record owned by the authenticated user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, analysis_id, *args, **kwargs):
+        analysis = RoomPhotoAnalysis.objects.filter(id=analysis_id, owner=request.user).first()  # pyrefly: ignore[missing-attribute]
+        if not analysis:
+            return Response(
+                {"detail": "Analysis record not found or access denied."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        response_data = {
+            'id': analysis.id,
+            'photo_upload_id': analysis.photo_upload_id,
+            'room_id': analysis.room_id,
+            'status': analysis.status,
+            'provider': analysis.provider,
+            'model_name': analysis.model_name,
+            'observations': analysis.observations,
+            'error_message': analysis.error_message,
+            'latency_ms': analysis.latency_ms,
+            'created_at': analysis.created_at,
+            'completed_at': analysis.completed_at,
+            'message': 'Analysis record retrieved successfully.',
+        }
+        output_serializer = RoomPhotoAnalysisResponseSerializer(response_data)
+        return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+
+class RoomPhotoAnalysisListView(APIView):
+    """
+    GET /api/v1/rooms/analyses/
+    Lists past vision analyses owned by the authenticated user.
+    Optional ?room_id=<uuid> query filter.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        queryset = RoomPhotoAnalysis.objects.filter(owner=request.user)  # pyrefly: ignore[missing-attribute]
+        room_id = request.query_params.get('room_id')
+        if room_id:
+            queryset = queryset.filter(room_id=room_id)
+
+        items = []
+        for item in queryset:
+            items.append({
+                'id': item.id,
+                'photo_upload_id': item.photo_upload_id,
+                'room_id': item.room_id,
+                'status': item.status,
+                'provider': item.provider,
+                'model_name': item.model_name,
+                'observations': item.observations,
+                'error_message': item.error_message,
+                'latency_ms': item.latency_ms,
+                'created_at': item.created_at,
+                'completed_at': item.completed_at,
+            })
+        output_serializer = RoomPhotoAnalysisResponseSerializer(items, many=True)
+        return Response(output_serializer.data, status=status.HTTP_200_OK)
+

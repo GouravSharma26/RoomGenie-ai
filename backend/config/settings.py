@@ -163,6 +163,7 @@ CORS_ALLOWED_ORIGINS = [
 
 # AI and Model Provider Baseline Settings
 AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', 'mock').lower()
+ROOM_VISION_PROVIDER_MODE = os.getenv('ROOM_VISION_PROVIDER_MODE', 'mock').lower()
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
 

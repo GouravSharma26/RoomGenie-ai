@@ -101,3 +101,75 @@ class RoomPhotoUpload(models.Model):
 
     def __str__(self):
         return f"RoomPhotoUpload {self.id} ({self.image_format} {self.width}x{self.height}) [{self.owner.username}]"
+
+
+class RoomPhotoAnalysis(models.Model):
+    """
+    Structured observations from vision analysis of an uploaded room photo.
+    Records detected room type, features, furniture, colors, and layout recommendations.
+    Does NOT modify the 3D scene directly—serves as editable suggestions for the user.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='room_analyses'
+    )
+    photo_upload = models.ForeignKey(
+        RoomPhotoUpload,
+        on_delete=models.CASCADE,
+        related_name='analyses',
+        help_text='Reference to the uploaded room photo analyzed'
+    )
+    room = models.ForeignKey(
+        Room,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='analyses',
+        help_text='Optional room envelope linked to this analysis'
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=STATUS_CHOICES,
+        default='pending'
+    )
+    provider = models.CharField(
+        max_length=64,
+        default='mock',
+        help_text='Vision provider adapter utilized (mock, gemini, etc.)'
+    )
+    model_name = models.CharField(
+        max_length=64,
+        default='unknown',
+        help_text='Specific vision model identifier'
+    )
+    observations = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Validated structured room observations and detected furniture'
+    )
+    error_message = models.TextField(
+        null=True,
+        blank=True,
+        help_text='Safe error message if analysis failed'
+    )
+    latency_ms = models.PositiveIntegerField(
+        default=0,
+        help_text='Analysis latency in milliseconds'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"RoomPhotoAnalysis {self.id} [{self.status}] ({self.provider}/{self.model_name}) [{self.owner.username}]"
+

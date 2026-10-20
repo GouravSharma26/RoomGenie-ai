@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from typing import Any
 import uuid
 import warnings
 from datetime import timedelta
@@ -10,7 +11,9 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from apps.rooms.models import RoomPhotoUpload
+from apps.rooms.models import Room, RoomPhotoUpload, RoomPhotoAnalysis
+from apps.rooms.vision.base import BaseRoomVisionAdapter
+from apps.rooms.vision import get_room_vision_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -283,3 +286,114 @@ def cleanup_expired_room_photos(max_age_seconds: int | None = None, dry_run: boo
         'missing_count': missing_count,
         'failed_count': failed_count,
     }
+
+
+def run_room_photo_analysis(
+    user,
+    upload_id: uuid.UUID | str,
+    room_id: uuid.UUID | str | None = None,
+    room_type_hint: str = '',
+    adapter: BaseRoomVisionAdapter | None = None
+) -> RoomPhotoAnalysis:
+    """
+    Executes room-photo vision analysis on a previously uploaded, owner-verified photo.
+    - Resolves the image via server-side reference and verifies ownership and non-expiration.
+    - Runs analysis through a vision provider adapter (defaults to MockRoomVisionAdapter).
+    - Validates output against RoomObservationsSerializer schema.
+    - Persists RoomPhotoAnalysis record for audit and user review.
+    - NEVER mutates any saved 3D scene (Design or Room).
+    """
+    now = timezone.now()
+
+    upload = RoomPhotoUpload.objects.filter(id=upload_id, owner=user).first()  # pyrefly: ignore[missing-attribute]
+    if not upload:
+        raise serializers.ValidationError("Uploaded photo record not found or access denied.")
+
+    if upload.is_deleted:
+        raise serializers.ValidationError("Uploaded photo has already been cleaned up from storage.")
+
+    if upload.expires_at < now:
+        raise serializers.ValidationError("Uploaded photo has expired. Please upload a fresh room photo.")
+
+    p = Path(upload.file_path)
+    try:
+        file_exists = p.exists() and p.is_file()
+    except OSError as exc:
+        logger.warning(f"Filesystem error inspecting room photo {p}: {exc}")
+        raise serializers.ValidationError("Uploaded photo file cannot be accessed on storage.")
+
+    if not file_exists:
+        raise serializers.ValidationError("Uploaded photo file is missing on storage.")
+
+    room = None
+    if room_id:
+        room = Room.objects.filter(id=room_id, owner=user).first()  # pyrefly: ignore[missing-attribute]
+        if not room:
+            raise serializers.ValidationError("Specified room does not exist or access is denied.")
+
+    # Instantiate provider adapter
+    vision_adapter = adapter or get_room_vision_adapter()
+    provider_name = 'mock'
+    if hasattr(vision_adapter, '__class__'):
+        cls_name = vision_adapter.__class__.__name__.lower()
+        if 'gemini' in cls_name:
+            provider_name = 'gemini'
+        elif 'mock' in cls_name:
+            provider_name = 'mock'
+
+    # Create pending analysis record
+    analysis = RoomPhotoAnalysis.objects.create(  # pyrefly: ignore[missing-attribute]
+        owner=user,
+        photo_upload=upload,
+        room=room,
+        provider=provider_name,
+        model_name=getattr(vision_adapter, 'model_name', 'unknown'),
+        status='pending'
+    )
+
+    context: dict[str, Any] = {
+        'room_type_hint': room_type_hint,
+    }
+    if room:
+        context['room'] = {
+            'width': float(room.width),
+            'length': float(room.length),
+            'height': float(room.height),
+            'name': room.name,
+        }
+
+    try:
+        result = vision_adapter.analyze_room_photo(upload.file_path, context=context)
+    except Exception as exc:
+        logger.error(f"Vision provider {provider_name} failed: {exc}")
+        analysis.status = 'failed'
+        analysis.error_message = f"Vision provider execution failed: {str(exc)}"
+        analysis.completed_at = timezone.now()
+        analysis.save(update_fields=['status', 'error_message', 'completed_at'])  # pyrefly: ignore[missing-attribute]
+        raise serializers.ValidationError(f"Vision provider failed to analyze photo: {str(exc)}")
+
+    # Validate provider output against RoomObservationsSerializer schema
+    from apps.rooms.serializers import RoomObservationsSerializer
+    validator = RoomObservationsSerializer(data=result.observations)
+    if not validator.is_valid():
+        logger.warning(f"Vision provider returned invalid schema: {validator.errors}")
+        analysis.status = 'failed'
+        analysis.error_message = f"Observations failed schema validation: {dict(validator.errors)}"
+        analysis.latency_ms = result.latency_ms
+        analysis.completed_at = timezone.now()
+        analysis.save(update_fields=['status', 'error_message', 'latency_ms', 'completed_at'])  # pyrefly: ignore[missing-attribute]
+        raise serializers.ValidationError(
+            f"Vision provider returned malformed observations: {dict(validator.errors)}"
+        )
+
+    # Persist completed analysis with validated observations
+    analysis.status = 'completed'
+    analysis.provider = result.provider
+    analysis.model_name = result.model
+    analysis.observations = validator.validated_data
+    analysis.latency_ms = result.latency_ms
+    analysis.completed_at = timezone.now()
+    analysis.save(update_fields=['status', 'provider', 'model_name', 'observations', 'latency_ms', 'completed_at'])  # pyrefly: ignore[missing-attribute]
+
+    return analysis
+
