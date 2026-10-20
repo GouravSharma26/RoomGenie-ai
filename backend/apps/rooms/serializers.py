@@ -131,6 +131,39 @@ class RoomPhotoAnalysisRequestSerializer(serializers.Serializer):
         return value
 
 
+import re
+
+HEX_COLOR_REGEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
+
+
+class BoundingRegionSerializer(serializers.Serializer):
+    """
+    Normalized 2D bounding box (0.0 to 1.0) of detected object in the photograph.
+    Coordinates represent [ymin, xmin, ymax, xmax] relative to image dimensions.
+    """
+    ymin = serializers.FloatField(min_value=0.0, max_value=1.0)
+    xmin = serializers.FloatField(min_value=0.0, max_value=1.0)
+    ymax = serializers.FloatField(min_value=0.0, max_value=1.0)
+    xmax = serializers.FloatField(min_value=0.0, max_value=1.0)
+
+    def validate(self, attrs):
+        if attrs.get('ymin', 0) >= attrs.get('ymax', 1):
+            raise serializers.ValidationError("ymin must be strictly less than ymax.")
+        if attrs.get('xmin', 0) >= attrs.get('xmax', 1):
+            raise serializers.ValidationError("xmin must be strictly less than xmax.")
+        return attrs
+
+
+class ApproximateDimensionsSerializer(serializers.Serializer):
+    """
+    Explicitly approximate 3D physical dimensions in SI metres.
+    Single uncalibrated photographs cannot establish exact room or object scale.
+    """
+    width_m = serializers.FloatField(required=False, min_value=0.05, max_value=25.0, allow_null=True)
+    length_m = serializers.FloatField(required=False, min_value=0.05, max_value=25.0, allow_null=True)
+    height_m = serializers.FloatField(required=False, min_value=0.05, max_value=12.0, allow_null=True)
+
+
 class DetectedFurnitureSerializer(serializers.Serializer):
     category = serializers.CharField(max_length=64)
     label = serializers.CharField(max_length=120)
@@ -138,7 +171,18 @@ class DetectedFurnitureSerializer(serializers.Serializer):
     color = serializers.CharField(max_length=64, required=False, allow_null=True, allow_blank=True)
     material = serializers.CharField(max_length=64, required=False, allow_null=True, allow_blank=True)
     confidence = serializers.FloatField(min_value=0.0, max_value=1.0)
+    bounding_box = BoundingRegionSerializer(required=False, allow_null=True)
+    approximate_dimensions_m = ApproximateDimensionsSerializer(required=False, allow_null=True)
     suggested_catalogue_asset_id = serializers.CharField(max_length=120, required=False, allow_null=True, allow_blank=True)
+
+    def validate_suggested_catalogue_asset_id(self, value):
+        if value:
+            from apps.furniture.models import FurnitureAsset
+            if not FurnitureAsset.objects.filter(id=value, is_active=True).exists():  # pyrefly: ignore[missing-attribute]
+                raise serializers.ValidationError(
+                    f"Suggested catalogue asset '{value}' does not exist or is inactive."
+                )
+        return value
 
 
 class ArchitecturalFeaturesSerializer(serializers.Serializer):
@@ -150,18 +194,28 @@ class ArchitecturalFeaturesSerializer(serializers.Serializer):
 
 
 class ColorPaletteItemSerializer(serializers.Serializer):
-    hex = serializers.CharField(max_length=32)
+    hex = serializers.CharField(max_length=16)
     name = serializers.CharField(max_length=64)
     role = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+    def validate_hex(self, value):
+        val = value.strip()
+        if not HEX_COLOR_REGEX.match(val):
+            raise serializers.ValidationError(
+                f"Invalid hex color '{value}'. Must be in #RGB or #RRGGBB format."
+            )
+        return val.upper()
 
 
 class RoomObservationsSerializer(serializers.Serializer):
     """
     Schema validation for structured room observations produced by vision adapters.
-    Validates detected items, architectural features, color palette, and uncertainty notes.
+    Validates detected items, architectural features, color palette, bounding boxes,
+    approximate dimensions, and uncertainty notes.
     """
     room_type = serializers.CharField(max_length=64)
     estimated_room_shape = serializers.CharField(max_length=64, required=False, default='rectangular')
+    estimated_dimensions_approx_m = ApproximateDimensionsSerializer(required=False, allow_null=True)
     overall_confidence = serializers.FloatField(min_value=0.0, max_value=1.0)
     architectural_features = ArchitecturalFeaturesSerializer(required=False)
     detected_furniture = DetectedFurnitureSerializer(many=True, required=False, default=list)
@@ -184,6 +238,8 @@ class RoomPhotoAnalysisResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     provider = serializers.CharField()
     model_name = serializers.CharField()
+    fallback_used = serializers.BooleanField(default=False)
+    fallback_reason = serializers.CharField(allow_null=True, required=False)
     observations = RoomObservationsSerializer(allow_null=True)
     error_message = serializers.CharField(allow_null=True, required=False)
     latency_ms = serializers.IntegerField()

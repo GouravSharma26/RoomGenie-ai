@@ -7,7 +7,8 @@ import {
   Layers, 
   Cloud, 
   DollarSign,
-  Sparkles
+  Sparkles,
+  Camera
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
@@ -17,6 +18,7 @@ interface EditorHeaderProps {
   onOpenSaveLoad: () => void;
   onOpenBudgetBreakdown?: () => void;
   onOpenAiAssistant?: () => void;
+  onOpenPhotoVision?: () => void;
 }
 
 export const EditorHeader: React.FC<EditorHeaderProps> = ({
@@ -24,6 +26,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   onOpenSaveLoad,
   onOpenBudgetBreakdown,
   onOpenAiAssistant,
+  onOpenPhotoVision,
 }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
@@ -156,6 +159,18 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
           <Compass className="w-3.5 h-3.5 text-indigo-400" />
           <span>{viewMode === 'perspective' ? 'Top View' : '3D View'}</span>
         </button>
+
+        {/* Room Photo Vision Analysis Trigger */}
+        {onOpenPhotoVision && (
+          <button
+            onClick={onOpenPhotoVision}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Upload and analyze room photo with AI vision"
+          >
+            <Camera className="w-3.5 h-3.5 text-pink-400" />
+            <span>Room Photo</span>
+          </button>
+        )}
 
         {/* AI Design Assistant Trigger */}
         <button

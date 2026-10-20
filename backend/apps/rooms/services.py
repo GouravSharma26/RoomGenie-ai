@@ -353,6 +353,7 @@ def run_room_photo_analysis(
 
     context: dict[str, Any] = {
         'room_type_hint': room_type_hint,
+        'original_filename': upload.original_filename,
     }
     if room:
         context['room'] = {
@@ -392,8 +393,14 @@ def run_room_photo_analysis(
     analysis.model_name = result.model
     analysis.observations = validator.validated_data
     analysis.latency_ms = result.latency_ms
+    analysis.fallback_used = bool(result.raw_metadata.get('fallback_used', False))
+    raw_fallback_reason = str(result.raw_metadata.get('fallback_reason', ''))[:255]
+    analysis.fallback_reason = raw_fallback_reason if raw_fallback_reason else None
     analysis.completed_at = timezone.now()
-    analysis.save(update_fields=['status', 'provider', 'model_name', 'observations', 'latency_ms', 'completed_at'])  # pyrefly: ignore[missing-attribute]
+    analysis.save(update_fields=[
+        'status', 'provider', 'model_name', 'observations',
+        'latency_ms', 'fallback_used', 'fallback_reason', 'completed_at'
+    ])  # pyrefly: ignore[missing-attribute]
 
     return analysis
 

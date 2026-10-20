@@ -33,8 +33,9 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
             except Exception:
                 pass
 
-        filename_lower = p.name.lower()
+        orig_name = str(context.get('original_filename', '')).lower()
         hint = str(context.get('room_type_hint', '')).lower()
+        search_text = f"{hint} {orig_name}"
 
         # 2. Match available furniture catalogue IDs safely
         from apps.furniture.models import FurnitureAsset
@@ -48,8 +49,9 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
             return first.id if first else None
 
         # 3. Determine room type observations
-        if any(k in filename_lower or k in hint for k in ['bedroom', 'bed', 'sleep']):
+        if any(k in search_text for k in ['bedroom', 'bed', 'sleep']):
             room_type = 'bedroom'
+            estimated_dims = {'width_m': 4.0, 'length_m': 4.5, 'height_m': 2.7}
             detected_furniture = [
                 {
                     'category': 'bed',
@@ -58,6 +60,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#475569',
                     'material': 'upholstered_fabric',
                     'confidence': 0.94,
+                    'bounding_box': {'ymin': 0.35, 'xmin': 0.20, 'ymax': 0.85, 'xmax': 0.80},
+                    'approximate_dimensions_m': {'width_m': 1.6, 'length_m': 2.1, 'height_m': 0.95},
                     'suggested_catalogue_asset_id': pick_asset('bed-queen-wood', 'bed-platform-wood'),
                 },
                 {
@@ -67,6 +71,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#78716c',
                     'material': 'natural_oak',
                     'confidence': 0.88,
+                    'bounding_box': {'ymin': 0.48, 'xmin': 0.08, 'ymax': 0.78, 'xmax': 0.22},
+                    'approximate_dimensions_m': {'width_m': 0.5, 'length_m': 0.45, 'height_m': 0.55},
                     'suggested_catalogue_asset_id': pick_asset('table-nightstand-minimal', 'table-coffee-round'),
                 },
                 {
@@ -76,13 +82,16 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#f8fafc',
                     'material': 'painted_wood',
                     'confidence': 0.85,
+                    'bounding_box': {'ymin': 0.20, 'xmin': 0.78, 'ymax': 0.90, 'xmax': 0.98},
+                    'approximate_dimensions_m': {'width_m': 0.9, 'length_m': 0.55, 'height_m': 1.85},
                     'suggested_catalogue_asset_id': pick_asset('storage-bookshelf-tall', 'bookshelf-4tier-metal'),
                 },
             ]
             style_desc = "Calm contemporary bedroom with clean lines and soft ambient lighting."
             spatial_summary = "Focal bed placement centered against main wall with symmetrical clearance pathways."
-        elif any(k in filename_lower or k in hint for k in ['office', 'study', 'desk', 'work']):
+        elif any(k in search_text for k in ['office', 'study', 'desk', 'work']):
             room_type = 'home_office'
+            estimated_dims = {'width_m': 3.5, 'length_m': 4.0, 'height_m': 2.7}
             detected_furniture = [
                 {
                     'category': 'table',
@@ -91,6 +100,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#334155',
                     'material': 'wood_and_steel',
                     'confidence': 0.92,
+                    'bounding_box': {'ymin': 0.40, 'xmin': 0.25, 'ymax': 0.82, 'xmax': 0.75},
+                    'approximate_dimensions_m': {'width_m': 1.4, 'length_m': 0.75, 'height_m': 0.75},
                     'suggested_catalogue_asset_id': pick_asset('table-desk-minimal', 'table-dining-rect'),
                 },
                 {
@@ -100,6 +111,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#0f172a',
                     'material': 'mesh_and_nylon',
                     'confidence': 0.91,
+                    'bounding_box': {'ymin': 0.45, 'xmin': 0.42, 'ymax': 0.88, 'xmax': 0.60},
+                    'approximate_dimensions_m': {'width_m': 0.65, 'length_m': 0.65, 'height_m': 1.05},
                     'suggested_catalogue_asset_id': pick_asset('chair-accent-armchair', 'armchair-accent-nordic'),
                 },
                 {
@@ -109,6 +122,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#1e293b',
                     'material': 'powder_coated_metal',
                     'confidence': 0.89,
+                    'bounding_box': {'ymin': 0.22, 'xmin': 0.78, 'ymax': 0.92, 'xmax': 0.96},
+                    'approximate_dimensions_m': {'width_m': 0.8, 'length_m': 0.4, 'height_m': 1.9},
                     'suggested_catalogue_asset_id': pick_asset('storage-bookshelf-tall', 'bookshelf-4tier-metal'),
                 },
             ]
@@ -117,6 +132,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
         else:
             # Default: Living room layout
             room_type = 'living_room'
+            estimated_dims = {'width_m': 4.5, 'length_m': 5.5, 'height_m': 2.8}
             detected_furniture = [
                 {
                     'category': 'seating',
@@ -125,6 +141,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#334155',
                     'material': 'woven_fabric',
                     'confidence': 0.95,
+                    'bounding_box': {'ymin': 0.42, 'xmin': 0.25, 'ymax': 0.82, 'xmax': 0.80},
+                    'approximate_dimensions_m': {'width_m': 2.2, 'length_m': 0.95, 'height_m': 0.85},
                     'suggested_catalogue_asset_id': pick_asset('sofa-3seater-fabric', 'sofa-3seater-fabric'),
                 },
                 {
@@ -134,6 +152,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#b45309',
                     'material': 'solid_wood',
                     'confidence': 0.90,
+                    'bounding_box': {'ymin': 0.62, 'xmin': 0.38, 'ymax': 0.88, 'xmax': 0.64},
+                    'approximate_dimensions_m': {'width_m': 0.85, 'length_m': 0.85, 'height_m': 0.45},
                     'suggested_catalogue_asset_id': pick_asset('table-coffee-round', 'table-coffee-round'),
                 },
                 {
@@ -143,6 +163,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#4f46e5',
                     'material': 'velvet_upholstery',
                     'confidence': 0.89,
+                    'bounding_box': {'ymin': 0.48, 'xmin': 0.08, 'ymax': 0.85, 'xmax': 0.28},
+                    'approximate_dimensions_m': {'width_m': 0.85, 'length_m': 0.82, 'height_m': 0.88},
                     'suggested_catalogue_asset_id': pick_asset('chair-accent-armchair', 'armchair-accent-nordic'),
                 },
                 {
@@ -152,6 +174,8 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
                     'color': '#1e293b',
                     'material': 'engineered_wood',
                     'confidence': 0.84,
+                    'bounding_box': {'ymin': 0.30, 'xmin': 0.82, 'ymax': 0.85, 'xmax': 0.98},
+                    'approximate_dimensions_m': {'width_m': 1.2, 'length_m': 0.42, 'height_m': 1.4},
                     'suggested_catalogue_asset_id': pick_asset('storage-bookshelf-tall', 'bookshelf-4tier-metal'),
                 },
             ]
@@ -161,6 +185,7 @@ class MockRoomVisionAdapter(BaseRoomVisionAdapter):
         observations: dict[str, Any] = {
             'room_type': room_type,
             'estimated_room_shape': 'rectangular',
+            'estimated_dimensions_approx_m': estimated_dims,
             'overall_confidence': 0.92,
             'architectural_features': {
                 'flooring': 'light_oak_hardwood',

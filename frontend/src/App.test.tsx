@@ -178,11 +178,26 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 4 Active')).toBeInTheDocument();
+    expect(screen.getByText('Phase 5 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Room Photo/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /AI Designer/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Load/i })).toBeInTheDocument();
     expect(screen.getByTestId('mock-room-canvas')).toBeInTheDocument();
+  });
+
+  it('opens Room Photo Vision Analysis modal when button is clicked', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /Room Photo/i }));
+    expect(screen.getByRole('heading', { name: /Room-Photo Vision Analysis/i })).toBeInTheDocument();
+    expect(screen.getByText(/Click to select or drag & drop a room photo/i)).toBeInTheDocument();
   });
 
   it('opens Save & Load persistence modal when button is clicked', async () => {

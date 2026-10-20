@@ -164,6 +164,16 @@ class RoomPhotoAnalysis(models.Model):
         default=0,
         help_text='Analysis latency in milliseconds'
     )
+    fallback_used = models.BooleanField(
+        default=False,
+        help_text='Indicates if a fallback provider was used (e.g. Gemini failed and fell back to mock)'
+    )
+    fallback_reason = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text='Safe descriptive reason for provider fallback without sensitive data'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

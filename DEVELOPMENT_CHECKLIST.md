@@ -25,8 +25,8 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 - [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404; demo auth gated behind `ALLOW_DEMO_AUTH = DEBUG and ...` configuration and rejected with 403 in production).
 - [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, dimensions, transforms, and full 3D rotated footprint containment).
-- [x] Relevant Django tests pass (105/105 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, room-photo upload validation, early HTTP 413 body size rejection, total pixel caps, Pillow decompression-bomb hardening, orphan-free rollback, safe management command cleanup, and room-photo vision analysis with mock/gemini adapters).
-- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 28 Vitest tests pass, production bundle built).
+- [x] Relevant Django tests pass (110/110 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, room-photo upload validation, early HTTP 413 body size rejection, total pixel caps, Pillow decompression-bomb hardening, orphan-free rollback, safe management command cleanup, strict hex/catalogue validation, bounding boxes, fallback auditing, explicit provider mode configuration, and room-photo vision analysis with mock/gemini adapters).
+- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 36 Vitest tests pass across editor, persistence, budget, AI agent, and room-photo vision analysis modals, production bundle built).
 
 ## Catalogue and budget
 
@@ -38,13 +38,14 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 ## AI agent and photo analysis
 
 - [x] LLM provider is behind an adapter (`BaseDesignLLMAdapter` interface with configurable `GeminiDesignLLMAdapter` targeting `gemini-3.8-flash` and `MockDesignLLMAdapter`).
-- [x] Room vision analysis provider is behind an adapter (`BaseRoomVisionAdapter` interface with configurable `GeminiRoomVisionAdapter` targeting `gemini-3.8-flash` and deterministic `MockRoomVisionAdapter`).
+- [x] Room vision analysis provider is behind an adapter (`BaseRoomVisionAdapter` interface with configurable `GeminiRoomVisionAdapter` targeting `gemini-3.8-flash` and deterministic `MockRoomVisionAdapter`, with explicit mode validation rejecting unsupported configurations).
 - [x] Mock provider is available for development/tests (deterministic offline `MockDesignLLMAdapter` and `MockRoomVisionAdapter` active by default in test suite and development).
 - [x] Tool names and parameters are allowlisted and validated (`ALLOWED_ACTION_TYPES` strictly restricted to `add_furniture`, `move_object`, `replace_furniture`, `remove_object`, `set_material`, `clear_room`).
 - [x] No arbitrary SQL, Python, shell, or unrestricted network tool is exposed (verified by automated regression test `test_tools_reject_arbitrary_or_unlisted_actions`).
 - [x] Multi-object changes are previewed and require approval (Two-phase approval workflow: `/prompt/` simulates and creates `AgentRun(status='proposed')` with candidate diff; design mutated only upon explicit user approval via `/apply/`; proposals bound to base scene snapshots with HTTP 409 stale conflict rejection and canonical scene validation before persistence; containment violations strictly block approval).
 - [x] Room photo analysis outputs structured observations without silently modifying 3D scenes (detected furniture mapped to catalogue, approximate layout, architectural features, colors, confidence, and explicit uncertainty notes; scene state and room dimensions remain immutable until explicit user review).
-- [x] Errors, timeouts, uncertainty, and invalid proposals are handled (15s network timeout on Gemini API, validation errors/warnings surfaced in diff, mock fallback, malformed vision outputs rejected).
+- [x] Frontend photo-upload & vision analysis UI flow (`RoomPhotoVisionModal` with drag-and-drop upload, scanning progress, structured observation display, hex swatches, suggestion editing/rejection, catalogue 3D model remapping, fallback auditing, and explicit confirmation before applying changes to 3D room canvas).
+- [x] Errors, timeouts, uncertainty, and invalid proposals are handled (15s network timeout on Gemini API, validation errors/warnings surfaced in diff, mock fallback with sanitized fallback tracking, malformed vision outputs rejected).
 - [x] Provider secrets stay in backend environment variables (`GEMINI_API_KEY` accessed solely on Django backend; never exposed to browser).
 
 ## Photo-to-3D and AR

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from PIL import Image
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -17,11 +18,14 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from apps.furniture.models import FurnitureAsset
 from apps.rooms.models import Room, RoomPhotoUpload, RoomPhotoAnalysis
 from apps.designs.models import Design
 from apps.rooms.services import cleanup_expired_room_photos, save_temporary_room_photo, run_room_photo_analysis
+from apps.rooms.vision import get_room_vision_adapter
 from apps.rooms.vision.base import BaseRoomVisionAdapter, RoomAnalysisResult
 from apps.rooms.vision.mock import MockRoomVisionAdapter
+from apps.rooms.vision.gemini import GeminiRoomVisionAdapter
 
 
 class RoomPersistenceTests(APITestCase):
@@ -540,6 +544,28 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
             height=Decimal('2.70')
         )
 
+        for asset_id, name, cat in [
+            ('sofa-3seater-fabric', '3-Seater Fabric Sofa', 'seating'),
+            ('table-coffee-round', 'Round Coffee Table', 'tables'),
+            ('chair-accent-armchair', 'Lounge Accent Armchair', 'seating'),
+            ('storage-bookshelf-tall', 'Media Console / Bookshelf', 'storage'),
+            ('bed-queen-wood', 'Queen Size Platform Bed', 'beds'),
+            ('table-nightstand-minimal', 'Bedside Nightstand', 'tables'),
+            ('table-desk-minimal', 'Writing & Computer Desk', 'tables'),
+        ]:
+            FurnitureAsset.objects.get_or_create(
+                id=asset_id,
+                defaults={
+                    'name': name,
+                    'category': cat,
+                    'width': Decimal('1.00'),
+                    'height': Decimal('1.00'),
+                    'depth': Decimal('1.00'),
+                    'price_paise': 100000,
+                    'is_active': True,
+                }
+            )
+
     def tearDown(self):
         # Cleanup temporary files created in test media directories
         for user in [self.user_a, self.user_b]:
@@ -826,4 +852,108 @@ class RoomPhotoVisionAnalysisTests(APITestCase):
         list_filter_res = self.client.get(f"{self.analyses_list_url}?room_id={self.room_a.id}")
         self.assertEqual(list_filter_res.status_code, status.HTTP_200_OK)
         self.assertTrue(all(item['room_id'] == str(self.room_a.id) for item in list_filter_res.data))
+
+    def test_gemini_fallback_preserves_safe_reason_and_audit_metadata(self):
+        upload_id = self.upload_test_photo(self.token_a, "gemini_fallback.jpg")
+        upload = RoomPhotoUpload.objects.get(id=upload_id)
+
+        # 1. Fallback when API key is missing
+        gemini_adapter = GeminiRoomVisionAdapter()
+        with override_settings(GEMINI_API_KEY=''):
+            gemini_adapter.api_key = ''
+            analysis = run_room_photo_analysis(
+                user=self.user_a,
+                upload_id=upload_id,
+                adapter=gemini_adapter
+            )
+            self.assertEqual(analysis.status, 'completed')
+            self.assertTrue(analysis.fallback_used)
+            self.assertEqual(analysis.fallback_reason, 'gemini_api_key_not_configured')
+            self.assertEqual(analysis.provider, 'mock')
+
+        # 2. Detail API returns fallback_used and fallback_reason
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        res = self.client.get(reverse('rooms:room-analysis-detail', kwargs={'analysis_id': analysis.id}))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['fallback_used'])
+        self.assertEqual(res.data['fallback_reason'], 'gemini_api_key_not_configured')
+
+    def test_invalid_provider_mode_raises_improperly_configured(self):
+        with override_settings(ROOM_VISION_PROVIDER_MODE='invalid_provider_typo'):
+            with self.assertRaises(ImproperlyConfigured) as ctx:
+                get_room_vision_adapter()
+            self.assertIn("Unsupported ROOM_VISION_PROVIDER_MODE", str(ctx.exception))
+            self.assertIn("mock", str(ctx.exception))
+            self.assertIn("gemini", str(ctx.exception))
+
+    def test_schema_validates_hex_color_strictly(self):
+        from apps.rooms.serializers import ColorPaletteItemSerializer
+        
+        # Valid 3-char and 6-char hex
+        valid_3 = ColorPaletteItemSerializer(data={'hex': '#FFF', 'name': 'White'})
+        self.assertTrue(valid_3.is_valid(), valid_3.errors)
+        self.assertEqual(valid_3.validated_data['hex'], '#FFF')
+
+        valid_6 = ColorPaletteItemSerializer(data={'hex': '#334155', 'name': 'Slate'})
+        self.assertTrue(valid_6.is_valid(), valid_6.errors)
+        self.assertEqual(valid_6.validated_data['hex'], '#334155')
+
+        # Invalid hex formats
+        for bad_hex in ['blue', '#12', '#12345', '#GGGGGG', '334155']:
+            invalid = ColorPaletteItemSerializer(data={'hex': bad_hex, 'name': 'Bad'})
+            self.assertFalse(invalid.is_valid(), f"Expected {bad_hex} to fail hex validation")
+            self.assertIn('hex', invalid.errors)
+
+    def test_schema_validates_suggested_catalogue_asset_id_against_active_catalogue(self):
+        from apps.rooms.serializers import DetectedFurnitureSerializer
+
+        # Valid active catalogue item
+        valid_item = DetectedFurnitureSerializer(data={
+            'category': 'seating',
+            'label': 'Living Sofa',
+            'confidence': 0.95,
+            'suggested_catalogue_asset_id': 'sofa-3seater-fabric',
+        })
+        self.assertTrue(valid_item.is_valid(), valid_item.errors)
+
+        # Non-existent catalogue item
+        invalid_item = DetectedFurnitureSerializer(data={
+            'category': 'seating',
+            'label': 'Ghost Sofa',
+            'confidence': 0.95,
+            'suggested_catalogue_asset_id': 'non-existent-furniture-item-999',
+        })
+        self.assertFalse(invalid_item.is_valid())
+        self.assertIn('suggested_catalogue_asset_id', invalid_item.errors)
+
+    def test_schema_validates_bounding_boxes_and_approximate_dimensions(self):
+        from apps.rooms.serializers import BoundingRegionSerializer, ApproximateDimensionsSerializer, DetectedFurnitureSerializer
+
+        # Valid bounding box
+        valid_box = BoundingRegionSerializer(data={'ymin': 0.1, 'xmin': 0.2, 'ymax': 0.8, 'xmax': 0.9})
+        self.assertTrue(valid_box.is_valid(), valid_box.errors)
+
+        # Invalid bounding box: ymin >= ymax
+        bad_box_y = BoundingRegionSerializer(data={'ymin': 0.8, 'xmin': 0.2, 'ymax': 0.1, 'xmax': 0.9})
+        self.assertFalse(bad_box_y.is_valid())
+
+        # Invalid bounding box: xmin >= xmax
+        bad_box_x = BoundingRegionSerializer(data={'ymin': 0.1, 'xmin': 0.9, 'ymax': 0.8, 'xmax': 0.2})
+        self.assertFalse(bad_box_x.is_valid())
+
+        # Valid dimensions
+        valid_dims = ApproximateDimensionsSerializer(data={'width_m': 2.1, 'length_m': 0.9, 'height_m': 0.85})
+        self.assertTrue(valid_dims.is_valid(), valid_dims.errors)
+
+        # Furniture item with bounding box and approximate dimensions
+        full_item = DetectedFurnitureSerializer(data={
+            'category': 'seating',
+            'label': 'Sofa',
+            'confidence': 0.90,
+            'bounding_box': {'ymin': 0.3, 'xmin': 0.2, 'ymax': 0.8, 'xmax': 0.7},
+            'approximate_dimensions_m': {'width_m': 2.0, 'length_m': 0.9, 'height_m': 0.8},
+            'suggested_catalogue_asset_id': 'sofa-3seater-fabric',
+        })
+        self.assertTrue(full_item.is_valid(), full_item.errors)
+
 

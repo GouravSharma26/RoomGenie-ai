@@ -39,7 +39,8 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
         if not self.api_key:
             logger.info("GEMINI_API_KEY not configured; using MockRoomVisionAdapter.")
             result = self.mock_fallback.analyze_room_photo(image_path, context=context)
-            result.raw_metadata['fallback_reason'] = 'no_gemini_api_key'
+            result.raw_metadata['fallback_used'] = True
+            result.raw_metadata['fallback_reason'] = 'gemini_api_key_not_configured'
             return result
 
         p = Path(image_path)
@@ -69,6 +70,7 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
             "{\n"
             '  "room_type": "living_room" | "bedroom" | "home_office" | "dining_room" | "other",\n'
             '  "estimated_room_shape": "rectangular" | "square" | "l_shaped" | "open_concept",\n'
+            '  "estimated_dimensions_approx_m": {"width_m": float, "length_m": float, "height_m": float},\n'
             '  "overall_confidence": 0.0 to 1.0,\n'
             '  "architectural_features": {\n'
             '    "flooring": "string description",\n'
@@ -82,19 +84,21 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
             '      "category": "seating" | "table" | "storage" | "bed" | "decor" | "other",\n'
             '      "label": "string name",\n'
             '      "estimated_spatial_zone": "string zone",\n'
-            '      "color": "string hex or color name",\n'
+            '      "color": "#hex code",\n'
             '      "material": "string material",\n'
             '      "confidence": 0.0 to 1.0,\n'
+            '      "bounding_box": {"ymin": 0.0-1.0, "xmin": 0.0-1.0, "ymax": 0.0-1.0, "xmax": 0.0-1.0},\n'
+            '      "approximate_dimensions_m": {"width_m": float, "length_m": float, "height_m": float},\n'
             '      "suggested_catalogue_asset_id": null\n'
             "    }\n"
             "  ],\n"
             '  "color_palette": [\n'
-            '    {"hex": "#hex", "name": "Color Name", "role": "dominant_walls | primary_furniture | accent"}\n'
+            '    {"hex": "#RRGGBB", "name": "Color Name", "role": "dominant_walls | primary_furniture | accent"}\n'
             "  ],\n"
             '  "style_description": "concise style summary",\n'
             '  "spatial_summary": "layout and circulation summary",\n'
             '  "recommendations": ["suggestion 1", "suggestion 2"],\n'
-            '  "uncertainty_notes": "Note that dimensions cannot be accurately measured from a single photo.",\n'
+            '  "uncertainty_notes": "Note that exact dimensions cannot be measured from a single 2D photo.",\n'
             '  "requires_user_confirmation": true\n'
             "}\n\n"
             "Important: Do NOT wrap in markdown backticks or text outside JSON. Return only the JSON object."
@@ -158,7 +162,10 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
                     raw_metadata={'usage_metadata': resp_data.get('usageMetadata', {})}
                 )
         except Exception as exc:
-            logger.warning(f"Gemini room vision analysis failed ({exc}); falling back to mock provider.")
+            # Safely record fallback without exposing URLs, API keys or secret credentials
+            err_type = exc.__class__.__name__
+            logger.warning(f"Gemini room vision analysis failed ({err_type}); falling back to mock provider.")
             result = self.mock_fallback.analyze_room_photo(image_path, context=context)
-            result.raw_metadata['fallback_reason'] = f"gemini_api_error: {str(exc)}"
+            result.raw_metadata['fallback_used'] = True
+            result.raw_metadata['fallback_reason'] = f"gemini_provider_error: {err_type}"
             return result
