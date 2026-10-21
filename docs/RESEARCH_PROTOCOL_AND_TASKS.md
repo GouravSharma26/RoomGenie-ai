@@ -15,30 +15,39 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 - **Primary Research Question (RQ1):**  
   *Does an AI-assisted interactive 3D interior design workflow change completion time, task success, budget compliance, and perceived usability compared with manual use of the same 3D editor?*
 
-#### Primary Confirmatory Hypotheses & Pre-Registered Decision Rules
-The study evaluates four primary confirmatory hypotheses. All confirmatory hypothesis tests are **two-sided** with an overall family-wise significance threshold of $\alpha = 0.05$.
+#### Primary Confirmatory Hypotheses & Model-Adjusted Statistical Decision Rules
+The study evaluates four primary confirmatory hypotheses. Because each participant performs one task under Condition A (Manual) and the other task under Condition B (AI-Assisted) in a four-sequence crossover design, raw individual differences combine the workflow effect with intrinsic task differences and trial order. To prevent confounding, all confirmatory hypotheses are evaluated via **pre-registered statistical models that explicitly isolate Condition, Task, and Trial Period/Order**. All confirmatory hypothesis tests are **two-sided** with an overall family-wise significance threshold of $\alpha = 0.05$.
 
-1. **$H_{01}$ (Task Completion Time):** Active task completion time (seconds) does not differ between Manual (Condition A) and AI-Assisted (Condition B) workflows.
-   - *Primary Test:* Two-sided paired Student's $t$-test on difference scores ($\Delta = \text{Time}_B - \text{Time}_A$).
-   - *Parametric Decision Rule & Alternative:* Normality of paired differences $\Delta$ evaluated via the **Shapiro-Wilk test** ($\alpha = 0.05$) and visual inspection of Q-Q residuals. If normality is rejected ($p < 0.05$) or severe skew dominates, the two-sided **Wilcoxon signed-rank test** serves as the pre-registered non-parametric substitute.
-   - *Effect Size:* Cohen's $d_z$ for paired $t$-test; matched-pairs rank biserial correlation $r$ for Wilcoxon signed-rank test.
+1. **$H_{01}$ (Task Completion Time):** Active task completion time (seconds) does not differ between Manual (Condition A) and AI-Assisted (Condition B) workflows when controlling for task assignment and trial period.
+   - *Primary Adjusted Model:* **Linear Mixed-Effects Model (LMM)** with participant random intercept:
+     $$Y_{it} = \beta_0 + \beta_{\text{Condition}} \text{Condition}_{it} + \beta_{\text{Task}} \text{Task}_{it} + \beta_{\text{Period}} \text{Period}_{it} + u_i + \epsilon_{it}$$
+     where $u_i \sim \mathcal{N}(0, \sigma_u^2)$ accounts for participant skill/speed variance, and $t \in \{1, 2\}$ represents trial order.
+   - *Hypothesis Decision Rule:* Test $H_0: \beta_{\text{Condition}} = 0$ using two-sided $t$-statistic with Satterthwaite degrees-of-freedom approximation ($\alpha = 0.05$).
+   - *Model Diagnostics & Fallback:* Residual normality evaluated via the **Shapiro-Wilk test** ($\alpha = 0.05$) on model residuals. If residuals severely deviate from normality or display heteroscedasticity, the log-transformed metric $\log(Y)$ is modeled, or a rank-based non-parametric crossover procedure (Koch's crossover rank analysis / Aligned Rank Transform ART-ANOVA) serves as the pre-registered non-parametric substitute.
+   - *Effect Size & Descriptive Baseline:* Adjusted mean difference $\beta_{\text{Condition}}$ with 95% CI; raw paired differences ($\Delta = \text{Time}_B - \text{Time}_A$) and Cohen's $d_z$ reported as descriptive unadjusted baselines.
 
-2. **$H_{02}$ (Perceived Usability — SUS Score):** System Usability Scale (SUS) composite score ($0–100$) does not differ between conditions.
-   - *Primary Test:* Two-sided paired Student's $t$-test on difference scores ($\Delta = \text{SUS}_B - \text{SUS}_A$).
-   - *Parametric Decision Rule & Alternative:* Normality of paired differences $\Delta$ evaluated via the **Shapiro-Wilk test** ($\alpha = 0.05$). If $p < 0.05$, the two-sided **Wilcoxon signed-rank test** serves as the pre-registered non-parametric substitute.
-   - *Effect Size:* Cohen's $d_z$ for paired $t$-test; matched-pairs rank biserial correlation $r$ for Wilcoxon signed-rank test.
+2. **$H_{02}$ (Perceived Usability — SUS Score):** System Usability Scale (SUS) composite score ($0–100$) does not differ between conditions when controlling for task assignment and trial period.
+   - *Primary Adjusted Model:* **Linear Mixed-Effects Model (LMM)** with participant random intercept:
+     $$\text{SUS}_{it} = \beta_0 + \beta_{\text{Condition}} \text{Condition}_{it} + \beta_{\text{Task}} \text{Task}_{it} + \beta_{\text{Period}} \text{Period}_{it} + u_i + \epsilon_{it}$$
+   - *Hypothesis Decision Rule:* Test $H_0: \beta_{\text{Condition}} = 0$ using two-sided $t$-statistic with Satterthwaite approximation ($\alpha = 0.05$).
+   - *Model Diagnostics & Fallback:* Normality of residuals evaluated via Shapiro-Wilk ($\alpha = 0.05$). If violated, the rank-based non-parametric crossover procedure (Koch's method / ART-ANOVA) serves as the substitute.
+   - *Effect Size & Descriptive Baseline:* Adjusted mean difference $\beta_{\text{Condition}}$ with 95% CI; raw paired differences and Cohen's $d_z$ reported as unadjusted baselines.
 
-3. **$H_{03}$ (Budget Compliance Rate):** The proportion of submitted designs meeting or staying below the assigned budget ceiling ($\text{budgetTotalPaise} \le \text{budgetCeilingPaise}$) does not differ between conditions.
-   - *Primary Test:* Two-sided **McNemar's test** with continuity correction for paired binary proportions.
-   - *Small-Sample Decision Rule:* If discordant cell count $(b + c) < 25$, the **exact two-sided binomial test** on discordant pairs is pre-registered as the definitive test.
-   - *Effect Size:* Odds Ratio (OR) with 95% confidence intervals on discordant pairs ($b/c$).
+3. **$H_{03}$ (Budget Compliance Rate):** The proportion of submitted designs meeting or staying below the assigned budget ceiling ($\text{budgetTotalPaise} \le \text{budgetCeilingPaise}$) does not differ between conditions when accounting for task assignment and trial period.
+   - *Primary Adjusted Model:* **Generalized Linear Mixed Model (GLMM)** with logit link (Mixed Logistic Regression) or Generalized Estimating Equations (GEE) with exchangeable working correlation:
+     $$\text{logit}(P(\text{Compliant}_{it} = 1)) = \beta_0 + \beta_{\text{Condition}} \text{Condition}_{it} + \beta_{\text{Task}} \text{Task}_{it} + \beta_{\text{Period}} \text{Period}_{it} + u_i$$
+   - *Hypothesis Decision Rule:* Test $H_0: \beta_{\text{Condition}} = 0$ via two-sided Wald / score test ($\alpha = 0.05$).
+   - *Small-Sample / Separation Contingency Rule:* If GLMM numerical optimization encounters complete/quasi-complete separation or fails to converge stably (SE $> 5.0$) due to small sample size ($N = 20–30$) or high compliance rates, the pre-registered contingency is the **Stratified Cochran-Mantel-Haenszel (CMH) test** or **Exact Conditional Logistic Regression** stratified by sequence group / task. Exact discordant contingency tables and unadjusted McNemar's tests are reported as descriptive baselines.
+   - *Effect Size:* Adjusted Odds Ratio $\text{OR}_{\text{Condition}} = \exp(\beta_{\text{Condition}})$ with 95% confidence intervals.
 
-4. **$H_{04}$ (Composite Task Success Rate):** The proportion of fully successful designs—satisfying all 4 mandatory functional furniture items, remaining budget-compliant, and exhibiting zero doorway keep-out clearance intrusions—does not differ between conditions.
-   - *Primary Test:* Two-sided **McNemar's test** with continuity correction (exact binomial test if $b + c < 25$).
-   - *Effect Size:* Odds Ratio (OR) with 95% confidence intervals on discordant pairs.
+4. **$H_{04}$ (Composite Task Success Rate):** The proportion of fully successful designs—satisfying all 4 mandatory functional furniture items, remaining budget-compliant, and exhibiting zero doorway keep-out clearance intrusions—does not differ between conditions when accounting for task assignment and trial period.
+   - *Primary Adjusted Model:* **Generalized Linear Mixed Model (GLMM)** with logit link (Mixed Logistic Regression) controlling for `Task` and `Period`.
+   - *Hypothesis Decision Rule:* Test $H_0: \beta_{\text{Condition}} = 0$ via two-sided Wald test ($\alpha = 0.05$).
+   - *Small-Sample / Separation Contingency Rule:* If GLMM fails to converge, evaluate via Stratified CMH test or Exact Conditional Logistic Regression stratified by sequence group / task; report exact discordant tables and unadjusted McNemar's test as descriptive statistics.
+   - *Effect Size:* Adjusted Odds Ratio $\text{OR}_{\text{Condition}} = \exp(\beta_{\text{Condition}})$ with 95% confidence intervals.
 
 #### Multiple Comparisons Correction (Family-Wise Error Rate Control)
-- **Confirmatory Family:** The four confirmatory hypotheses ($H_{01}, H_{02}, H_{03}, H_{04}$) constitute the formal family of primary statistical tests.
+- **Confirmatory Family:** The four confirmatory hypotheses ($H_{01}, H_{02}, H_{03}, H_{04}$) evaluated via their adjusted condition parameter ($\beta_{\text{Condition}}$) constitute the formal family of primary statistical tests.
 - **Correction Method:** The **Holm-Bonferroni step-down procedure** (Holm, 1979) will be applied to maintain the family-wise error rate at $\alpha_{\text{FWER}} = 0.05$. Raw $p$-values are ordered $p_{(1)} \le p_{(2)} \le p_{(3)} \le p_{(4)}$ and compared sequentially against critical thresholds $\alpha / (5 - k)$ for $k = 1, 2, 3, 4$ ($\alpha_1 = 0.0125, \alpha_2 = 0.0167, \alpha_3 = 0.025, \alpha_4 = 0.05$).
 - **Reporting Standard:** Both unadjusted raw $p$-values and Holm-adjusted $p$-values ($p_{\text{Holm}}$) will be published alongside 95% confidence intervals and effect sizes.
 
@@ -145,11 +154,32 @@ To balance the order of conditions (Manual vs. AI-Assisted) and task-condition a
 | **G3** | $A \rightarrow B$ | Manual (Task 2: Study) | AI-Assisted (Task 1: Living Room) |
 | **G4** | $B \rightarrow A$ | AI-Assisted (Task 2: Study) | Manual (Task 1: Living Room) |
 
-### 4.3 Sample Size & Cohort Planning
+### 4.3 Methodological Rationale: Resolving Condition-Task Intertwining in Crossover Design
+
+#### The Intertwining Problem
+In this 2-trial crossover design, each participant performs one task manually and the other using AI. While four-sequence counterbalancing ensures that across the study cohort, each task is paired equally with each condition and each condition appears equally in Period 1 and Period 2, **individual difference scores $\Delta_i = Y_{i,\text{AI}} - Y_{i,\text{Manual}}$ remain intrinsically confounded**:
+- For participants in **G1** ($A_{\text{Task 1}} \rightarrow B_{\text{Task 2}}$) and **G4** ($B_{\text{Task 2}} \rightarrow A_{\text{Task 1}}$), $\Delta_i$ captures the workflow difference plus the difference between Task 2 (Study) and Task 1 (Living Room).
+- For participants in **G2** ($B_{\text{Task 1}} \rightarrow A_{\text{Task 2}}$) and **G3** ($A_{\text{Task 2}} \rightarrow B_{\text{Task 1}}$), $\Delta_i$ captures the workflow difference plus the inverse task difference ($\text{Task 1} - \text{Task 2}$).
+
+A naive paired $t$-test or unstratified McNemar test averages across these groups, but task differences inflate the sample variance of $\Delta$, reducing statistical precision. Furthermore, any mild group imbalance (e.g. differential dropout) biases the unadjusted condition estimate.
+
+#### Design Comparison: 2-Trial Crossover vs. 4-Trial Within-Task Design
+An alternative design would have every participant perform *both* tasks under *both* conditions (4 trials per participant):
+1. **Participant Burden & Cognitive Fatigue:** Completing 4 full 3D layout tasks (each requiring furniture selection, 3D translation/rotation, budget balancing, clearance checking, and SUS survey completion) would require 70–90 minutes. For student volunteers, this causes pronounced mental fatigue, declining effort in later trials, and high mid-study dropout rates.
+2. **Asymmetric Learning & Memory Carryover:** If a participant solves Task 1 manually in Trial 1, they have already memorized compliant item combinations, spatial clearances, and budget trade-offs. Repeating Task 1 with AI in Trial 3 is no longer a naive task: the user would merely validate pre-known solutions, introducing severe asymmetric memory carryover.
+3. **Design Selection:** The **4-sequence 2-trial crossover design** is retained because it restricts participant burden to a realistic 30–40 minutes and prevents within-task memory contamination, while employing Linear Mixed-Effects Models (LMM) and Generalized Linear Mixed Models (GLMM) to mathematically separate $\beta_{\text{Condition}}$ from $\beta_{\text{Task}}$ and $\beta_{\text{Period}}$.
+
+#### Testing for Interaction / Asymmetric Carryover
+The primary statistical models will explicitly evaluate interaction terms before reporting the final main-effects model:
+- $\text{Condition} \times \text{Period}$: Tests for asymmetric carryover / learning effects between conditions.
+- $\text{Condition} \times \text{Task}$: Tests whether the AI workflow benefit is moderated by specific room geometry or budget headroom.
+If interaction terms are non-significant ($p \ge 0.05$), the parsimonious main-effects model is adopted as primary; if significant, condition effects are reported stratified by task and period.
+
+### 4.4 Sample Size & Cohort Planning
 - **Phase 8.4 Pilot Cohort ($N = 5–8$ participants):** Focuses strictly on discovering protocol friction, clarifying ambiguous instructions, validating telemetry logging accuracy, and verifying task difficulty equivalence. Pilot data will be inspected as preliminary and discarded from the final confirmatory sample if protocol changes occur.
 - **Main Study Cohort ($N = 20–30$ participants):** Feasibility target suited for a solo capstone project. Statistical analyses will report exact sample sizes, confidence intervals, and effect sizes, acknowledging sample size constraints rather than asserting unverified high statistical power.
 
-### 4.4 Covariate Logging (Participant Demographics)
+### 4.5 Covariate Logging (Participant Demographics)
 Recorded prior to Task 1:
 1. **3D / CAD Experience:**  
    - [ ] None (0 years)  
@@ -464,6 +494,19 @@ To guarantee that `in_progress` trials survive accidental browser reloads, that 
    `modelUrl`, blob URLs (`blob:...`), signed cloud storage URLs with credentials, bearer tokens, or session-scoped query parameters must **NEVER** be persisted in research snapshots (`checkpointSceneSnapshot` or `finalSceneSnapshot`). Assets are referenced purely by immutable catalog `assetId` or stable backend `reconstructionJobId`. This prevents credential leakage in exported datasets and guarantees that snapshots remain readable even after temporary URLs expire.
 4. **Discrete Inactivity Intervals (`idleIntervals`):**  
    Rather than storing only a single opaque cumulative number, telemetry records each discrete pause exceeding 60 seconds (`{ startOffsetSeconds, durationSeconds }`). This distinguishes five 2-minute pauses from a single 10-minute external distraction, directly enabling the pre-registered sensitivity analysis ($> 15\text{ min}$ interruptions).
+
+#### Decision 4: Step 8.2 Automated Verification & Concurrency Test Matrix
+Prior to participant recruitment or pilot trials, the Step 8.2 backend and frontend implementation must pass a deterministic automated test suite covering all critical lifecycle, concurrency, and security invariants:
+1. **Browser Refresh Rehydration:** Reloading the browser tab during an active session rehydrates state from `sessionStorage` without resetting `startTime`, resetting `checkpointSequence`, or creating duplicate database rows.
+2. **Start UUID Idempotency:** Duplicate or retried `POST /api/v1/evaluation/sessions/start/` requests containing an existing `sessionId` return `HTTP 200` with existing record data without creating duplicate rows or altering timestamps.
+3. **Monotonic Checkpoint Sequence Validation:**
+   - *Fresh update (`seq > current`):* Commits new effort counters and replaces `checkpointSceneSnapshot`, advancing sequence; returns `HTTP 200`.
+   - *Identical retry (`seq == current`):* Handled idempotently as a harmless no-op; returns `HTTP 200`.
+   - *Stale / Out-of-order (`seq < current`):* Safely ignored; returns `HTTP 200` (or `HTTP 409`), preventing older network packets from overwriting newer interactions or scene geometry.
+4. **Terminal State Immutability & Race Protection:**
+   - Once a session transitions to `completed` or `aborted`, any subsequent checkpoint requests (`PATCH .../checkpoint/`) are rejected with `HTTP 409 Conflict` (or safely ignored).
+   - In-flight or lagging checkpoint requests can never overwrite terminal records, server-calculated metrics, or `finalSceneSnapshot`.
+5. **Asset URL & Credential Stripping:** Automated test confirms that serialized scene snapshots never contain `modelUrl` with signed query parameters or bearer credentials.
 
 ---
 
