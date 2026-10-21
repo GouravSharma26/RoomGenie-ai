@@ -1,3 +1,4 @@
+import math
 from rest_framework import serializers
 from apps.evaluation.models import EvaluationSession
 from apps.evaluation.metrics import sanitize_scene_snapshot
@@ -127,10 +128,14 @@ def _validate_idle_intervals(intervals: list) -> list[dict]:
             raise serializers.ValidationError(f"idleIntervals[{idx}] must be a JSON object.")
         start = item.get('startOffsetSeconds')
         dur = item.get('durationSeconds')
-        if start is None or not isinstance(start, (int, float)) or start < 0:
-            raise serializers.ValidationError(f"idleIntervals[{idx}].startOffsetSeconds must be a non-negative number.")
-        if dur is None or not isinstance(dur, (int, float)) or dur <= 0:
-            raise serializers.ValidationError(f"idleIntervals[{idx}].durationSeconds must be a positive number.")
+        if start is None or isinstance(start, bool) or not isinstance(start, (int, float)) or not math.isfinite(start):
+            raise serializers.ValidationError(f"idleIntervals[{idx}].startOffsetSeconds must be a finite, non-boolean number.")
+        if start < 0:
+            raise serializers.ValidationError(f"idleIntervals[{idx}].startOffsetSeconds cannot be negative.")
+        if dur is None or isinstance(dur, bool) or not isinstance(dur, (int, float)) or not math.isfinite(dur):
+            raise serializers.ValidationError(f"idleIntervals[{idx}].durationSeconds must be a finite, non-boolean number.")
+        if dur <= 0:
+            raise serializers.ValidationError(f"idleIntervals[{idx}].durationSeconds cannot be negative.")
         cleaned.append({
             'startOffsetSeconds': float(start),
             'durationSeconds': float(dur),

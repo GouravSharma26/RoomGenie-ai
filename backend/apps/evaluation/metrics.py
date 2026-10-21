@@ -1,5 +1,6 @@
 import math
 import re
+import uuid
 from typing import Any
 from apps.designs.validators import compute_transformed_aabb_extents
 from apps.furniture.budget import calculate_scene_budget
@@ -151,15 +152,15 @@ def validate_and_sanitize_canonical_scene(
     if not isinstance(snapshot, dict):
         raise ValueError("Scene snapshot must be a JSON dictionary.")
 
-    # 1. Schema version: must be 1 (or '1.0.0' / 1)
+    # 1. Schema version: must be 1 (or '1' / '1.0.0'), cannot be boolean
     schema_version = snapshot.get('schemaVersion')
-    if schema_version not in (1, '1', '1.0.0'):
+    if isinstance(schema_version, bool) or schema_version not in (1, '1', '1.0.0'):
         raise ValueError(f"Unsupported scene schemaVersion: {schema_version}. Expected 1.")
 
-    # 2. Units: must be SI metres
+    # 2. Units: must be strictly SI metres ('m')
     unit = snapshot.get('unit')
-    if unit not in ('m', 'meter', 'meters'):
-        raise ValueError(f"Prohibited scene unit: '{unit}'. Must be SI metres ('m').")
+    if unit != 'm':
+        raise ValueError(f"Prohibited scene unit: '{unit}'. Must be strictly SI metres ('m').")
 
     # 3. Room dimensions
     room = snapshot.get('room')
@@ -288,14 +289,18 @@ def validate_and_sanitize_canonical_scene(
             if clean_mat:
                 clean_obj['materialOverrides'] = clean_mat
 
-        # Reconstruction reference
+        # Reconstruction reference: must be a valid UUID string
         reconstruction_id = obj.get('reconstructionJobId')
         if reconstruction_id is not None:
             if not isinstance(reconstruction_id, str):
-                raise ValueError(f"Item '{placement_id}' 'reconstructionJobId' must be a string UUID.")
+                raise ValueError(f"Item '{placement_id}' 'reconstructionJobId' must be a valid UUID string.")
             reconstruction_id = reconstruction_id.strip()
             _check_no_url_or_credentials(reconstruction_id, f"objects[{idx}].reconstructionJobId")
-            clean_obj['reconstructionJobId'] = reconstruction_id[:64]
+            try:
+                parsed_uuid = uuid.UUID(reconstruction_id)
+                clean_obj['reconstructionJobId'] = str(parsed_uuid)
+            except (ValueError, AttributeError, TypeError):
+                raise ValueError(f"Item '{placement_id}' 'reconstructionJobId' ('{reconstruction_id}') is not a valid UUID.")
 
         if obj.get('isCustomReconstruction') is True:
             clean_obj['isCustomReconstruction'] = True

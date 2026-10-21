@@ -17,6 +17,8 @@ export interface BudgetDiff {
   before_total_inr?: string;
   after_total_inr?: string;
   diff_inr?: string;
+  room_containment_valid?: boolean;
+  room_violations?: string[];
 }
 
 export interface ValidationResults {

@@ -15,7 +15,7 @@ import {
 } from '../validation/sceneValidation';
 import { SAMPLE_CATALOG } from '../data/catalog';
 import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
-import { recordEdit, recordOutOfBoundsAttempt } from '../../services/evaluationTelemetry';
+import { recordEdit, recordOutOfBoundsAttempt, recordUndoRedo } from '../../services/evaluationTelemetry';
 
 interface EditorState {
   scene: CanonicalScene;
@@ -25,6 +25,7 @@ interface EditorState {
   viewMode: 'perspective' | 'top';
   gridSnap: boolean;
   history: CanonicalScene[];
+  future: CanonicalScene[];
   currentDesignId: string | null;
 
   // Actions
@@ -55,6 +56,10 @@ interface EditorState {
   setViewMode: (mode: 'perspective' | 'top') => void;
   toggleGridSnap: () => void;
   loadScene: (newScene: CanonicalScene) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 const initialScene: CanonicalScene = {
@@ -76,6 +81,28 @@ const initialScene: CanonicalScene = {
   ],
 };
 
+const MAX_HISTORY = 50;
+
+function pushSnapshot(state: EditorState): { history: CanonicalScene[]; future: CanonicalScene[] } {
+  const snapshot: CanonicalScene = {
+    schemaVersion: state.scene.schemaVersion,
+    unit: state.scene.unit,
+    room: { ...state.scene.room },
+    objects: state.scene.objects.map((obj) => ({
+      ...obj,
+      dimensions: [...obj.dimensions] as Vector3Tuple,
+      position: [...obj.position] as Vector3Tuple,
+      rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+      scale: [...obj.scale] as Vector3Tuple,
+      materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+    })),
+  };
+  return {
+    history: [...state.history, snapshot].slice(-MAX_HISTORY),
+    future: [],
+  };
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   scene: initialScene,
   selectedId: 'initial-sofa',
@@ -84,12 +111,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   viewMode: 'perspective',
   gridSnap: true,
   history: [],
+  future: [],
   currentDesignId: null,
 
   setCurrentDesignId: (id) => set({ currentDesignId: id }),
 
   setRoomDimensions: (dims) => {
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       const validatedRoom = validateRoomDimensions({ ...state.scene.room, ...dims });
       
       // Re-clamp all existing objects to the new room dimensions
@@ -99,6 +128,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }));
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           room: validatedRoom,
@@ -106,11 +136,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       };
     });
+    recordEdit();
   },
 
   addFurniture: (item) => {
     const id = `furniture-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       // Find a non-overlapping or offset position
       const offsetMultiplier = state.scene.objects.length * 0.3;
       const initialPos: Vector3Tuple = [
@@ -140,6 +172,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: [...state.scene.objects, newObject],
@@ -159,6 +192,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       const offsetMultiplier = state.scene.objects.length * 0.3;
       const initialPos: Vector3Tuple = [
         (offsetMultiplier % (state.scene.room.width / 3)) - (state.scene.room.width / 6),
@@ -189,6 +223,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: [...state.scene.objects, newObject],
@@ -237,6 +272,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       recordEdit();
 
+      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -244,6 +280,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -263,6 +300,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp position with new rotation so corners do not pierce room boundaries
       const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, obj.scale, validatedRot);
 
+      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -271,6 +309,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -290,6 +329,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp position with new scale to avoid boundary clipping
       const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, validatedS, obj.rotationEuler);
 
+      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -298,6 +338,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -313,6 +354,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (objIndex === -1) return state;
 
       const obj = state.scene.objects[objIndex];
+      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -323,6 +365,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -363,30 +406,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       );
     }
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: {
-        ...scene,
-        objects: [...scene.objects, clone],
+        ...state.scene,
+        objects: [...state.scene.objects, clone],
       },
       selectedId: newId,
-    });
+    }));
     recordEdit();
   },
 
   deleteSelected: () => {
-    const { scene, selectedId } = get();
+    const { selectedId } = get();
     if (!selectedId) return;
 
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(selectedId);
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: {
-        ...scene,
-        objects: scene.objects.filter((o) => o.id !== selectedId),
+        ...state.scene,
+        objects: state.scene.objects.filter((o) => o.id !== selectedId),
       },
       selectedId: null,
-    });
+    }));
     recordEdit();
   },
 
@@ -395,6 +440,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     reconstructedAssetManager.releasePlacement(id);
 
     set((state) => ({
+      ...pushSnapshot(state),
       scene: {
         ...state.scene,
         objects: state.scene.objects.filter((o) => o.id !== id),
@@ -410,6 +456,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     reconstructedAssetManager.releasePlacements(scene.objects.map((o) => o.id));
 
     set((state) => ({
+      ...pushSnapshot(state),
       scene: {
         ...state.scene,
         objects: [],
@@ -439,9 +486,69 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: newScene,
       selectedId: newScene.objects.length > 0 ? newScene.objects[0].id : null,
-    });
+    }));
   },
+
+  undo: () => {
+    const { history, future, scene } = get();
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+    const currentSnapshot: CanonicalScene = {
+      schemaVersion: scene.schemaVersion,
+      unit: scene.unit,
+      room: { ...scene.room },
+      objects: scene.objects.map((obj) => ({
+        ...obj,
+        dimensions: [...obj.dimensions] as Vector3Tuple,
+        position: [...obj.position] as Vector3Tuple,
+        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+        scale: [...obj.scale] as Vector3Tuple,
+        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+      })),
+    };
+
+    set({
+      scene: previous,
+      history: newHistory,
+      future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
+      selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
+    });
+    recordUndoRedo();
+  },
+
+  redo: () => {
+    const { history, future, scene } = get();
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+    const currentSnapshot: CanonicalScene = {
+      schemaVersion: scene.schemaVersion,
+      unit: scene.unit,
+      room: { ...scene.room },
+      objects: scene.objects.map((obj) => ({
+        ...obj,
+        dimensions: [...obj.dimensions] as Vector3Tuple,
+        position: [...obj.position] as Vector3Tuple,
+        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+        scale: [...obj.scale] as Vector3Tuple,
+        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+      })),
+    };
+
+    set({
+      scene: next,
+      history: [...history, currentSnapshot].slice(-MAX_HISTORY),
+      future: newFuture,
+      selectedId: next.objects.length > 0 ? next.objects[0].id : null,
+    });
+    recordUndoRedo();
+  },
+
+  canUndo: () => get().history.length > 0,
+  canRedo: () => get().future.length > 0,
 }));

@@ -840,6 +840,7 @@ class EvaluationTelemetryTestCase(TestCase):
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
     def test_export_dataset_filtering_by_status_condition_task(self):
         """Export view and management command support filtering by condition, task, and status."""
+        EvaluationSession.objects.all().delete()
         # Session 1: completed manual living_room
         EvaluationSession.objects.create(
             id=uuid.uuid4(),
@@ -1329,3 +1330,119 @@ class EvaluationTelemetryTestCase(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("cannot exceed elapsed session time", resp.data['error'])
+
+    def test_schema_version_boolean_rejected(self):
+        """schemaVersion=True must be rejected because bool is not a valid schema version."""
+        scene = {
+            'schemaVersion': True,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(scene, expected_task_name='living_room')
+        self.assertIn("Unsupported scene schemaVersion", str(ctx.exception))
+
+    def test_unit_must_strictly_be_canonical_m(self):
+        """Only unit='m' is accepted; 'meter' and 'meters' must be rejected."""
+        base_scene = {
+            'schemaVersion': 1,
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        for bad_unit in ('meter', 'meters', 'cm', 'in'):
+            with self.assertRaises(ValueError) as ctx:
+                validate_and_sanitize_canonical_scene({**base_scene, 'unit': bad_unit}, expected_task_name='living_room')
+            self.assertIn("Prohibited scene unit", str(ctx.exception))
+
+        valid = validate_and_sanitize_canonical_scene({**base_scene, 'unit': 'm'}, expected_task_name='living_room')
+        self.assertEqual(valid['unit'], 'm')
+
+    def test_reconstruction_job_id_uuid_validation(self):
+        """reconstructionJobId must be validated as a strict UUID string."""
+        base_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'custom-chair',
+                    'assetId': 'chair-accent-armchair',
+                    'name': 'Custom Chair',
+                    'position': [0.0, 0.4, 0.0],
+                    'dimensions': [0.8, 0.8, 0.8],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'reconstructionJobId': 'not-a-valid-uuid',
+                }
+            ],
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(base_scene, expected_task_name='living_room')
+        self.assertIn("not a valid UUID", str(ctx.exception))
+
+        valid_uuid = str(uuid.uuid4())
+        base_scene['objects'][0]['reconstructionJobId'] = valid_uuid
+        res = validate_and_sanitize_canonical_scene(base_scene, expected_task_name='living_room')
+        self.assertEqual(res['objects'][0]['reconstructionJobId'], valid_uuid)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_checkpoint_idle_interval_and_combined_duration_validation(self):
+        """Checkpoint endpoint must validate idle intervals strictly and reject impossible active + idle totals."""
+        s_id = str(uuid.uuid4())
+        self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'sessionSecret': self.test_secret,
+                'participantId': 'P_IDLE_CHECK',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json'
+        )
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id})
+
+        # 1. Boolean in idle interval value
+        resp_bool = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 1,
+                'activeDurationSeconds': 0.5,
+                'idleIntervals': [{'startOffsetSeconds': True, 'durationSeconds': 10.0}],
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp_bool.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("finite, non-boolean number", str(resp_bool.data))
+
+        # 2. Negative duration in idle interval
+        resp_neg = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 1,
+                'activeDurationSeconds': 0.5,
+                'idleIntervals': [{'startOffsetSeconds': 0.0, 'durationSeconds': -5.0}],
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp_neg.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue("cannot be negative" in str(resp_neg.data) or "must be a positive" in str(resp_neg.data) or "non-negative" in str(resp_neg.data))
+
+        # 3. Sum of active + idle duration exceeds elapsed session duration
+        resp_excess = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 1,
+                'activeDurationSeconds': 2.0,
+                'idleIntervals': [{'startOffsetSeconds': 0.0, 'durationSeconds': 500.0}],
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp_excess.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue("extends beyond elapsed session time" in str(resp_excess.data) or "exceeds elapsed session" in str(resp_excess.data))
+

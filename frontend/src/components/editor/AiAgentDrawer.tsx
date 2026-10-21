@@ -26,6 +26,7 @@ import {
   type BudgetDiff 
 } from '../../services/agentApi';
 import type { CanonicalScene } from '../../types/scene';
+import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
 
 interface AiAgentDrawerProps {
   isOpen: boolean;
@@ -145,8 +146,30 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         budgetDiff: response.budget_diff,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Telemetry: record AI proposal multi-tier validity
+      const hasErrors = Boolean(response.run?.validation_results?.errors && response.run.validation_results.errors.length > 0);
+      const isSchemaValid = Boolean(response.candidate_scene && !hasErrors);
+      const isDomainValid = Boolean(
+        response.candidate_scene &&
+        response.run?.validation_results?.is_valid &&
+        response.budget_diff?.room_containment_valid
+      );
+
+      recordAgentProposal({
+        accepted: false,
+        tier1Success: true,
+        tier2Valid: isSchemaValid,
+        tier3Valid: isDomainValid,
+      });
     } catch (err: any) {
       setErrorMsg(err.message || 'Error communicating with AI assistant.');
+      recordAgentProposal({
+        accepted: false,
+        tier1Success: false,
+        tier2Valid: false,
+        tier3Valid: false,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +190,9 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       if (onSceneApplied) {
         onSceneApplied(appliedResult.applied_scene);
       }
+
+      // Telemetry: record accepted proposal
+      recordAgentAcceptance();
 
       // Update message run status
       setMessages((prev) =>

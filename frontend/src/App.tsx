@@ -25,6 +25,7 @@ import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 import { ArPlacementModal } from './components/editor/ArPlacementModal';
 import { EvaluationTrialModal } from './components/editor/EvaluationTrialModal';
+import { initEvaluationTelemetry } from './services/evaluationTelemetry';
 import { ensureAuthenticated, getDesignById } from './services/designApi';
 import { useEditorStore } from './editor3d/store/editorStore';
 
@@ -59,6 +60,10 @@ export default function App() {
         setLoading(false);
       }
     });
+
+    // Initialize/resume evaluation telemetry heartbeat if trial is active
+    initEvaluationTelemetry(() => useEditorStore.getState().scene);
+
     return () => {
       isMounted = false;
     };

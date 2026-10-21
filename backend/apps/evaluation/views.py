@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import math
 import secrets
+from typing import Any
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
@@ -66,15 +68,51 @@ def _verify_session_secret(session: EvaluationSession, request) -> None:
         raise PermissionDenied("Invalid session authorization capability secret.")
 
 
-def _compute_idle_aggregates(idle_intervals: list[dict]) -> tuple[float, float, bool]:
-    """Calculates total idle duration, longest pause, and 15-minute prolonged interruption flag."""
+def _validate_and_compute_idle_aggregates(idle_intervals: Any, elapsed_seconds: float) -> tuple[float, float, bool]:
+    """
+    Validates idle interval list strictly:
+    - Must be a list of interval objects.
+    - startOffsetSeconds and durationSeconds must be finite, non-boolean numbers >= 0.
+    - Intervals must be temporally plausible within elapsed session duration.
+    Calculates total idle duration, longest single pause, and >=15-min prolonged interruption flag.
+    """
+    if not isinstance(idle_intervals, list):
+        raise ValueError("idleIntervals must be a list of interval objects.")
+
     total_idle = 0.0
     max_gap = 0.0
-    for interval in idle_intervals:
-        dur = float(interval.get('durationSeconds', 0.0))
-        total_idle += dur
-        if dur > max_gap:
-            max_gap = dur
+    for idx, interval in enumerate(idle_intervals):
+        if not isinstance(interval, dict):
+            raise ValueError(f"idleIntervals[{idx}] must be a JSON object.")
+
+        start_offset = interval.get('startOffsetSeconds', interval.get('start'))
+        duration = interval.get('durationSeconds')
+
+        if start_offset is None or duration is None:
+            raise ValueError(f"idleIntervals[{idx}] must provide 'startOffsetSeconds' and 'durationSeconds'.")
+
+        if isinstance(start_offset, bool) or not isinstance(start_offset, (int, float)) or not math.isfinite(start_offset):
+            raise ValueError(f"idleIntervals[{idx}].startOffsetSeconds must be a finite, non-boolean number.")
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration):
+            raise ValueError(f"idleIntervals[{idx}].durationSeconds must be a finite, non-boolean number.")
+
+        start_offset = float(start_offset)
+        duration = float(duration)
+
+        if start_offset < 0.0:
+            raise ValueError(f"idleIntervals[{idx}].startOffsetSeconds cannot be negative.")
+        if duration < 0.0:
+            raise ValueError(f"idleIntervals[{idx}].durationSeconds cannot be negative.")
+
+        if start_offset > elapsed_seconds + 5.0:
+            raise ValueError(f"idleIntervals[{idx}].startOffsetSeconds ({start_offset:.1f}s) exceeds elapsed session time ({elapsed_seconds:.1f}s).")
+        if start_offset + duration > elapsed_seconds + 10.0:
+            raise ValueError(f"idleIntervals[{idx}] extends beyond elapsed session time ({elapsed_seconds:.1f}s).")
+
+        total_idle += duration
+        if duration > max_gap:
+            max_gap = duration
+
     return total_idle, max_gap, (max_gap >= 900.0)
 
 
@@ -274,9 +312,25 @@ class CheckpointSessionView(APIView):
                 session.attempted_out_of_bounds_count = data['attemptedOutOfBoundsCount']
 
             if 'idleIntervals' in data:
-                idle_intervals = data['idleIntervals']
-                total_idle, max_gap, has_prolonged = _compute_idle_aggregates(idle_intervals)
-                session.idle_intervals = idle_intervals
+                try:
+                    total_idle, max_gap, has_prolonged = _validate_and_compute_idle_aggregates(
+                        data['idleIntervals'],
+                        elapsed_seconds
+                    )
+                except ValueError as exc:
+                    return Response(
+                        {"error": f"Invalid idleIntervals: {str(exc)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                active_val = data.get('activeDurationSeconds', session.active_duration_seconds)
+                if active_val + total_idle > elapsed_seconds + 10.0:
+                    return Response(
+                        {"error": f"Sum of active duration ({active_val:.1f}s) and total idle duration ({total_idle:.1f}s) exceeds elapsed session time ({elapsed_seconds:.1f}s)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                session.idle_intervals = data['idleIntervals']
                 session.total_idle_duration_seconds = total_idle
                 session.max_single_idle_gap_seconds = max_gap
                 session.has_prolonged_interruption = has_prolonged
@@ -346,15 +400,26 @@ class CompleteSessionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
+            validated_idle_data = None
             if 'idleIntervals' in data:
-                idle_intervals = data['idleIntervals']
-                total_idle, max_gap, has_prolonged = _compute_idle_aggregates(idle_intervals)
+                try:
+                    total_idle, max_gap, has_prolonged = _validate_and_compute_idle_aggregates(
+                        data['idleIntervals'],
+                        duration_seconds
+                    )
+                except ValueError as exc:
+                    return Response(
+                        {"error": f"Invalid idleIntervals: {str(exc)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
                 active_val = data.get('activeDurationSeconds', session.active_duration_seconds)
                 if active_val + total_idle > duration_seconds + 10.0:
                     return Response(
                         {"error": f"Sum of active duration ({active_val:.1f}s) and total idle duration ({total_idle:.1f}s) exceeds elapsed session duration ({duration_seconds:.1f}s)."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                validated_idle_data = (total_idle, max_gap, has_prolonged)
 
             # Calculate authoritative server-side metrics
             metrics = calculate_authoritative_session_metrics(
@@ -383,10 +448,9 @@ class CompleteSessionView(APIView):
             if 'attemptedOutOfBoundsCount' in data:
                 session.attempted_out_of_bounds_count = data['attemptedOutOfBoundsCount']
 
-            if 'idleIntervals' in data:
-                idle_intervals = data['idleIntervals']
-                total_idle, max_gap, has_prolonged = _compute_idle_aggregates(idle_intervals)
-                session.idle_intervals = idle_intervals
+            if validated_idle_data is not None:
+                total_idle, max_gap, has_prolonged = validated_idle_data
+                session.idle_intervals = data['idleIntervals']
                 session.total_idle_duration_seconds = total_idle
                 session.max_single_idle_gap_seconds = max_gap
                 session.has_prolonged_interruption = has_prolonged

@@ -71,6 +71,17 @@ export interface ActiveEvaluationSession {
   idleIntervals: IdleInterval[];
 }
 
+export interface PendingEvaluationSession {
+  sessionId: string;
+  sessionSecret: string;
+  participantId: string;
+  condition: EvaluationCondition;
+  sequenceOrder: EvaluationSequence;
+  taskName: EvaluationTask;
+  trialPeriod: 1 | 2;
+  createdAt: string;
+}
+
 export interface StartSessionParams {
   sessionId?: string;
   sessionSecret?: string;
@@ -82,12 +93,14 @@ export interface StartSessionParams {
 }
 
 const STORAGE_KEY = 'roomgenie_evaluation_session';
+const PENDING_STORAGE_KEY = 'roomgenie_evaluation_pending_session';
 const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:8000';
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let lastInteractionTimestamp: number = Date.now();
 let currentIdleStart: number | null = null;
 let activityListenersAttached = false;
+let registeredSceneGetter: (() => CanonicalScene | null) | null = null;
 
 // 1. Session Storage Persistence across browser reloads
 export function getActiveSession(): ActiveEvaluationSession | null {
@@ -121,7 +134,37 @@ export function clearActiveSession(): void {
   }
 }
 
-// 2. High-Entropy Secret & UUID Generation
+// 2. Pre-Request Retry Persistence
+export function getPendingSession(): PendingEvaluationSession | null {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PendingEvaluationSession;
+  } catch {
+    return null;
+  }
+}
+
+export function savePendingSession(pending: PendingEvaluationSession): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pending));
+  } catch (err) {
+    console.warn('Failed to persist pending evaluation session to sessionStorage:', err);
+  }
+}
+
+export function clearPendingSession(): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch (err) {
+    console.warn('Failed to clear pending evaluation session from sessionStorage:', err);
+  }
+}
+
+// 3. High-Entropy Secret & UUID Generation
 export function generateSecureSecret(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, '');
@@ -147,7 +190,15 @@ export function generateSessionUUID(): string {
   });
 }
 
-// 3. User Activity & Inactivity Timing
+// 4. User Activity & Inactivity Timing
+export function checkInactivityThreshold(): void {
+  const now = Date.now();
+  if (currentIdleStart === null && now - lastInteractionTimestamp >= 10000) {
+    // User has been inactive for 10 seconds; mark start of idle gap
+    currentIdleStart = lastInteractionTimestamp;
+  }
+}
+
 function onUserActivity() {
   const now = Date.now();
   if (currentIdleStart !== null) {
@@ -169,14 +220,6 @@ function onUserActivity() {
   lastInteractionTimestamp = now;
 }
 
-function checkInactivityThreshold() {
-  const now = Date.now();
-  if (currentIdleStart === null && now - lastInteractionTimestamp >= 10000) {
-    // User has been inactive for 10 seconds; mark start of idle gap
-    currentIdleStart = lastInteractionTimestamp;
-  }
-}
-
 export function attachActivityListeners(): void {
   if (typeof window === 'undefined' || activityListenersAttached) return;
   const events = ['pointerdown', 'keydown', 'mousemove', 'wheel', 'touchstart'];
@@ -195,6 +238,7 @@ export function detachActivityListeners(): void {
 }
 
 function calculateActiveDurationSeconds(active: ActiveEvaluationSession): number {
+  checkInactivityThreshold();
   const now = Date.now();
   const start = new Date(active.startTime).getTime();
   const elapsed = Math.max(0, (now - start) / 1000);
@@ -206,7 +250,7 @@ function calculateActiveDurationSeconds(active: ActiveEvaluationSession): number
   return Math.max(0, Math.min(elapsed, Math.round((elapsed - totalIdle) * 10) / 10));
 }
 
-// 4. Editor Interaction Recording API
+// 5. Editor Interaction Recording API
 export function recordEdit(): void {
   const session = getActiveSession();
   if (!session) return;
@@ -229,7 +273,7 @@ export function recordOutOfBoundsAttempt(): void {
 }
 
 export function recordAgentProposal(outcome: {
-  accepted: boolean;
+  accepted?: boolean;
   tier1Success: boolean;
   tier2Valid: boolean;
   tier3Valid: boolean;
@@ -244,11 +288,25 @@ export function recordAgentProposal(outcome: {
   saveActiveSession(session);
 }
 
-// 5. Periodic Heartbeat / Checkpoint Timer
+export function recordAgentAcceptance(): void {
+  const session = getActiveSession();
+  if (!session) return;
+  session.agentAcceptedCount += 1;
+  saveActiveSession(session);
+}
+
+// 6. Periodic Heartbeat / Checkpoint Timer
+export function registerSceneGetter(getter: () => CanonicalScene | null): void {
+  registeredSceneGetter = getter;
+}
+
 export function startHeartbeat(
-  getCurrentScene: () => CanonicalScene | null,
+  getCurrentScene?: () => CanonicalScene | null,
   intervalMs = 20000
 ): void {
+  if (getCurrentScene) {
+    registeredSceneGetter = getCurrentScene;
+  }
   stopHeartbeat();
   heartbeatTimer = setInterval(async () => {
     checkInactivityThreshold();
@@ -258,7 +316,7 @@ export function startHeartbeat(
       return;
     }
     try {
-      const scene = getCurrentScene();
+      const scene = registeredSceneGetter ? registeredSceneGetter() : null;
       await sendEvaluationCheckpoint(scene || undefined);
     } catch (err) {
       console.warn('Evaluation heartbeat checkpoint failed (will retry):', err);
@@ -273,12 +331,28 @@ export function stopHeartbeat(): void {
   }
 }
 
-// 6. Network Endpoints with Capability Headers & Error Handling
+export function initEvaluationTelemetry(
+  getScene?: () => CanonicalScene | null,
+  heartbeatIntervalMs = 20000
+): ActiveEvaluationSession | null {
+  if (getScene) {
+    registeredSceneGetter = getScene;
+  }
+  const active = getActiveSession();
+  if (active) {
+    attachActivityListeners();
+    startHeartbeat(registeredSceneGetter || undefined, heartbeatIntervalMs);
+    return active;
+  }
+  return null;
+}
+
+// 7. Network Endpoints with Capability Headers & Error Handling
 export async function startEvaluationSession(
   params: StartSessionParams
 ): Promise<ExperimentSessionRecord> {
-  // Re-use session from storage if matching participant and assignment (e.g. browser refresh)
   const existing = getActiveSession();
+  const pending = getPendingSession();
   let sessionId = params.sessionId;
   let sessionSecret = params.sessionSecret;
 
@@ -291,10 +365,32 @@ export async function startEvaluationSession(
   ) {
     sessionId = existing.sessionId;
     sessionSecret = existing.sessionSecret;
+  } else if (
+    pending &&
+    pending.participantId === params.participantId &&
+    pending.condition === params.condition &&
+    pending.sequenceOrder === params.sequenceOrder &&
+    pending.taskName === params.taskName
+  ) {
+    sessionId = pending.sessionId;
+    sessionSecret = pending.sessionSecret;
   } else {
     if (!sessionId) sessionId = generateSessionUUID();
     if (!sessionSecret) sessionSecret = generateSecureSecret();
   }
+
+  // Pre-request persistence: save pending credentials before sending request
+  const pendingToSave: PendingEvaluationSession = {
+    sessionId,
+    sessionSecret,
+    participantId: params.participantId,
+    condition: params.condition,
+    sequenceOrder: params.sequenceOrder,
+    taskName: params.taskName,
+    trialPeriod: params.trialPeriod || 1,
+    createdAt: new Date().toISOString(),
+  };
+  savePendingSession(pendingToSave);
 
   const payload = {
     sessionId,
@@ -323,6 +419,9 @@ export async function startEvaluationSession(
 
   const record: ExperimentSessionRecord = await response.json();
 
+  // Clear pending record upon successful creation or retry re-establishment
+  clearPendingSession();
+
   // Initialize active tracking state
   const activeSession: ActiveEvaluationSession = {
     sessionId: record.sessionId,
@@ -347,6 +446,7 @@ export async function startEvaluationSession(
 
   saveActiveSession(activeSession);
   attachActivityListeners();
+  startHeartbeat();
   return record;
 }
 
@@ -389,6 +489,7 @@ export async function sendEvaluationCheckpoint(
     if (response.status === 409) {
       // Terminal state: session already completed or aborted
       clearActiveSession();
+      clearPendingSession();
       return null;
     }
 
@@ -453,6 +554,7 @@ export async function completeEvaluationSession(
 
   const record: ExperimentSessionRecord = await response.json();
   clearActiveSession();
+  clearPendingSession();
   return record;
 }
 
@@ -488,5 +590,6 @@ export async function abortEvaluationSession(
 
   const record: ExperimentSessionRecord = await response.json();
   clearActiveSession();
+  clearPendingSession();
   return record;
 }

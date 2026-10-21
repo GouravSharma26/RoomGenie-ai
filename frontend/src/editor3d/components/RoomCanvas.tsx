@@ -22,6 +22,16 @@ export const RoomCanvas: React.FC = () => {
         deleteSelected();
       } else if (e.key === 'Escape') {
         selectObject(null);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          useEditorStore.getState().redo();
+        } else {
+          useEditorStore.getState().undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        useEditorStore.getState().redo();
       }
     };
 
