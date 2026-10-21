@@ -23,6 +23,8 @@ export interface BudgetDiff {
 
 export interface ValidationResults {
   is_valid: boolean;
+  schema_valid?: boolean;
+  schema_errors?: string[];
   errors: string[];
   warnings: string[];
   budget_diff: BudgetDiff;
@@ -59,6 +61,7 @@ export interface PromptProposalResponse {
   run: AgentRunRecord;
   candidate_scene: CanonicalScene;
   budget_diff: BudgetDiff;
+  schema_valid?: boolean;
   requires_approval: boolean;
 }
 

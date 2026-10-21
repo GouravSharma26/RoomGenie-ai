@@ -103,6 +103,8 @@ class AgentPromptView(APIView):
             proposed_actions=proposal.proposed_actions,
             validation_results={
                 'is_valid': sim_result['is_valid'],
+                'schema_valid': sim_result['schema_valid'],
+                'schema_errors': sim_result.get('schema_errors', []),
                 'errors': sim_result['errors'],
                 'warnings': sim_result['warnings'],
                 'budget_diff': sim_result['budget_diff'],
@@ -121,6 +123,7 @@ class AgentPromptView(APIView):
             'run': AgentRunSerializer(run).data,
             'candidate_scene': sim_result['candidate_scene'],
             'budget_diff': sim_result['budget_diff'],
+            'schema_valid': sim_result['schema_valid'],
             'requires_approval': True,
         }, status=status.HTTP_200_OK)
 

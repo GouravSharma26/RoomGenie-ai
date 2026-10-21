@@ -387,9 +387,13 @@ describe('evaluationTelemetry service', () => {
     });
     let s = getActiveSession();
     expect(s?.agentProposalsCount).toBe(1);
+    expect(s?.agentTier1SuccessCount).toBe(1);
+    expect(s?.agentTier2SchemaValidCount).toBe(1);
+    expect(s?.agentTier3DomainValidCount).toBe(1);
     expect(s?.attemptedOutOfBoundsCount).toBe(0);
 
     // 2. Proposal with out-of-bounds placement: increments attemptedOutOfBoundsCount by exactly 1
+    // (schema valid, containment invalid)
     recordAgentProposal({
       accepted: false,
       tier1Success: true,
@@ -399,19 +403,25 @@ describe('evaluationTelemetry service', () => {
     });
     s = getActiveSession();
     expect(s?.agentProposalsCount).toBe(2);
+    expect(s?.agentTier1SuccessCount).toBe(2);
+    expect(s?.agentTier2SchemaValidCount).toBe(2);
+    expect(s?.agentTier3DomainValidCount).toBe(1);
     expect(s?.attemptedOutOfBoundsCount).toBe(1);
 
-    // 3. Non-boundary invalid proposal (e.g. budget ceiling breach, tier3Valid=false but no boundary clash):
+    // 3. Non-boundary invalid proposal (e.g. budget ceiling breach, containment is valid):
     // MUST NOT increment attemptedOutOfBoundsCount
     recordAgentProposal({
       accepted: false,
       tier1Success: true,
       tier2Valid: true,
-      tier3Valid: false,
+      tier3Valid: true,
       hasOutOfBoundsViolation: false,
     });
     s = getActiveSession();
     expect(s?.agentProposalsCount).toBe(3);
+    expect(s?.agentTier1SuccessCount).toBe(3);
+    expect(s?.agentTier2SchemaValidCount).toBe(3);
+    expect(s?.agentTier3DomainValidCount).toBe(2);
     expect(s?.attemptedOutOfBoundsCount).toBe(1); // Still 1
 
     // 4. Failed proposal (tier1Success=false, network error):
@@ -425,6 +435,9 @@ describe('evaluationTelemetry service', () => {
     });
     s = getActiveSession();
     expect(s?.agentProposalsCount).toBe(4);
+    expect(s?.agentTier1SuccessCount).toBe(3);
+    expect(s?.agentTier2SchemaValidCount).toBe(3);
+    expect(s?.agentTier3DomainValidCount).toBe(2);
     expect(s?.attemptedOutOfBoundsCount).toBe(1); // Still 1
   });
 

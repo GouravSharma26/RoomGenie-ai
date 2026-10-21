@@ -140,7 +140,8 @@ describe('AiAgentDrawer Telemetry Integration', () => {
     const session = getActiveSession();
     expect(session?.agentProposalsCount).toBe(1);
     expect(session?.agentTier1SuccessCount).toBe(1);
-    expect(session?.agentTier3DomainValidCount).toBe(0);
+    expect(session?.agentTier2SchemaValidCount).toBe(1); // Tool action adhered to allowlisted schema
+    expect(session?.agentTier3DomainValidCount).toBe(0); // Room containment violated
     // Boundary violation attempt counted exactly once!
     expect(session?.attemptedOutOfBoundsCount).toBe(1);
   });
@@ -159,6 +160,7 @@ describe('AiAgentDrawer Telemetry Integration', () => {
         proposed_actions: [],
         validation_results: {
           is_valid: false,
+          schema_valid: true,
           errors: ['Candidate layout violates 3D room containment: 3 item(s) extend beyond room walls/ceiling.'],
           warnings: [],
           budget_diff: {
@@ -211,6 +213,9 @@ describe('AiAgentDrawer Telemetry Integration', () => {
 
     const session = getActiveSession();
     expect(session?.agentProposalsCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    expect(session?.agentTier2SchemaValidCount).toBe(1); // Tool action schema valid
+    expect(session?.agentTier3DomainValidCount).toBe(0); // Room containment violated
     // Crucial check: 3 violations in 1 continuous proposal must count as exactly 1 attempt!
     expect(session?.attemptedOutOfBoundsCount).toBe(1);
   });
@@ -231,6 +236,7 @@ describe('AiAgentDrawer Telemetry Integration', () => {
         ],
         validation_results: {
           is_valid: true,
+          schema_valid: true,
           errors: [],
           warnings: [],
           budget_diff: {
@@ -281,14 +287,16 @@ describe('AiAgentDrawer Telemetry Integration', () => {
 
     const session = getActiveSession();
     expect(session?.agentProposalsCount).toBe(1);
-    expect(session?.agentTier3DomainValidCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    expect(session?.agentTier2SchemaValidCount).toBe(1); // Tool action schema valid
+    expect(session?.agentTier3DomainValidCount).toBe(1); // Room containment valid
     expect(session?.attemptedOutOfBoundsCount).toBe(0); // Valid proposal does NOT increment
   });
 
-  it('does not treat non-boundary failures (e.g. budget exceeded) as boundary violations', async () => {
+  it('does not treat non-boundary failures (e.g. budget exceeded) as boundary violations and correctly classifies Tier 2 and Tier 3', async () => {
     saveActiveSession(createMockSession());
 
-    // Proposal that fails budget validation but has valid room containment
+    // Proposal that fails budget validation but has valid room containment and valid tool schema
     vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
       run: {
         id: 'run-budget-fail',
@@ -299,6 +307,7 @@ describe('AiAgentDrawer Telemetry Integration', () => {
         proposed_actions: [],
         validation_results: {
           is_valid: false,
+          schema_valid: true,
           errors: ['Total cost exceeds remaining budget by ₹25,000.00'],
           warnings: [],
           budget_diff: {
@@ -350,7 +359,70 @@ describe('AiAgentDrawer Telemetry Integration', () => {
     const session = getActiveSession();
     expect(session?.agentProposalsCount).toBe(1);
     expect(session?.agentTier1SuccessCount).toBe(1);
-    // Non-boundary invalid proposal must NOT increment boundary attempts!
+    // Tier 2: LLM tool call followed allowlisted action signatures and parameter types
+    expect(session?.agentTier2SchemaValidCount).toBe(1);
+    // Tier 3: Proposed furniture layout passes room boundary containment checks
+    expect(session?.agentTier3DomainValidCount).toBe(1);
+    // Boundary counter: Budget exceedance is not a boundary violation!
+    expect(session?.attemptedOutOfBoundsCount).toBe(0);
+  });
+
+  it('correctly marks Tier 2 invalid when tool call violates schema without incrementing boundary counter', async () => {
+    saveActiveSession(createMockSession());
+
+    // Proposal where tool call fails allowlisted action schema validation
+    vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+      run: {
+        id: 'run-schema-fail',
+        session: 'mock-agent-session-id',
+        user_prompt: 'Run arbitrary operation',
+        status: 'proposed',
+        ai_response_text: 'I attempted an operation.',
+        proposed_actions: [],
+        validation_results: {
+          is_valid: false,
+          schema_valid: false,
+          schema_errors: ["Action [0] 'execute_arbitrary_shell_command' is not an allowlisted operation."],
+          errors: ["Action [0] 'execute_arbitrary_shell_command' is not an allowlisted operation."],
+          warnings: [],
+          budget_diff: {
+            diff_paise: 0,
+            room_containment_valid: true,
+            room_violations: [],
+          },
+        },
+        provider_metadata: { provider: 'mock', model: 'mock-model', latency_ms: 100 },
+        created_at: new Date().toISOString(),
+      },
+      candidate_scene: sampleScene,
+      budget_diff: {
+        diff_paise: 0,
+        room_containment_valid: true,
+        room_violations: [],
+      },
+      requires_approval: true,
+    });
+
+    render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(agentApi.createAgentSession).toHaveBeenCalled();
+    });
+
+    const input = screen.getByPlaceholderText(/Type design instruction/i);
+    fireEvent.change(input, { target: { value: 'Run arbitrary operation' } });
+    fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+    await waitFor(() => {
+      expect(agentApi.sendAgentPrompt).toHaveBeenCalled();
+    });
+
+    const session = getActiveSession();
+    expect(session?.agentProposalsCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    // Tier 2: Failed schema validation
+    expect(session?.agentTier2SchemaValidCount).toBe(0);
+    // Boundary counter: Schema violation is not a boundary clamp clash
     expect(session?.attemptedOutOfBoundsCount).toBe(0);
   });
 });

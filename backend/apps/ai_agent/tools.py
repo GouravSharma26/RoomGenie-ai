@@ -167,7 +167,12 @@ def validate_and_simulate_actions(
 
     objects_list = candidate_scene.setdefault('objects', [])
     errors: list[str] = []
+    schema_errors: list[str] = []
     warnings: list[str] = []
+
+    def add_schema_error(msg: str) -> None:
+        errors.append(msg)
+        schema_errors.append(msg)
 
     # Calculate starting budget
     try:
@@ -176,9 +181,12 @@ def validate_and_simulate_actions(
         before_budget = {'total_paise': 0, 'total_inr': '0.00', 'items': []}
 
     if not isinstance(proposed_actions, list):
+        add_schema_error("Proposed actions must be a list.")
         return {
             'is_valid': False,
-            'errors': ["Proposed actions must be a list."],
+            'schema_valid': False,
+            'schema_errors': schema_errors,
+            'errors': errors,
             'warnings': [],
             'candidate_scene': candidate_scene,
             'budget_diff': {},
@@ -186,12 +194,12 @@ def validate_and_simulate_actions(
 
     for action_idx, action in enumerate(proposed_actions):
         if not isinstance(action, dict):
-            errors.append(f"Action at index {action_idx} must be a dictionary.")
+            add_schema_error(f"Action at index {action_idx} must be a dictionary.")
             continue
 
         action_type = action.get('type') or action.get('action')
         if action_type not in ALLOWED_ACTION_TYPES:
-            errors.append(
+            add_schema_error(
                 f"Action [{action_idx}] '{action_type}' is not an allowlisted operation. "
                 f"Allowed: {sorted(ALLOWED_ACTION_TYPES)}"
             )
@@ -202,7 +210,7 @@ def validate_and_simulate_actions(
             asset_id = action.get('asset_id')
             asset = FurnitureAsset.objects.filter(id=asset_id, is_active=True).first()  # pyrefly: ignore[missing-attribute]
             if not asset:
-                errors.append(f"Action [{action_idx}]: Asset '{asset_id}' does not exist in catalogue.")
+                add_schema_error(f"Action [{action_idx}]: Asset '{asset_id}' does not exist in catalogue.")
                 continue
 
             # Position
@@ -214,7 +222,7 @@ def validate_and_simulate_actions(
                 try:
                     pos = validate_vector3(raw_pos, f"add_furniture.position")
                 except Exception as e:
-                    errors.append(f"Action [{action_idx}]: Invalid position vector: {e}")
+                    add_schema_error(f"Action [{action_idx}]: Invalid position vector: {e}")
                     continue
             else:
                 # Default centered on floor
@@ -225,7 +233,7 @@ def validate_and_simulate_actions(
             try:
                 rot = validate_vector3(raw_rot, f"add_furniture.rotation_euler")
             except Exception as e:
-                errors.append(f"Action [{action_idx}]: Invalid rotation: {e}")
+                add_schema_error(f"Action [{action_idx}]: Invalid rotation: {e}")
                 continue
 
             # Scale
@@ -233,7 +241,7 @@ def validate_and_simulate_actions(
             try:
                 scale = validate_vector3(raw_scale, f"add_furniture.scale", min_val=0.1, max_val=5.0)
             except Exception as e:
-                errors.append(f"Action [{action_idx}]: Invalid scale: {e}")
+                add_schema_error(f"Action [{action_idx}]: Invalid scale: {e}")
                 continue
 
             color = action.get('color', '#4f46e5')
@@ -255,7 +263,7 @@ def validate_and_simulate_actions(
             object_id = action.get('object_id')
             target_obj = next((o for o in objects_list if o.get('id') == object_id), None)
             if not target_obj:
-                errors.append(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
+                add_schema_error(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
                 continue
 
             if 'position' in action:
@@ -263,14 +271,14 @@ def validate_and_simulate_actions(
                     pos = validate_vector3(action['position'], f"move_object.position")
                     target_obj['position'] = pos
                 except Exception as e:
-                    errors.append(f"Action [{action_idx}]: Invalid position: {e}")
+                    add_schema_error(f"Action [{action_idx}]: Invalid position: {e}")
 
             if 'rotation_euler' in action:
                 try:
                     rot = validate_vector3(action['rotation_euler'], f"move_object.rotation_euler")
                     target_obj['rotationEuler'] = rot
                 except Exception as e:
-                    errors.append(f"Action [{action_idx}]: Invalid rotation: {e}")
+                    add_schema_error(f"Action [{action_idx}]: Invalid rotation: {e}")
 
         # 3. REPLACE FURNITURE
         elif action_type == 'replace_furniture':
@@ -278,12 +286,12 @@ def validate_and_simulate_actions(
             new_asset_id = action.get('new_asset_id')
             target_obj = next((o for o in objects_list if o.get('id') == object_id), None)
             if not target_obj:
-                errors.append(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
+                add_schema_error(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
                 continue
 
             asset = FurnitureAsset.objects.filter(id=new_asset_id, is_active=True).first()  # pyrefly: ignore[missing-attribute]
             if not asset:
-                errors.append(f"Action [{action_idx}]: Replacement asset '{new_asset_id}' not in catalogue.")
+                add_schema_error(f"Action [{action_idx}]: Replacement asset '{new_asset_id}' not in catalogue.")
                 continue
 
             target_obj['assetId'] = asset.id
@@ -298,7 +306,7 @@ def validate_and_simulate_actions(
             object_id = action.get('object_id')
             exists = any(o.get('id') == object_id for o in objects_list)
             if not exists:
-                errors.append(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
+                add_schema_error(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
                 continue
             objects_list[:] = [o for o in objects_list if o.get('id') != object_id]
 
@@ -307,7 +315,7 @@ def validate_and_simulate_actions(
             object_id = action.get('object_id')
             target_obj = next((o for o in objects_list if o.get('id') == object_id), None)
             if not target_obj:
-                errors.append(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
+                add_schema_error(f"Action [{action_idx}]: Object '{object_id}' not found in scene.")
                 continue
 
             mat = target_obj.setdefault('materialOverrides', {})
@@ -365,6 +373,8 @@ def validate_and_simulate_actions(
 
     return {
         'is_valid': len(errors) == 0 and budget_diff.get('room_containment_valid', True),
+        'schema_valid': len(schema_errors) == 0,
+        'schema_errors': schema_errors,
         'errors': errors,
         'warnings': warnings,
         'candidate_scene': candidate_scene,

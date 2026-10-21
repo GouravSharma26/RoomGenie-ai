@@ -145,9 +145,27 @@ class AgentAdapterAndToolsTests(APITestCase):
         ]
         result = validate_and_simulate_actions(scene, actions)
         self.assertFalse(result['is_valid'])
+        # Tool call adhered to allowlisted schema/parameters, so schema_valid is True (Tier 2 valid)
+        self.assertTrue(result['schema_valid'])
+        self.assertEqual(len(result['schema_errors']), 0)
+        # But room containment was violated (Tier 3 invalid)
         self.assertFalse(result['budget_diff']['room_containment_valid'])
         self.assertGreaterEqual(len(result['errors']), 1)
         self.assertTrue(any("violates 3D room containment" in err for err in result['errors']))
+
+    def test_tools_schema_invalid_marks_schema_valid_false(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        actions = [
+            {'type': 'unknown_unsupported_action', 'data': 123}
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['schema_valid'])
+        self.assertGreaterEqual(len(result['schema_errors']), 1)
+        self.assertTrue(any("not an allowlisted operation" in err for err in result['schema_errors']))
 
 
 class AgentApiSecurityAndApprovalTests(APITestCase):
@@ -233,6 +251,8 @@ class AgentApiSecurityAndApprovalTests(APITestCase):
         res = self.client.post(prompt_url, {'prompt': 'Add an armchair for reading'}, format='json')
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertTrue(res.data['requires_approval'])
+        self.assertTrue(res.data['schema_valid'])
+        self.assertTrue(res.data['run']['validation_results']['schema_valid'])
 
         run_id = res.data['run']['id']
         run = AgentRun.objects.get(id=run_id)

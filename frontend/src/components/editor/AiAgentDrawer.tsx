@@ -161,8 +161,33 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
 
       // Telemetry: record AI proposal multi-tier validity & explicit room-containment violations
       const budgetDiff = response.budget_diff || response.run?.validation_results?.budget_diff;
-      const hasErrors = Boolean(response.run?.validation_results?.errors && response.run.validation_results.errors.length > 0);
-      const isSchemaValid = Boolean(response.candidate_scene && !hasErrors);
+
+      // Tier 2: Schema / allowlisted tool-call validity
+      // Evaluates whether the LLM tool call adheres to allowlisted action signatures and valid parameter types.
+      const dedicatedSchemaValid = typeof response.schema_valid === 'boolean'
+        ? response.schema_valid
+        : typeof response.run?.validation_results?.schema_valid === 'boolean'
+        ? response.run.validation_results.schema_valid
+        : undefined;
+
+      const schemaErrors = response.run?.validation_results?.schema_errors;
+      let isSchemaValid: boolean;
+      if (dedicatedSchemaValid !== undefined) {
+        isSchemaValid = Boolean(response.candidate_scene && dedicatedSchemaValid);
+      } else if (Array.isArray(schemaErrors)) {
+        isSchemaValid = Boolean(response.candidate_scene && schemaErrors.length === 0);
+      } else {
+        // Fallback: exclude domain-specific errors (room containment violations and budget ceiling errors)
+        const rawErrors = response.run?.validation_results?.errors || [];
+        const actionErrors = rawErrors.filter((err) => {
+          const lower = err.toLowerCase();
+          return !lower.includes('room containment') &&
+                 !lower.includes('extend beyond room') &&
+                 !lower.includes('budget') &&
+                 !lower.includes('cost exceeds');
+        });
+        isSchemaValid = Boolean(response.candidate_scene && actionErrors.length === 0);
+      }
 
       // Explicit room containment check from AI evaluation
       const hasExplicitViolations = Array.isArray(budgetDiff?.room_violations) && budgetDiff.room_violations.length > 0;
@@ -174,10 +199,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         response.candidate_scene && (isExplicitContainmentInvalid || hasExplicitViolations || hasOutOfBoundsInCandidate)
       );
 
+      // Tier 3: Domain Constraint Validity
+      // Evaluates whether the proposed furniture layout satisfies 3D room boundary containment checks (room_containment_valid = True)
+      // Unrelated budget ceiling failures or generic error lists do not invalidate Tier 3.
       const isDomainValid = Boolean(
         response.candidate_scene &&
-        response.run?.validation_results?.is_valid &&
-        !hasOutOfBoundsViolation
+        !hasOutOfBoundsViolation &&
+        budgetDiff?.room_containment_valid !== false
       );
 
       recordAgentProposal({
