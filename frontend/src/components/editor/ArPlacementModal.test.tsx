@@ -239,6 +239,64 @@ describe('ArPlacementModal', () => {
     });
   });
 
+  it('pauses background preview canvas and supports repositioning to reticle when WebXR is active', async () => {
+    vi.spyOn(arService, 'checkArCapability').mockResolvedValue({
+      isWebXrSupported: true,
+      isSceneViewerSupported: true,
+      isQuickLookSupported: false,
+      deviceCategory: 'android-arcore',
+      recommendation: 'webxr',
+      statusTitle: 'WebXR Immersive-AR Compatible',
+      statusDescription: 'WebXR ready',
+      limitations: arService.AR_LIMITATIONS,
+    });
+
+    const mockReposition = vi.fn().mockReturnValue(true);
+    let capturedPlacedCallback: ((pos: [number, number, number], rot: number, scale: number) => void) | undefined;
+
+    vi.spyOn(webXrArSession, 'startWebXrArSession').mockImplementation(async (opts) => {
+      capturedPlacedCallback = opts.onPlaced;
+      return {
+        endSession: vi.fn().mockResolvedValue(undefined),
+        isPlaced: () => true,
+        isSurfaceDetected: () => true,
+        setRotationY: vi.fn(),
+        setScale: vi.fn(),
+        repositionToReticle: mockReposition,
+        isDisposed: () => false,
+      };
+    });
+
+    render(<ArPlacementModal isOpen={true} onClose={vi.fn()} />);
+
+    // Before launch: preview canvas is visible
+    expect(screen.getByTestId('mock-preview-canvas')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Launch WebXR AR Session/i })).toBeInTheDocument();
+    });
+
+    // Launch WebXR
+    fireEvent.click(screen.getByRole('button', { name: /Launch WebXR AR Session/i }));
+
+    await waitFor(() => {
+      // Background preview canvas is now unmounted / paused to save GPU resources
+      expect(screen.queryByTestId('mock-preview-canvas')).toBeNull();
+      expect(screen.getByText(/Live WebXR Camera View Active/i)).toBeInTheDocument();
+    });
+
+    // Trigger placement callback
+    capturedPlacedCallback!([0.5, 0, -1.2], 0, 1.0);
+
+    // Reposition button should now be available in the live modal HUD
+    await waitFor(() => {
+      const repositionBtns = screen.getAllByRole('button', { name: /Reposition to Reticle/i });
+      expect(repositionBtns.length).toBeGreaterThan(0);
+      fireEvent.click(repositionBtns[0]);
+      expect(mockReposition).toHaveBeenCalled();
+    });
+  });
+
   it('calls onClose and ends active session when close button is clicked', async () => {
     const handleClose = vi.fn();
     render(<ArPlacementModal isOpen={true} onClose={handleClose} />);

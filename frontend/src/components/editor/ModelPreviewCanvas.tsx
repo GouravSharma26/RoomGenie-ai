@@ -105,14 +105,15 @@ class PreviewErrorBoundary extends React.Component<
   }
 }
 
-export const ModelPreviewCanvas: React.FC<ModelPreviewProps> = ({
-  modelUrl,
-  dimensions,
-  color = '#6366f1',
-  roughness = 0.6,
-  metalness = 0.1,
-  autoRotate = true,
-}) => {
+export const ModelPreviewCanvas: React.FC<ModelPreviewProps> = React.memo(
+  ({
+    modelUrl,
+    dimensions,
+    color = '#6366f1',
+    roughness = 0.6,
+    metalness = 0.1,
+    autoRotate = true,
+  }) => {
   const controlsRef = useRef<any>(null);
   const [width, height, depth] = dimensions;
   const maxDim = Math.max(width, height, depth, 1.0);
@@ -216,4 +217,14 @@ export const ModelPreviewCanvas: React.FC<ModelPreviewProps> = ({
       </Canvas>
     </div>
   );
-};
+  },
+  (prev, next) =>
+    prev.modelUrl === next.modelUrl &&
+    prev.color === next.color &&
+    prev.roughness === next.roughness &&
+    prev.metalness === next.metalness &&
+    prev.autoRotate === next.autoRotate &&
+    prev.dimensions[0] === next.dimensions[0] &&
+    prev.dimensions[1] === next.dimensions[1] &&
+    prev.dimensions[2] === next.dimensions[2]
+);

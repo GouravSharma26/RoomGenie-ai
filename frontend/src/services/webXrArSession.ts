@@ -20,6 +20,27 @@ export interface WebXrSessionOptions {
   };
 }
 
+export interface ArPerformanceMetrics {
+  sessionInitStart: number;
+  sessionReadyTime: number | null;
+  initLatencyMs: number | null;
+  firstHitTestResultTime: number | null;
+  timeToFirstHitTestMs: number | null;
+  firstReticleVisibleTime: number | null;
+  timeToFirstReticleMs: number | null;
+  modelLoadStartTime: number | null;
+  modelLoadCompleteTime: number | null;
+  modelLoadDurationMs: number | null;
+  lastPlacementInputTime: number | null;
+  lastPlacementMovementTime: number | null;
+  placementLatencyMs: number | null;
+  frameCount: number;
+  slowFrameCount: number;
+  totalFrameDurationMs: number;
+  averageFrameDurationMs: number;
+  maxFrameDurationMs: number;
+}
+
 export interface WebXrSessionController {
   endSession(): Promise<void>;
   isPlaced(): boolean;
@@ -28,6 +49,7 @@ export interface WebXrSessionController {
   setScale(scaleFactor: number): void;
   repositionToReticle(): boolean;
   isDisposed?(): boolean;
+  getPerformanceMetrics?(): ArPerformanceMetrics;
 }
 
 const disposedResourceSet = new WeakSet<object>();
@@ -166,6 +188,34 @@ export async function startWebXrArSession(
   // 2. Request XR session
   const session = await (navigator.xr as any).requestSession('immersive-ar', sessionInit);
 
+  // Performance Telemetry Tracker
+  const sessionInitStart = performance.now();
+  const metrics: ArPerformanceMetrics = {
+    sessionInitStart,
+    sessionReadyTime: null,
+    initLatencyMs: null,
+    firstHitTestResultTime: null,
+    timeToFirstHitTestMs: null,
+    firstReticleVisibleTime: null,
+    timeToFirstReticleMs: null,
+    modelLoadStartTime: null,
+    modelLoadCompleteTime: null,
+    modelLoadDurationMs: null,
+    lastPlacementInputTime: null,
+    lastPlacementMovementTime: null,
+    placementLatencyMs: null,
+    frameCount: 0,
+    slowFrameCount: 0,
+    totalFrameDurationMs: 0,
+    averageFrameDurationMs: 0,
+    maxFrameDurationMs: 0,
+  };
+
+  // Reusable math objects allocated once to prevent garbage collection spikes in frame/event loops
+  const _tempPos = new THREE.Vector3();
+  const _tempQuat = new THREE.Quaternion();
+  const _tempScale = new THREE.Vector3();
+
   let canvas: HTMLCanvasElement | null = null;
   let renderer: any = null;
   let scene: THREE.Scene | null = null;
@@ -235,6 +285,20 @@ export async function startWebXrArSession(
       } catch {}
     }
 
+    if (metrics.frameCount > 0) {
+      console.info('[RoomGenie AR Perf Telemetry]', {
+        initLatencyMs: metrics.initLatencyMs !== null ? `${metrics.initLatencyMs.toFixed(1)}ms` : null,
+        timeToFirstHitTestMs: metrics.timeToFirstHitTestMs !== null ? `${metrics.timeToFirstHitTestMs.toFixed(1)}ms` : null,
+        timeToFirstReticleMs: metrics.timeToFirstReticleMs !== null ? `${metrics.timeToFirstReticleMs.toFixed(1)}ms` : null,
+        modelLoadDurationMs: metrics.modelLoadDurationMs !== null ? `${metrics.modelLoadDurationMs.toFixed(1)}ms` : null,
+        lastPlacementLatencyMs: metrics.placementLatencyMs !== null ? `${metrics.placementLatencyMs.toFixed(2)}ms` : null,
+        totalFrames: metrics.frameCount,
+        slowFrames: metrics.slowFrameCount,
+        avgFrameDurationMs: `${metrics.averageFrameDurationMs.toFixed(2)}ms`,
+        maxFrameDurationMs: `${metrics.maxFrameDurationMs.toFixed(2)}ms`,
+      });
+    }
+
     if (isInitialized) {
       try {
         options.onSessionEnd?.();
@@ -244,6 +308,9 @@ export async function startWebXrArSession(
 
   // Register session end listener immediately as soon as cleanup is available
   session.addEventListener('end', cleanup);
+
+  // Immediately notify caller that surface scanning has begun
+  options.onSurfaceDetectedChange?.(false);
 
   try {
     // 3. Setup Three.js WebGLRenderer & XR Canvas
@@ -262,8 +329,12 @@ export async function startWebXrArSession(
           canvas,
           alpha: true,
           antialias: true,
+          powerPreference: 'high-performance',
         });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+    // Cap device pixel ratio to 1.75 to prevent mobile GPU fill-rate throttling on high-DPI displays (2.75x–3.0x)
+    const rawPixelRatio = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    renderer.setPixelRatio(Math.min(rawPixelRatio, 1.75));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
 
@@ -306,10 +377,16 @@ export async function startWebXrArSession(
 
     // Load Model or Procedural Fallback Box
     if (options.modelUrl) {
+      metrics.modelLoadStartTime = performance.now();
       const loader = options.gltfLoader || new GLTFLoader();
       loader.load(
         options.modelUrl,
         (gltf: any) => {
+          metrics.modelLoadCompleteTime = performance.now();
+          if (metrics.modelLoadStartTime !== null) {
+            metrics.modelLoadDurationMs = metrics.modelLoadCompleteTime - metrics.modelLoadStartTime;
+          }
+
           if (isDisposed) {
             // Teardown has already executed: release model resources immediately without attaching
             if (gltf?.scene) {
@@ -328,7 +405,7 @@ export async function startWebXrArSession(
             model.scale.set(targetW / size.x, targetH / size.y, targetD / size.z);
           }
 
-          // Align model base flush with Y = 0
+          // Align model base flush with Y = 0 (ground level)
           const updatedBbox = new THREE.Box3().setFromObject(model);
           model.position.y = -updatedBbox.min.y;
 
@@ -373,6 +450,9 @@ export async function startWebXrArSession(
     }
     hitTestSource = acquiredHitTestSource;
 
+    metrics.sessionReadyTime = performance.now();
+    metrics.initLatencyMs = metrics.sessionReadyTime - metrics.sessionInitStart;
+
     let surfaceDetected = false;
     let modelPlaced = false;
 
@@ -385,14 +465,29 @@ export async function startWebXrArSession(
         return;
       }
 
+      const frameStart = performance.now();
+
       if (frame && hitTestSource && localFloorSpace) {
         const hitTestResults = frame.getHitTestResults(hitTestSource);
         if (hitTestResults.length > 0) {
+          if (metrics.firstHitTestResultTime === null) {
+            metrics.firstHitTestResultTime = performance.now();
+            metrics.timeToFirstHitTestMs = metrics.firstHitTestResultTime - metrics.sessionInitStart;
+          }
+
           const hit = hitTestResults[0];
           const pose = hit.getPose(localFloorSpace);
           if (pose) {
+            if (metrics.firstReticleVisibleTime === null) {
+              metrics.firstReticleVisibleTime = performance.now();
+              metrics.timeToFirstReticleMs = metrics.firstReticleVisibleTime - metrics.sessionInitStart;
+            }
+
             reticle.visible = true;
             reticle.matrix.fromArray(pose.transform.matrix);
+            reticle.matrixWorld.fromArray(pose.transform.matrix);
+            reticle.matrixWorldNeedsUpdate = true;
+
             if (!surfaceDetected) {
               surfaceDetected = true;
               options.onSurfaceDetectedChange?.(true);
@@ -408,22 +503,37 @@ export async function startWebXrArSession(
       }
 
       renderer.render(scene, camera);
+
+      const frameDuration = performance.now() - frameStart;
+      metrics.frameCount++;
+      metrics.totalFrameDurationMs += frameDuration;
+      metrics.averageFrameDurationMs = metrics.totalFrameDurationMs / metrics.frameCount;
+      if (frameDuration > metrics.maxFrameDurationMs) {
+        metrics.maxFrameDurationMs = frameDuration;
+      }
+      if (frameDuration > 33.33) {
+        metrics.slowFrameCount++;
+      }
     });
 
-    // 9. Tap-to-Place (Select Gesture)
+    // 9. Tap-to-Place (Select Gesture) & Instant Repositioning
     onSelect = () => {
       if (reticle.visible) {
-        const pos = new THREE.Vector3();
-        const quat = new THREE.Quaternion();
-        const scale = new THREE.Vector3();
-        reticle.matrix.decompose(pos, quat, scale);
+        metrics.lastPlacementInputTime = performance.now();
+        reticle.matrix.decompose(_tempPos, _tempQuat, _tempScale);
 
-        placedGroup.position.copy(pos);
+        // Directly update existing placedGroup transform — never re-fetch, re-decode, or re-clone GLB
+        placedGroup.position.copy(_tempPos);
         placedGroup.visible = true;
+        placedGroup.updateMatrix();
+        placedGroup.updateMatrixWorld(true);
         modelPlaced = true;
 
+        metrics.lastPlacementMovementTime = performance.now();
+        metrics.placementLatencyMs = metrics.lastPlacementMovementTime - metrics.lastPlacementInputTime;
+
         options.onPlaced?.(
-          [pos.x, pos.y, pos.z],
+          [_tempPos.x, _tempPos.y, _tempPos.z],
           placedGroup.rotation.y,
           placedGroup.scale.x
         );
@@ -470,6 +580,9 @@ export async function startWebXrArSession(
       },
       isDisposed() {
         return isDisposed;
+      },
+      getPerformanceMetrics() {
+        return { ...metrics };
       },
     };
   } catch (err: any) {

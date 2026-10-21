@@ -668,5 +668,164 @@ describe('webXrArSession', () => {
     expect(document.querySelectorAll('canvas').length).toBe(initialCanvasCount);
     expect(mockRenderer.setAnimationLoop).not.toHaveBeenCalledWith(expect.any(Function));
   });
+
+  it('displays reticle immediately upon first valid hit-test result and synchronizes matrices', async () => {
+    const { mockRenderer, getAnimationLoopCallback } = setupMockXREnvironment();
+    const onSurfaceDetectedChange = vi.fn();
+
+    const controller = await startWebXrArSession({
+      modelUrl: null,
+      dimensions: [0.8, 0.8, 0.8],
+      onSurfaceDetectedChange,
+      rendererFactory: () => mockRenderer as any,
+    });
+
+    // Before hit-test frame, surfaceDetected is false
+    expect(controller.isSurfaceDetected()).toBe(false);
+    expect(onSurfaceDetectedChange).toHaveBeenCalledWith(false);
+
+    // Frame with hit-test pose
+    const mockHitPose = {
+      transform: {
+        matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.2, 0, -1.8, 1],
+      },
+    };
+    const mockFrame = {
+      getHitTestResults: vi.fn().mockReturnValue([
+        {
+          getPose: vi.fn().mockReturnValue(mockHitPose),
+        },
+      ]),
+    };
+
+    getAnimationLoopCallback()!(16.6, mockFrame);
+
+    expect(controller.isSurfaceDetected()).toBe(true);
+    expect(onSurfaceDetectedChange).toHaveBeenCalledWith(true);
+
+    const metrics = controller.getPerformanceMetrics?.();
+    expect(metrics).toBeDefined();
+    expect(metrics?.timeToFirstHitTestMs).toBeGreaterThanOrEqual(0);
+    expect(metrics?.timeToFirstReticleMs).toBeGreaterThanOrEqual(0);
+    expect(metrics?.frameCount).toBe(1);
+
+    await controller.endSession();
+  });
+
+  it('repositions an already-loaded model without re-fetching or re-decoding the GLB', async () => {
+    const { mockRenderer, getAnimationLoopCallback, getSelectListener } = setupMockXREnvironment();
+
+    const geo = new THREE.BoxGeometry(2.1, 0.85, 0.9);
+    const mat = new THREE.MeshBasicMaterial();
+    const modelGroup = new THREE.Group();
+    modelGroup.add(new THREE.Mesh(geo, mat));
+
+    const mockLoader = {
+      load: vi.fn((_url: string, onLoad: (gltf: any) => void) => {
+        onLoad({ scene: modelGroup });
+      }),
+    };
+
+    const onPlaced = vi.fn();
+
+    const controller = await startWebXrArSession({
+      modelUrl: '/models/sofa.glb',
+      dimensions: [2.1, 0.85, 0.9],
+      onPlaced,
+      rendererFactory: () => mockRenderer as any,
+      gltfLoader: mockLoader,
+    });
+
+    // Model loaded once
+    expect(mockLoader.load).toHaveBeenCalledTimes(1);
+
+    // 1. Initial hit-test at (0.2, 0.0, -1.5)
+    const pose1 = {
+      transform: {
+        matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.2, 0.0, -1.5, 1],
+      },
+    };
+    getAnimationLoopCallback()!(16, {
+      getHitTestResults: vi.fn().mockReturnValue([{ getPose: () => pose1 }]),
+    });
+
+    // First placement via tap
+    getSelectListener()!();
+    expect(controller.isPlaced()).toBe(true);
+    expect(onPlaced).toHaveBeenLastCalledWith([0.2, 0.0, -1.5], expect.any(Number), expect.any(Number));
+    expect(mockLoader.load).toHaveBeenCalledTimes(1);
+
+    // 2. Move phone: new hit-test at (1.4, 0.0, -2.8)
+    const pose2 = {
+      transform: {
+        matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.4, 0.0, -2.8, 1],
+      },
+    };
+    getAnimationLoopCallback()!(32, {
+      getHitTestResults: vi.fn().mockReturnValue([{ getPose: () => pose2 }]),
+    });
+
+    // Reposition via controller or tap
+    const repositioned = controller.repositionToReticle();
+    expect(repositioned).toBe(true);
+    expect(onPlaced).toHaveBeenLastCalledWith([1.4, 0.0, -2.8], expect.any(Number), expect.any(Number));
+
+    // Crucial check: loader was NOT invoked again!
+    expect(mockLoader.load).toHaveBeenCalledTimes(1);
+
+    // Verify placement latency metric is captured
+    const metrics = controller.getPerformanceMetrics?.();
+    expect(metrics?.placementLatencyMs).toBeGreaterThanOrEqual(0);
+
+    await controller.endSession();
+  });
+
+  it('preserves correct metric SI transforms, yaw rotation, scale, and grounding after subsequent repositioning', async () => {
+    const { mockRenderer, getAnimationLoopCallback, getSelectListener } = setupMockXREnvironment();
+
+    const onPlaced = vi.fn();
+    const controller = await startWebXrArSession({
+      modelUrl: null,
+      dimensions: [1.0, 0.5, 0.8],
+      onPlaced,
+      rendererFactory: () => mockRenderer as any,
+    });
+
+    // First placement at (0, 0, -1)
+    const pose1 = {
+      transform: {
+        matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -1, 1],
+      },
+    };
+    getAnimationLoopCallback()!(16, {
+      getHitTestResults: vi.fn().mockReturnValue([{ getPose: () => pose1 }]),
+    });
+    getSelectListener()!();
+
+    // User applies manual rotation and scale adjustments
+    controller.setRotationY(Math.PI / 3);
+    controller.setScale(1.25);
+
+    // Move to second location (0.75, 0, -2.2)
+    const pose2 = {
+      transform: {
+        matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.75, 0, -2.2, 1],
+      },
+    };
+    getAnimationLoopCallback()!(32, {
+      getHitTestResults: vi.fn().mockReturnValue([{ getPose: () => pose2 }]),
+    });
+
+    // Reposition
+    controller.repositionToReticle();
+
+    expect(onPlaced).toHaveBeenLastCalledWith(
+      [0.75, 0, -2.2],
+      expect.closeTo(Math.PI / 3, 4),
+      expect.closeTo(1.25, 4)
+    );
+
+    await controller.endSession();
+  });
 });
 

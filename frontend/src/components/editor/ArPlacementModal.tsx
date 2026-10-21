@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Smartphone,
   X,
@@ -59,6 +59,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
   const [isLaunchingWebXr, setIsLaunchingWebXr] = useState<boolean>(false);
   const [xrSessionController, setXrSessionController] = useState<WebXrSessionController | null>(null);
   const [isPlacedInXr, setIsPlacedInXr] = useState<boolean>(false);
+  const arOverlayRef = useRef<HTMLDivElement>(null);
 
   // Determine active item to place
   const activePlacedItem = useMemo(() => {
@@ -144,9 +145,12 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
     try {
       setIsLaunchingWebXr(true);
       setWebXrError(null);
+      setTransform((prev) => ({ ...prev, surfaceDetected: false }));
+      setIsPlacedInXr(false);
       const controller = await startWebXrArSession({
         modelUrl: activeModelUrl,
         dimensions: baseDimensions,
+        domOverlayContainer: arOverlayRef.current,
         onSurfaceDetectedChange: (detected) => {
           setTransform((prev) => ({ ...prev, surfaceDetected: detected }));
         },
@@ -315,11 +319,21 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
             <div className="relative bg-slate-950 border border-slate-800 rounded-xl overflow-hidden h-72 flex flex-col justify-end shadow-inner">
               {/* Active 3D Model Preview */}
               <div className="absolute inset-0">
-                <ModelPreviewCanvas
-                  modelUrl={activeModelUrl}
-                  dimensions={scaledDimensions}
-                  autoRotate={false}
-                />
+                {!xrSessionController ? (
+                  <ModelPreviewCanvas
+                    modelUrl={activeModelUrl}
+                    dimensions={scaledDimensions}
+                    autoRotate={false}
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-300 p-4 text-center">
+                    <span className="w-4 h-4 rounded-full bg-cyan-400 animate-ping mb-3" />
+                    <p className="text-xs font-semibold text-white">Live WebXR Camera View Active</p>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
+                      Background 3D preview is paused to maximize mobile GPU frame rates and hit-test responsiveness.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Reticle / Floor Surface Alignment HUD */}
@@ -490,6 +504,17 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                         </div>
                       </div>
 
+                      {isPlacedInXr && (
+                        <button
+                          type="button"
+                          onClick={() => xrSessionController.repositionToReticle()}
+                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/80 text-cyan-200 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-98"
+                        >
+                          <Move className="w-4 h-4 text-cyan-400" />
+                          <span>Reposition to Reticle</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={handleEndWebXr}
                         className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-700 text-slate-200 hover:text-rose-300 font-semibold text-xs flex items-center justify-center gap-2 transition"
@@ -655,6 +680,61 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Native WebXR DOM Overlay for Mobile Camera Viewport */}
+      <div
+        ref={arOverlayRef}
+        id="webxr-ar-overlay"
+        className={
+          xrSessionController
+            ? 'fixed inset-0 pointer-events-none z-[10000] flex flex-col justify-between p-4'
+            : 'hidden'
+        }
+      >
+        {/* Top Floating Status HUD */}
+        <div className="flex items-center justify-between pointer-events-auto">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md">
+            {transform.surfaceDetected ? (
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs font-semibold text-emerald-300">
+                  {isPlacedInXr ? 'Furniture Placed' : 'Floor Acquired — Tap to Place'}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs font-semibold text-amber-300">
+                  Scanning floor... Point camera down
+                </span>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleEndWebXr}
+            className="px-3.5 py-2 rounded-full bg-rose-950/90 hover:bg-rose-900 border border-rose-700/90 text-rose-200 text-xs font-bold shadow-2xl backdrop-blur-md transition active:scale-95"
+            aria-label="Exit AR Session"
+          >
+            End AR
+          </button>
+        </div>
+
+        {/* Bottom Floating Action Bar */}
+        {isPlacedInXr && (
+          <div className="flex items-center justify-center pointer-events-auto pb-6">
+            <button
+              type="button"
+              onClick={() => xrSessionController?.repositionToReticle()}
+              className="px-5 py-2.5 rounded-2xl bg-cyan-600/95 hover:bg-cyan-500 text-white text-xs font-bold shadow-2xl border border-cyan-400/60 backdrop-blur-md flex items-center gap-2 transition active:scale-95"
+            >
+              <Move className="w-4 h-4" />
+              <span>Reposition to Reticle</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
