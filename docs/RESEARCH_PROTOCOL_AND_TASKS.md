@@ -14,27 +14,49 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 ### 1.2 Research Questions & Hypotheses
 - **Primary Research Question (RQ1):**  
   *Does an AI-assisted interactive 3D interior design workflow change completion time, task success, budget compliance, and perceived usability compared with manual use of the same 3D editor?*
-  - **Null Hypothesis ($H_{01}$):** Completion time does not differ between manual and AI-assisted design conditions.
-  - **Null Hypothesis ($H_{02}$):** Perceived usability (SUS score) does not differ between manual and AI-assisted conditions.
-  - **Null Hypothesis ($H_{03}$):** Layout constraint compliance does not differ between manual and AI-assisted conditions.
-  - *Reporting invariant:* Hypotheses are tested objectively. If the AI assistant reduces initial placement time but increases post-generation fine-tuning or fails to prevent subtle layout errors, this outcome will be reported transparently as a research finding.
 
-- **Secondary / Exploratory Question (RQ2 — Photo-to-3D):**  
-  *What is the dimensional reconstruction accuracy (absolute and percentage error in width, height, and depth) of single/multi-view photo-to-3D furniture approximation compared against physical ground-truth tape measurements?*
+#### Primary Confirmatory Hypotheses (Pre-Registered Tests)
+1. **$H_{01}$ (Completion Time):** Task completion time (seconds) does not differ between Manual (Condition A) and AI-Assisted (Condition B) workflows (tested via paired $t$-test or Wilcoxon signed-rank test).
+2. **$H_{02}$ (Perceived Usability):** System Usability Scale (SUS) composite score ($0–100$) does not differ between conditions (tested via paired $t$-test or Wilcoxon signed-rank test).
+3. **$H_{03}$ (Budget Compliance Rate):** The proportion of submitted designs meeting or staying below the assigned budget ceiling ($\le \text{ceiling}$) does not differ between conditions (tested via McNemar's test for paired binary proportions).
+4. **$H_{04}$ (Composite Task Success Rate):** The proportion of fully successful designs—satisfying all 4 mandatory functional furniture items, remaining budget-compliant, and exhibiting zero doorway keep-out clearance intrusions—does not differ between conditions (tested via McNemar's test).
+
+#### Secondary & Exploratory Outcomes
+- **$E_1$ (AABB Overlap Proxy):** Mean count of overlapping furniture Axis-Aligned Bounding Box pairs (`aabbOverlapPairsCount`).
+- **$E_2$ (Manual Adjustment Effort):** Discrete manual interaction counts (`totalEdits`) and undo/redo operations (`undoRedoCount`).
+- **$E_3$ (Doorway Keep-Out Intrusions):** Count of furniture objects intruding into the silent doorway clearance box (`doorwayIntrusionsCount`).
+- **$E_4$ (Attempted Boundary Clashes):** Frequency of attempted boundary drag clashes or invalid AI proposals (`attemptedOutOfBoundsCount`).
+- **$E_5$ (AI Agent Multi-Tier Validity):** Tool schema validity (Tier 2), domain constraint validity (Tier 3), and user proposal approval rate (Tier 4).
+- **$E_6$ (Subjective Workload & Agency):** Self-reported mental demand, perceived agency, and qualitative preference.
+- **$E_7$ (Photo-to-3D Dimensional Error):** Absolute error ($\Delta W, \Delta D, \Delta H$) and Mean Absolute Percentage Error (MAPE) against physical tape measurements.
+
+*Reporting Invariant:* Confirmatory hypotheses are evaluated strictly as stated. If the AI assistant reduces initial placement time but increases post-generation fine-tuning or fails to prevent subtle layout errors, this outcome will be reported transparently as an empirical research finding.
 
 ---
 
 ## 2. Ethics, Privacy & Governance Requirements
 
 > [!IMPORTANT]
-> **Institutional Governance Note:**  
-> This protocol specifies the research procedure, consent wording, and data handling safeguards. In accordance with university research standards, **formal supervisor or institutional ethics approval must be recorded before recruiting human participants**. This protocol document alone does not replace formal ethics clearance.
+> **Institutional Governance Note & Mandatory Approval Gate:**  
+> This protocol specifies the research procedure, consent wording, and data handling safeguards. In accordance with university research standards, **formal supervisor or institutional ethics approval must be recorded in writing before recruiting human participants**. This protocol document alone does not replace formal ethics clearance.
+> - **Approval Body:** Departmental Undergraduate Research Review Committee / Project Evaluation Board  
+> - **Protocol Status:** Gated — Formal written supervisor approval required prior to enrolling Participant P01.
 
-### 2.1 Privacy & Data Protection Safeguards
+### 2.1 Contact Information
+- **Principal Investigator:** Gourav Sharma (Undergraduate Researcher, Dept. of Computer Science & Engineering)  
+  *Email:* `gourav.sharma.cse@example.ac.in`
+- **Faculty Project Supervisor:** Project Supervisor / Course Coordinator (Dept. of Computer Science & Engineering)  
+  *Email:* `supervisor.cse@example.ac.in`
+
+### 2.2 Privacy & Data Protection Safeguards
 1. **No Personally Identifiable Information (PII):** Participants are assigned an anonymous alphanumeric identifier (e.g., `P01`, `P02`). No real names, emails, IP addresses, or phone numbers are logged in research datasets.
 2. **Local Storage & No Private Media Ingestion:** Experimental trials use the pre-configured local 3D catalogue and standardized synthetic rooms. Participants are **never** asked to upload personal home photography to external cloud APIs during the study trials.
 3. **Voluntary Participation & Unconditional Withdrawal:** Participation is entirely voluntary. Participants may halt a trial or withdraw their data at any point without explanation or penalty.
 4. **Data Retention & Disposal:** Raw anonymized JSON interaction logs and survey responses will be stored in an access-restricted project directory and destroyed upon project examination completion.
+
+### 2.3 Withdrawal Procedure & Irreversibility Deadline
+- **Withdrawal Mechanism:** At the beginning of the study, each participant is provided a physical/digital tear-off slip bearing their unique Participant Code (e.g., `P04`). To request data removal, the participant emails either the investigator or the supervisor citing their code. No personal justification is required.
+- **Withdrawal Deadline:** Participants may withdraw their individual trial data within **14 calendar days** of their test session or prior to the final dataset aggregation lock on **November 15, 2026** (whichever occurs first). Beyond this point, data will have been compiled into anonymized summary matrices, and individual trial logs can no longer be disentangled or removed.
 
 ---
 
@@ -43,7 +65,8 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 ### Participant Information Sheet
 
 **Study Title:** Evaluating an AI-Assisted 3D Interior Design Workflow with Budget and Spatial Constraints  
-**Investigator:** Gourav Sharma (Solo Developer / B.Tech CSE Researcher)  
+**Investigator:** Gourav Sharma (`gourav.sharma.cse@example.ac.in`)  
+**Supervisor:** Departmental Project Supervisor (`supervisor.cse@example.ac.in`)  
 **Institution:** Department of Computer Science & Engineering  
 
 **Purpose of the Study:**  
@@ -58,8 +81,8 @@ You are invited to participate in a research evaluation comparing two workflows 
 **Risks and Discomforts:**  
 There are no physical or psychological risks beyond normal desktop computer usage.
 
-**Confidentiality:**  
-All responses and design interactions are logged under an anonymous pseudonym (e.g., `P04`). No names or private data will be collected, stored, or published.
+**Confidentiality & Data Protection:**  
+All responses and design interactions are logged under an anonymous pseudonym (e.g., `P04`). No names or private data will be collected, stored, or published. You may withdraw your data using your Participant Code within 14 days of participation (or prior to November 15, 2026).
 
 ---
 
@@ -69,6 +92,7 @@ All responses and design interactions are logged under an anonymous pseudonym (e
 [ ] I confirm that I have read and understood the Participant Information Sheet for this study.
 [ ] I have had the opportunity to ask questions, and any questions have been answered satisfactorily.
 [ ] I understand that my participation is voluntary and that I am free to withdraw at any time without penalty.
+[ ] I understand that to withdraw my data, I can email the researcher or supervisor citing my Participant Code within 14 days of participation (or prior to November 15, 2026).
 [ ] I understand that all data collected will be strictly anonymized under a participant code and used solely for academic research.
 [ ] I agree to take part in the study.
 
@@ -362,44 +386,115 @@ For each axis $A \in \{W, H, D\}$:
 
 ---
 
-### 9.2 Step 8.2 Architectural Decisions
+### 9.2 Step 8.2 Architectural Decisions & Telemetry Specification
 
-#### Decision 1: Local Backend Persistence + Controlled JSON/CSV Export Utility
-- **Architecture:** Evaluation sessions will be persisted through a dedicated Django endpoint (`POST /api/v1/evaluation/sessions/`) rather than relying on browser-triggered client downloads.
-- **Session Lifecycle & Recovery:** Each session record includes a schema version (`schemaVersion: 1`) and lifecycle status (`in_progress`, `completed`, `aborted`), storing enough state to recover from accidental browser refreshes and prevent loss of incomplete trials.
-- **Client Aggregation:** The frontend editor aggregates discrete manual actions (pointer up debouncing) and submits the finalized telemetry payload upon clicking "Submit Design", avoiding per-pointer-movement network chatter.
-- **Server-Authoritative Metrics:** The backend recalculates final budget totals (`budgetTotalPaise`, `isBudgetCompliant`), room boundary containment (`finalSceneOutOfBoundsCount`), AABB proxy overlaps (`aabbOverlapPairsCount`), and doorway keep-out intrusions (`doorwayIntrusionsCount`) from the authoritative submitted scene JSON.
-- **Evaluator Export:** An evaluator-only management command (or authorized endpoint) will export the anonymized research dataset as versioned CSV and JSON files (`evaluation_dataset_v1.csv`).
-- **Privacy & Isolation:** Evaluation logging is disabled by default (`ENABLE_EVALUATION_LOGGING = False`) and activated solely in the experimental environment. No participant names, emails, authentication tokens, or personal room photographs enter the research dataset.
+#### Decision 1: Robust 3-Stage Session Lifecycle (Resolving Refresh vs. Completion Contradiction)
+To guarantee that `in_progress` trials survive accidental browser reloads while ensuring incomplete/aborted sessions are reliably preserved without per-pointer network chatter:
+
+1. **Stage 1 — Initialization (`POST /api/v1/evaluation/sessions/start/`):**
+   - When a participant opens the task and clicks "Start Task", the client generates a unique `sessionId` (UUIDv4) and registers the session with the backend.
+   - Local browser `sessionStorage` stores `roomgenie_eval_active_session` containing `{ sessionId, participantId, condition, taskName, sequenceOrder }`.
+   - The backend creates an `EvaluationSession` database row with `sessionStatus = 'in_progress'`, `startTime = now()`, and initial metadata.
+   - *Refresh Recovery:* If the participant refreshes or navigates back, the frontend checks `sessionStorage`, rehydrates the in-progress session, and continues tracking without creating duplicate records.
+2. **Stage 2 — Idempotent Periodic Checkpoints (`PATCH /api/v1/evaluation/sessions/{sessionId}/checkpoint/`):**
+   - Transmitted every 30 seconds or after milestone operations (e.g., AI proposal approved, furniture added).
+   - Updates `{ activeDurationSeconds, currentEdits, currentUndoRedo, attemptedOutOfBoundsCount, idleIntervals, sceneSnapshot }`.
+   - All checkpoint updates are strictly idempotent, ensuring network retries never corrupt session state.
+3. **Stage 3A — Completion (`POST /api/v1/evaluation/sessions/{sessionId}/complete/`):**
+   - Triggered when the participant clicks the final "Submit Design" button.
+   - Submits the finalized interaction log and the complete, immutable final scene JSON snapshot.
+   - The backend transitions `sessionStatus = 'completed'`, records `endTime = now()`, calculates authoritative server-side metrics, and returns confirmation.
+   - The client clears `sessionStorage` and advances to the post-condition survey.
+4. **Stage 3B — Abort & Incomplete Session Preservation (`POST /api/v1/evaluation/sessions/{sessionId}/abort/`):**
+   - Triggered if the participant clicks "Cancel / Exit Study", or automatically marked by a backend reaper if an `in_progress` session receives no heartbeat for $> 30$ minutes.
+   - Transitions `sessionStatus = 'aborted'`, recording `abortedAt = now()`, `abortReason`, and preserving the last checkpoint's scene and duration for dropout/attrition analyses.
 
 #### Decision 2: Silent Evaluation of Doorway Keep-Out Box
 - **No In-Editor Visual Hint:** The doorway keep-out clearance box is a scoring metric, not an in-editor visual aid. Rendering a visible overlay on the floor during trials could artificially alter spatial behavior and introduce an extraneous UI confound unrelated to the AI-assisted workflow.
 - **Identical Instructions:** Both conditions receive identical text instructions stating the doorway location and the requirement to maintain a clear circulation corridor.
 - **Silent Evaluation:** The evaluator engine applies the coordinate-based keep-out rule uniformly to both final layouts post-submission. A visual debugging overlay may exist in development mode (`DEBUG=True`), but must be strictly disabled during study trials.
 
-#### Telemetry Schema (`ExperimentSessionRecord`)
+#### Decision 3: Independent Metric Auditability & Inactivity Granularity
+1. **Immutable Final Scene Snapshot (`finalSceneSnapshot`):**  
+   To enable independent replication and auditing of research claims, the evaluation record persists the complete canonical scene JSON (`{ schemaVersion, unit: 'm', room, objects }`). Evaluators can independently re-verify boundary containment, budget math, AABB overlap pairs, and doorway clearance directly on the raw geometry.
+2. **Discrete Inactivity Intervals (`idleIntervals`):**  
+   Rather than storing only a single opaque cumulative number, telemetry records each discrete pause exceeding 60 seconds (`{ startOffsetSeconds, durationSeconds }`). This distinguishes five 2-minute pauses from a single 10-minute external distraction, directly enabling the pre-registered sensitivity analysis ($> 15\text{ min}$ interruptions).
+
+---
+
+### 9.3 Telemetry Schema Specification (`ExperimentSessionRecord`)
+
 ```typescript
+/** Discrete inactivity pause (> 60s without mouse/keyboard/tool input) */
+interface IdleInterval {
+  startOffsetSeconds: number; // Seconds since startTime when inactivity began
+  durationSeconds: number;    // Duration of pause
+}
+
+/** Complete Evaluation Session Record (persisted in DB and exported to JSON/CSV) */
 interface ExperimentSessionRecord {
-  schemaVersion: number;              // e.g. 1
-  participantId: string;              // e.g. "P04"
+  schemaVersion: number;              // Version of telemetry schema (e.g. 1)
+  sessionId: string;                  // UUIDv4 unique session key
+  participantId: string;              // Anonymized code, e.g. "P04"
   condition: 'manual' | 'ai_assisted';
   sequenceOrder: 'G1' | 'G2' | 'G3' | 'G4';
   taskName: 'living_room' | 'home_study';
   sessionStatus: 'in_progress' | 'completed' | 'aborted';
+  
+  // Timestamps (endTime and durationSeconds are nullable while in_progress)
   startTime: string;                  // ISO 8601
-  endTime: string;                    // ISO 8601
-  durationSeconds: number;
-  idleGapSeconds: number;             // Cumulative inactivity intervals > 60s
-  budgetTotalPaise: number;
-  budgetCeilingPaise: number;
-  isBudgetCompliant: boolean;
+  endTime: string | null;             // ISO 8601 (null if in_progress)
+  durationSeconds: number | null;     // Total elapsed seconds (null until completed/aborted)
+  activeDurationSeconds: number;      // Elapsed seconds excluding totalIdleDurationSeconds
+  
+  // Abort / Dropout Tracking
+  abortedAt: string | null;           // ISO 8601 (null if completed)
+  abortReason: 'user_cancelled' | 'inactivity_timeout' | 'browser_closed' | null;
+
+  // Granular Inactivity Tracking for Sensitivity Analysis
+  idleIntervals: IdleInterval[];      // Discrete pause records
+  totalIdleDurationSeconds: number;   // Sum of all idleIntervals
+  maxSingleIdleGapSeconds: number;    // Duration of longest single pause
+  hasProlongedInterruption: boolean;  // True if maxSingleIdleGapSeconds >= 900 (15 min)
+
+  // Authoritative Metrics (nullable while in_progress, computed upon submission)
+  budgetTotalPaise: number | null;    // Deterministic integer paise sum
+  budgetCeilingPaise: number;         // Task budget limit (e.g. 6000000)
+  isBudgetCompliant: boolean | null;  // True if budgetTotalPaise <= budgetCeilingPaise
   attemptedOutOfBoundsCount: number;  // Clamps / collision warnings during editing
-  finalSceneOutOfBoundsCount: number; // Post-submission verification (expected 0)
-  aabbOverlapPairsCount: number;      // Bounding box overlap proxy count
-  doorwayIntrusionsCount: number;     // Intrusion into silent keep-out box
-  totalEdits: number;                 // Discrete manual changes (debounced)
-  undoRedoCount: number;              // Separate undo/redo count
-  agentProposalsCount: number;        // Total AI proposals generated
-  agentAcceptedCount: number;         // Total proposals approved via /apply/
+  finalSceneOutOfBoundsCount: number | null; // Post-submission check (expected 0)
+  aabbOverlapPairsCount: number | null;      // AABB overlap proxy count (2cm tolerance)
+  doorwayIntrusionsCount: number | null;     // Intrusion into silent keep-out box
+  
+  // Task Success Metric (nullable while in_progress)
+  isTaskSuccessful: boolean | null;   // True if all 4 items present, budget compliant, 0 doorway intrusions
+
+  // Interaction Effort Counters
+  totalEdits: number;                 // Discrete manual modifications (debounced pointerUp)
+  undoRedoCount: number;              // Discrete undo/redo dispatches
+
+  // AI Agent Multi-Tier Validity Metrics (Condition B only; 0 in Condition A)
+  agentProposalsCount: number;        // Total candidate layouts generated
+  agentAcceptedCount: number;         // Proposals approved via /apply/
+  agentTier1SuccessCount: number;     // HTTP 200 responses from agent endpoint
+  agentTier2SchemaValidCount: number; // Schema-valid candidate layouts
+  agentTier3DomainValidCount: number; // Containment-valid candidate layouts
+
+  // Full Raw Scene Auditability (immutable canonical scene snapshot)
+  finalSceneSnapshot: {
+    schemaVersion: number;
+    unit: 'm';
+    room: { width: number; length: number; height: number };
+    objects: Array<{
+      id: string;
+      assetId: string;
+      name: string;
+      dimensions: [number, number, number];
+      position: [number, number, number];
+      rotationEuler: [number, number, number];
+      scale: [number, number, number];
+      materialOverrides?: Record<string, any>;
+    }>;
+  } | null;
 }
 ```
