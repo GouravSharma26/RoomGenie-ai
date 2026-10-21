@@ -12,6 +12,7 @@ CSV_EXPORT_FIELDS = [
     'participantId',
     'condition',
     'sequenceOrder',
+    'trialPeriod',
     'taskName',
     'sessionStatus',
     'checkpointSequence',

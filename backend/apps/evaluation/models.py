@@ -42,8 +42,21 @@ class EvaluationSession(models.Model):
     participant_id = models.CharField(max_length=64, db_index=True)
     condition = models.CharField(max_length=32, choices=CONDITION_CHOICES)
     sequence_order = models.CharField(max_length=8, choices=SEQUENCE_CHOICES)
+    trial_period = models.PositiveSmallIntegerField(
+        choices=((1, 'Period 1'), (2, 'Period 2')),
+        default=1,
+        help_text="Trial period within the 2-trial crossover sequence (1 or 2)."
+    )
     task_name = models.CharField(max_length=64, choices=TASK_CHOICES)
     session_status = models.CharField(max_length=32, default='in_progress', choices=STATUS_CHOICES, db_index=True)
+
+    # Capability-based authorization: high-entropy secret hash
+    session_secret_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text="SHA-256 hash of capability bearer token issued at session start."
+    )
 
     # Revision-ordered checkpoint tracking
     checkpoint_sequence = models.PositiveIntegerField(default=0)

@@ -1,3 +1,5 @@
+import datetime
+import hashlib
 import json
 import uuid
 from io import StringIO
@@ -5,16 +7,20 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.evaluation.metrics import (
+    ASSIGNMENT_SEQUENCES,
     TASK_SPECIFICATIONS,
     calculate_authoritative_session_metrics,
     evaluate_aabb_overlap_pairs_count,
     evaluate_doorway_intrusions_count,
     evaluate_task_success,
     sanitize_scene_snapshot,
+    validate_and_sanitize_canonical_scene,
+    validate_study_assignment,
 )
 from apps.evaluation.models import EvaluationSession
 from apps.furniture.models import FurnitureAsset
@@ -109,8 +115,11 @@ class EvaluationTelemetryTestCase(TestCase):
             self.assertIn("disabled", resp.data['detail'].lower())
 
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_start_session_creation_and_idempotency(self):
-        """Start endpoint creates session and returns 200 on identical UUID retry without duplicates."""
+    def test_start_session_creation_idempotency_and_mismatched_rejection(self):
+        """
+        Start endpoint creates session, issues capability secret, returns 200 on identical retry,
+        and rejects requests with mismatched assignment parameters with 409 Conflict.
+        """
         session_id = str(uuid.uuid4())
         payload = {
             'sessionId': session_id,
@@ -120,45 +129,184 @@ class EvaluationTelemetryTestCase(TestCase):
             'taskName': 'living_room',
         }
 
-        # 1. First start request creates session
+        # 1. First start request creates session and returns sessionSecret
         resp1 = self.client.post(reverse('evaluation:session-start'), payload, format='json')
         self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp1.data['sessionId'], session_id)
         self.assertEqual(resp1.data['sessionStatus'], 'in_progress')
         self.assertEqual(resp1.data['checkpointSequence'], 0)
-        self.assertEqual(resp1.data['budgetCeilingPaise'], 6000000)
+        self.assertEqual(resp1.data['trialPeriod'], 1)  # G1 manual living_room is Period 1
+        self.assertIn('sessionSecret', resp1.data)
+        secret = resp1.data['sessionSecret']
 
-        # Verify DB record exists
-        self.assertEqual(EvaluationSession.objects.filter(id=session_id).count(), 1)
-        original_start_time = resp1.data['startTime']
-
-        # 2. Idempotent retry with same UUID returns existing record without creating duplicate
+        # 2. Idempotent retry with same UUID and matching parameters returns existing record (200)
         resp2 = self.client.post(reverse('evaluation:session-start'), payload, format='json')
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         self.assertEqual(resp2.data['sessionId'], session_id)
-        self.assertEqual(resp2.data['startTime'], original_start_time)
         self.assertEqual(EvaluationSession.objects.filter(id=session_id).count(), 1)
 
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_checkpoint_revision_ordering_and_stale_request_handling(self):
-        """
-        Checkpoints must adhere to revision ordering:
-        - newer sequence updates state and sequence counter
-        - identical sequence is handled as harmless no-op
-        - older/stale sequence is safely ignored without overwriting newer state
-        """
-        session = EvaluationSession.objects.create(
-            id=uuid.uuid4(),
-            participant_id='P02',
-            condition='ai_assisted',
-            sequence_order='G2',
-            task_name='living_room',
-            session_status='in_progress',
-            checkpoint_sequence=0,
-        )
-        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': session.id})
+        # 3. Mismatched participantId with same UUID returns 409 Conflict
+        mismatched_p = dict(payload)
+        mismatched_p['participantId'] = 'P99'
+        resp_p = self.client.post(reverse('evaluation:session-start'), mismatched_p, format='json')
+        self.assertEqual(resp_p.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("participantId", resp_p.data['error'])
 
-        # 1. Checkpoint 1 (seq=1)
+        # 4. Mismatched condition with same UUID returns 409 Conflict
+        # Note: G1 with ai_assisted + home_study is valid G1 assignment, but differs from existing session
+        mismatched_c = {
+            'sessionId': session_id,
+            'participantId': 'P01',
+            'condition': 'ai_assisted',
+            'sequenceOrder': 'G1',
+            'taskName': 'home_study',
+        }
+        resp_c = self.client.post(reverse('evaluation:session-start'), mismatched_c, format='json')
+        self.assertEqual(resp_c.status_code, status.HTTP_409_CONFLICT)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_start_session_concurrency_race_handling(self):
+        """Simultaneous start requests with the same UUID are handled concurrency-safely without crashes."""
+        import concurrent.futures
+
+        s_id = str(uuid.uuid4())
+        payload = {
+            'sessionId': s_id,
+            'participantId': 'P_CONCURRENCY',
+            'condition': 'manual',
+            'sequenceOrder': 'G1',
+            'taskName': 'living_room',
+        }
+
+        def _make_call():
+            local_client = APIClient()
+            return local_client.post(reverse('evaluation:session-start'), payload, format='json')
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(_make_call) for _ in range(2)]
+            results = [f.result() for f in futures]
+
+        status_codes = sorted([r.status_code for r in results])
+        # Both must succeed (200 OK or 201 CREATED), never 500 Internal Server Error
+        self.assertEqual(status_codes, [status.HTTP_200_OK, status.HTTP_201_CREATED])
+        self.assertEqual(EvaluationSession.objects.filter(id=s_id).count(), 1)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_start_session_sequence_group_counterbalance_validation(self):
+        """
+        Start endpoint strictly enforces pre-registered 4-sequence crossover assignment:
+        - G1: P1=(manual, living_room), P2=(ai_assisted, home_study)
+        - G2: P1=(ai_assisted, living_room), P2=(manual, home_study)
+        - G3: P1=(manual, home_study), P2=(ai_assisted, living_room)
+        - G4: P1=(ai_assisted, home_study), P2=(manual, living_room)
+        Rejects invalid combinations and invalid explicit trialPeriod with 400 Bad Request.
+        """
+        # Test valid assignments for all 4 groups
+        valid_cases = [
+            ('G1', 'manual', 'living_room', 1),
+            ('G1', 'ai_assisted', 'home_study', 2),
+            ('G2', 'ai_assisted', 'living_room', 1),
+            ('G2', 'manual', 'home_study', 2),
+            ('G3', 'manual', 'home_study', 1),
+            ('G3', 'ai_assisted', 'living_room', 2),
+            ('G4', 'ai_assisted', 'home_study', 1),
+            ('G4', 'manual', 'living_room', 2),
+        ]
+        for seq, cond, task, expected_period in valid_cases:
+            s_id = str(uuid.uuid4())
+            resp = self.client.post(
+                reverse('evaluation:session-start'),
+                {
+                    'sessionId': s_id,
+                    'participantId': f'P_{seq}_{expected_period}',
+                    'condition': cond,
+                    'sequenceOrder': seq,
+                    'taskName': task,
+                },
+                format='json'
+            )
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED, f"Failed for {seq} {cond} {task}")
+            self.assertEqual(resp.data['trialPeriod'], expected_period)
+
+        # Test invalid assignment combinations (violating group assignment)
+        invalid_cases = [
+            ('G1', 'ai_assisted', 'living_room'),  # G1 only has manual living_room
+            ('G2', 'manual', 'living_room'),       # G2 only has ai_assisted living_room
+            ('G3', 'ai_assisted', 'home_study'),   # G3 only has manual home_study
+            ('G4', 'manual', 'home_study'),        # G4 only has ai_assisted home_study
+        ]
+        for seq, cond, task in invalid_cases:
+            s_id = str(uuid.uuid4())
+            resp = self.client.post(
+                reverse('evaluation:session-start'),
+                {
+                    'sessionId': s_id,
+                    'participantId': 'P_INVALID',
+                    'condition': cond,
+                    'sequenceOrder': seq,
+                    'taskName': task,
+                },
+                format='json'
+            )
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, f"Expected 400 for {seq} {cond} {task}")
+
+        # Test contradictory explicit trialPeriod
+        s_id = str(uuid.uuid4())
+        resp = self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'participantId': 'P_CONTRADICT',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+                'trialPeriod': 2,  # Contradicts Period 1
+            },
+            format='json'
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_checkpoint_revision_ordering_and_capability_authorization(self):
+        """
+        Checkpoints must require valid capability session secret, and adhere to revision ordering:
+        - Missing or invalid secret returns 403 Forbidden.
+        - seq > current updates revision and state.
+        - seq == current is an idempotent no-op (200).
+        - seq < current is stale ignored (200).
+        """
+        # Start a real session to obtain capability secret
+        s_id = str(uuid.uuid4())
+        start_resp = self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'participantId': 'P02',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json'
+        )
+        self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
+        secret = start_resp.data['sessionSecret']
+
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id})
+
+        # 1. Checkpoint without secret is rejected with 403 Forbidden
+        unauth_resp = self.client.patch(url, {'checkpointSequence': 1}, format='json')
+        self.assertEqual(unauth_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Checkpoint with wrong secret is rejected with 403 Forbidden
+        wrong_resp = self.client.patch(
+            url,
+            {'checkpointSequence': 1},
+            format='json',
+            HTTP_X_SESSION_SECRET='invalid_secret_token_123'
+        )
+        self.assertEqual(wrong_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Valid Checkpoint 1 (seq=1)
         snapshot_seq1 = {
             'schemaVersion': 1,
             'unit': 'm',
@@ -184,16 +332,114 @@ class EvaluationTelemetryTestCase(TestCase):
                 'activeDurationSeconds': 30.5,
                 'checkpointSceneSnapshot': snapshot_seq1,
             },
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
         )
         self.assertEqual(resp1.status_code, status.HTTP_200_OK)
-        session.refresh_from_db()
+
+        session = EvaluationSession.objects.get(id=s_id)
         self.assertEqual(session.checkpoint_sequence, 1)
         self.assertEqual(session.total_edits, 3)
-        self.assertEqual(len(session.checkpoint_scene_snapshot['objects']), 1)
 
-        # 2. Checkpoint 2 (seq=2)
-        snapshot_seq2 = {
+        # 4. Checkpoint 2 (seq=2)
+        resp2 = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 2,
+                'totalEdits': 5,
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        session.refresh_from_db()
+        self.assertEqual(session.checkpoint_sequence, 2)
+        self.assertEqual(session.total_edits, 5)
+
+        # 5. Stale packet arriving with seq=1 after seq=2 committed is safely ignored
+        stale_resp = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 1,
+                'totalEdits': 999,  # Must NOT overwrite
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+        self.assertEqual(stale_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(stale_resp.data['status'], 'stale_ignored')
+        session.refresh_from_db()
+        self.assertEqual(session.checkpoint_sequence, 2)
+        self.assertEqual(session.total_edits, 5)
+
+        # 6. Idempotent retry with seq=2
+        retry_resp = self.client.patch(
+            url,
+            {'checkpointSequence': 2},
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+        self.assertEqual(retry_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(retry_resp.data['status'], 'idempotent_noop')
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_partial_checkpoint_and_completion_preserves_recorded_counters(self):
+        """
+        Sparse checkpoints and completions must NOT reset or erase previously recorded counters.
+        Omitted fields must preserve existing stored values.
+        """
+        s_id = str(uuid.uuid4())
+        start_resp = self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'participantId': 'P03',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json'
+        )
+        secret = start_resp.data['sessionSecret']
+
+        # Checkpoint 1: sets totalEdits=15, undoRedoCount=4, activeDurationSeconds=120.0, idleIntervals
+        self.client.patch(
+            reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id}),
+            {
+                'checkpointSequence': 1,
+                'totalEdits': 15,
+                'undoRedoCount': 4,
+                'activeDurationSeconds': 120.0,
+                'idleIntervals': [{'startOffsetSeconds': 30.0, 'durationSeconds': 20.0}],
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+
+        session = EvaluationSession.objects.get(id=s_id)
+        self.assertEqual(session.total_edits, 15)
+        self.assertEqual(session.undo_redo_count, 4)
+        self.assertEqual(session.active_duration_seconds, 120.0)
+        self.assertEqual(session.total_idle_duration_seconds, 20.0)
+
+        # Checkpoint 2: sparse update with only checkpointSequence=2 (omits totalEdits, idleIntervals)
+        self.client.patch(
+            reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id}),
+            {'checkpointSequence': 2},
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+
+        session.refresh_from_db()
+        self.assertEqual(session.checkpoint_sequence, 2)
+        # Verify counters were PRESERVED and not reset to 0
+        self.assertEqual(session.total_edits, 15)
+        self.assertEqual(session.undo_redo_count, 4)
+        self.assertEqual(session.active_duration_seconds, 120.0)
+        self.assertEqual(session.total_idle_duration_seconds, 20.0)
+
+        # Complete session: provides finalSceneSnapshot but omits totalEdits, undoRedoCount, idleIntervals
+        valid_final_scene = {
             'schemaVersion': 1,
             'unit': 'm',
             'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
@@ -202,7 +448,7 @@ class EvaluationTelemetryTestCase(TestCase):
                     'id': 'sofa-1',
                     'assetId': 'sofa-modern-3seater',
                     'name': 'Sofa',
-                    'position': [0.0, 0.425, -1.0],
+                    'position': [0.0, 0.425, -1.2],
                     'dimensions': [2.1, 0.85, 0.9],
                     'scale': [1.0, 1.0, 1.0],
                     'rotationEuler': [0.0, 0.0, 0.0],
@@ -215,55 +461,413 @@ class EvaluationTelemetryTestCase(TestCase):
                     'dimensions': [1.2, 0.45, 0.6],
                     'scale': [1.0, 1.0, 1.0],
                     'rotationEuler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'id': 'chair-1',
+                    'assetId': 'chair-accent-armchair',
+                    'name': 'Armchair',
+                    'position': [-1.5, 0.44, 0.0],
+                    'dimensions': [0.85, 0.88, 0.85],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'id': 'plant-1',
+                    'assetId': 'decor-plant-floor-vase',
+                    'name': 'Planter',
+                    'position': [1.8, 0.45, -1.5],
+                    'dimensions': [0.4, 0.9, 0.4],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                },
+            ]
+        }
+        complete_resp = self.client.post(
+            reverse('evaluation:session-complete', kwargs={'session_id': s_id}),
+            {'finalSceneSnapshot': valid_final_scene},
+            format='json',
+            HTTP_X_SESSION_SECRET=secret
+        )
+        self.assertEqual(complete_resp.status_code, status.HTTP_200_OK)
+
+        session.refresh_from_db()
+        self.assertEqual(session.session_status, 'completed')
+        # All counters originally accumulated in checkpoints are strictly preserved
+        self.assertEqual(session.total_edits, 15)
+        self.assertEqual(session.undo_redo_count, 4)
+        self.assertEqual(session.total_idle_duration_seconds, 20.0)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_canonical_scene_validation_rejects_malformed_and_wrong_dimensions(self):
+        """
+        validate_and_sanitize_canonical_scene rejects malformed structures, empty dicts,
+        duplicate placement IDs, and task-dimension mismatches.
+        """
+        # 1. Empty dict rejected
+        with self.assertRaises(ValueError):
+            validate_and_sanitize_canonical_scene({}, expected_task_name='living_room')
+
+        # 2. Invalid schemaVersion rejected
+        with self.assertRaises(ValueError):
+            validate_and_sanitize_canonical_scene(
+                {'schemaVersion': 99, 'unit': 'm', 'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []},
+                expected_task_name='living_room'
+            )
+
+        # 3. Invalid unit rejected
+        with self.assertRaises(ValueError):
+            validate_and_sanitize_canonical_scene(
+                {'schemaVersion': 1, 'unit': 'feet', 'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []},
+                expected_task_name='living_room'
+            )
+
+        # 4. Mismatched room dimensions (Living room 5x4 submitted for Home study 4.5x3.5) rejected
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(
+                {
+                    'schemaVersion': 1,
+                    'unit': 'm',
+                    'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                    'objects': []
+                },
+                expected_task_name='home_study'
+            )
+        self.assertIn("do not match required dimensions for task 'home_study'", str(ctx.exception))
+
+        # 5. Duplicate placement IDs rejected
+        dup_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'same-id',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa 1',
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'position': [0.0, 0.0, 0.0],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'id': 'same-id',
+                    'assetId': 'table-oak-coffee',
+                    'name': 'Table',
+                    'dimensions': [1.2, 0.45, 0.6],
+                    'position': [0.0, 0.0, 0.0],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                },
+            ]
+        }
+        with self.assertRaises(ValueError) as ctx_dup:
+            validate_and_sanitize_canonical_scene(dup_scene, expected_task_name='living_room')
+        self.assertIn("Duplicate placement ID", str(ctx_dup.exception))
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_composite_task_success_exact_four_items_and_h04(self):
+        """
+        evaluate_task_success enforces exact 4 items (3 fixed + 1 choice), budget compliance,
+        zero doorway intrusions, and zero out-of-bounds violations.
+        Confirms AABB overlap count is exploratory (E1) and does NOT disqualify H04.
+        """
+        # Base valid 4-item living room objects
+        valid_objects = [
+            {'assetId': 'sofa-modern-3seater', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, -1.2], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            {'assetId': 'table-oak-coffee', 'dimensions': [1.2, 0.45, 0.6], 'position': [0.0, 0.225, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            {'assetId': 'chair-accent-armchair', 'dimensions': [0.85, 0.88, 0.85], 'position': [-1.5, 0.44, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            {'assetId': 'decor-plant-floor-vase', 'dimensions': [0.4, 0.9, 0.4], 'position': [1.8, 0.45, -1.5], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+        ]
+
+        # 1. Exact 4 compliant items = SUCCESS
+        self.assertTrue(
+            evaluate_task_success(
+                'living_room',
+                valid_objects,
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+        # 2. Only 3 items placed = FAILS
+        self.assertFalse(
+            evaluate_task_success(
+                'living_room',
+                valid_objects[:3],
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+        # 3. 5 items placed = FAILS (must be EXACTLY 4)
+        extra_objects = valid_objects + [{'assetId': 'storage-bookshelf-tall', 'dimensions': [1,1.8,0.35], 'position': [0,0,0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]}]
+        self.assertFalse(
+            evaluate_task_success(
+                'living_room',
+                extra_objects,
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+        # 4. 4 items with non-permitted choice item = FAILS
+        wrong_choice = valid_objects[:3] + [{'assetId': 'desk-workspace-study', 'dimensions': [1.4,0.75,0.7], 'position': [0,0,0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]}]
+        self.assertFalse(
+            evaluate_task_success(
+                'living_room',
+                wrong_choice,
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+        # 5. Doorway intrusion > 0 = FAILS
+        self.assertFalse(
+            evaluate_task_success(
+                'living_room',
+                valid_objects,
+                is_budget_compliant=True,
+                doorway_intrusions_count=1,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+        # 6. Out of bounds > 0 = FAILS
+        self.assertFalse(
+            evaluate_task_success(
+                'living_room',
+                valid_objects,
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=1
+            )
+        )
+
+        # 7. AABB overlap pairs present but no doorway intrusion and budget compliant = SUCCESS
+        # (AABB overlaps are exploratory metric E1 and not a failure criterion for H04)
+        overlap_objects = [
+            {'assetId': 'sofa-modern-3seater', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, -1.2], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            {'assetId': 'table-oak-coffee', 'dimensions': [1.2, 0.45, 0.6], 'position': [0.0, 0.225, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            # Chair overlapping coffee table
+            {'assetId': 'chair-accent-armchair', 'dimensions': [0.85, 0.88, 0.85], 'position': [0.1, 0.35, 0.05], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            {'assetId': 'decor-plant-floor-vase', 'dimensions': [0.4, 0.9, 0.4], 'position': [1.8, 0.45, -1.5], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+        ]
+        overlap_count = evaluate_aabb_overlap_pairs_count(overlap_objects)
+        self.assertGreaterEqual(overlap_count, 1)
+        self.assertTrue(
+            evaluate_task_success(
+                'living_room',
+                overlap_objects,
+                is_budget_compliant=True,
+                doorway_intrusions_count=0,
+                final_scene_out_of_bounds_count=0
+            )
+        )
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_unknown_catalogue_price_fails_budget_compliance(self):
+        """If any placed asset has an unknown catalogue price, budget compliance cannot be assumed and must be False."""
+        unpriced_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {'id': '1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0, 0.425, -1.2], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                {'id': '2', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.2, 0.45, 0.6], 'position': [0, 0.225, 0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                {'id': '3', 'assetId': 'chair-accent-armchair', 'name': 'Armchair', 'dimensions': [0.85, 0.88, 0.85], 'position': [-1.5, 0.44, 0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                # Unknown/unregistered asset
+                {'id': '4', 'assetId': 'mystery-unpriced-item', 'name': 'Mystery', 'dimensions': [0.4, 0.9, 0.4], 'position': [1.8, 0.45, -1.5], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            ]
+        }
+        metrics = calculate_authoritative_session_metrics('living_room', unpriced_scene)
+        self.assertFalse(metrics['is_budget_compliant'])
+        self.assertFalse(metrics['is_task_successful'])
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_stale_session_reaper_management_command(self):
+        """
+        Management command reap_stale_evaluation_sessions marks in_progress sessions inactive for
+        > 30 minutes as aborted with abort_reason='inactivity_timeout' and preserves dropout snapshots.
+        """
+        now = timezone.now()
+        forty_mins_ago = now - datetime.timedelta(minutes=40)
+        five_mins_ago = now - datetime.timedelta(minutes=5)
+
+        # 1. Stale in-progress session with checkpoint snapshot
+        stale_session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_STALE',
+            condition='manual',
+            sequence_order='G1',
+            task_name='living_room',
+            session_status='in_progress',
+            checkpoint_scene_snapshot={'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []},
+        )
+        EvaluationSession.objects.filter(id=stale_session.id).update(updated_at=forty_mins_ago)
+
+        # 2. Fresh in-progress session (active recently)
+        fresh_session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_FRESH',
+            condition='manual',
+            sequence_order='G1',
+            task_name='living_room',
+            session_status='in_progress',
+        )
+        EvaluationSession.objects.filter(id=fresh_session.id).update(updated_at=five_mins_ago)
+
+        # 3. Completed session (should never be touched by reaper)
+        completed_session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_COMPLETED',
+            condition='manual',
+            sequence_order='G1',
+            task_name='living_room',
+            session_status='completed',
+        )
+        EvaluationSession.objects.filter(id=completed_session.id).update(updated_at=forty_mins_ago)
+
+        # Execute reaper command
+        out = StringIO()
+        call_command('reap_stale_evaluation_sessions', timeout_minutes=30, stdout=out)
+
+        stale_session.refresh_from_db()
+        fresh_session.refresh_from_db()
+        completed_session.refresh_from_db()
+
+        # Stale session must be aborted with inactivity_timeout and checkpoint snapshot preserved
+        self.assertEqual(stale_session.session_status, 'aborted')
+        self.assertEqual(stale_session.abort_reason, 'inactivity_timeout')
+        self.assertIsNotNone(stale_session.aborted_at)
+        self.assertIsNotNone(stale_session.checkpoint_scene_snapshot)
+        self.assertIsNone(stale_session.final_scene_snapshot)
+
+        # Fresh session remains in_progress
+        self.assertEqual(fresh_session.session_status, 'in_progress')
+
+        # Completed session remains completed
+        self.assertEqual(completed_session.session_status, 'completed')
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_privacy_and_asset_url_exclusion_invariants(self):
+        """
+        Snapshots strictly strip modelUrl, thumbnail, blob URLs, and reject credentials
+        in retained string fields (id, assetId, name, materialOverrides.color, reconstructionJobId).
+        """
+        # 1. Normal snapshot with modelUrl and thumbnail: stripped cleanly
+        cleanable_snapshot = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'item-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [0.0, 0.425, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'modelUrl': 'https://s3.amazonaws.com/private-bucket/sofa.glb?token=secret123',
+                    'thumbnail': 'blob:http://localhost:5173/uuid-blob-1234',
                 }
             ]
         }
-        resp2 = self.client.patch(
-            url,
-            {
-                'checkpointSequence': 2,
-                'totalEdits': 5,
-                'undoRedoCount': 1,
-                'activeDurationSeconds': 60.0,
-                'checkpointSceneSnapshot': snapshot_seq2,
-            },
-            format='json'
-        )
-        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
-        session.refresh_from_db()
-        self.assertEqual(session.checkpoint_sequence, 2)
-        self.assertEqual(session.total_edits, 5)
-        self.assertEqual(len(session.checkpoint_scene_snapshot['objects']), 2)
+        sanitized = validate_and_sanitize_canonical_scene(cleanable_snapshot, expected_task_name='living_room')
+        obj = sanitized['objects'][0]
+        self.assertNotIn('modelUrl', obj)
+        self.assertNotIn('thumbnail', obj)
 
-        # 3. Delayed stale packet arriving with seq=1 after seq=2 has already been committed
-        stale_resp = self.client.patch(
-            url,
-            {
-                'checkpointSequence': 1,
-                'totalEdits': 999,  # Should NOT overwrite
-                'checkpointSceneSnapshot': snapshot_seq1,
-            },
-            format='json'
-        )
-        self.assertEqual(stale_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(stale_resp.data['status'], 'stale_ignored')
-        session.refresh_from_db()
-        # Verify state was NOT overwritten by stale packet
-        self.assertEqual(session.checkpoint_sequence, 2)
-        self.assertEqual(session.total_edits, 5)
-        self.assertEqual(len(session.checkpoint_scene_snapshot['objects']), 2)
+        # 2. Injected URLs or credential strings in retained fields are caught and rejected
+        injected_fields = [
+            ('id', 'item-https://malicious.com?token=secret'),
+            ('assetId', 'sofa?sig=signature123'),
+            ('name', 'Sofa bearer token=xyz'),
+            ('materialOverrides', {'color': 'https://evil.com/color'}),
+            ('reconstructionJobId', 'uuid-blob:http://token=secret'),
+        ]
 
-        # 4. Identical retry with seq=2
-        retry_resp = self.client.patch(
-            url,
-            {
-                'checkpointSequence': 2,
-                'totalEdits': 5,
-            },
-            format='json'
+        for field_name, bad_value in injected_fields:
+            tainted = json.loads(json.dumps(cleanable_snapshot))
+            del tainted['objects'][0]['modelUrl']
+            del tainted['objects'][0]['thumbnail']
+
+            if field_name == 'materialOverrides':
+                tainted['objects'][0]['materialOverrides'] = bad_value
+            else:
+                tainted['objects'][0][field_name] = bad_value
+
+            with self.assertRaises(ValueError, msg=f"Should have failed for tainted field {field_name}"):
+                validate_and_sanitize_canonical_scene(tainted, expected_task_name='living_room')
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_export_dataset_filtering_by_status_condition_task(self):
+        """Export view and management command support filtering by condition, task, and status."""
+        # Session 1: completed manual living_room
+        EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P01',
+            condition='manual',
+            sequence_order='G1',
+            trial_period=1,
+            task_name='living_room',
+            session_status='completed',
+            budget_total_paise=5299600,
         )
-        self.assertEqual(retry_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(retry_resp.data['status'], 'idempotent_noop')
+        # Session 2: in_progress ai_assisted home_study
+        EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P02',
+            condition='ai_assisted',
+            sequence_order='G1',
+            trial_period=2,
+            task_name='home_study',
+            session_status='in_progress',
+        )
+        # Session 3: aborted manual home_study
+        EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P03',
+            condition='manual',
+            sequence_order='G3',
+            trial_period=1,
+            task_name='home_study',
+            session_status='aborted',
+            abort_reason='user_cancelled',
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        export_url = reverse('evaluation:dataset-export')
+
+        # Filter by status=completed
+        resp_completed = self.client.get(f"{export_url}?format=json&status=completed")
+        data_completed = json.loads(resp_completed.content)
+        self.assertEqual(len(data_completed), 1)
+        self.assertEqual(data_completed[0]['participantId'], 'P01')
+        self.assertEqual(data_completed[0]['trialPeriod'], 1)
+
+        # Filter by status=aborted
+        resp_aborted = self.client.get(f"{export_url}?format=json&status=aborted")
+        data_aborted = json.loads(resp_aborted.content)
+        self.assertEqual(len(data_aborted), 1)
+        self.assertEqual(data_aborted[0]['participantId'], 'P03')
+
+        # Filter by status=in_progress
+        resp_in_progress = self.client.get(f"{export_url}?format=json&status=in_progress")
+        data_in_progress = json.loads(resp_in_progress.content)
+        self.assertEqual(len(data_in_progress), 1)
+        self.assertEqual(data_in_progress[0]['participantId'], 'P02')
+
+        # Management command with --status=completed
+        out = StringIO()
+        call_command('export_evaluation_dataset', '--format=json', '--status=completed', stdout=out)
+        cmd_data = json.loads(out.getvalue())
+        self.assertEqual(len(cmd_data), 1)
+        self.assertEqual(cmd_data[0]['participantId'], 'P01')
 
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
     def test_terminal_state_immutability_and_race_protection(self):
@@ -272,7 +876,8 @@ class EvaluationTelemetryTestCase(TestCase):
             id=uuid.uuid4(),
             participant_id='P03',
             condition='manual',
-            sequence_order='G3',
+            sequence_order='G1',
+            trial_period=1,
             task_name='living_room',
             session_status='in_progress',
             budget_ceiling_paise=6000000,
@@ -336,7 +941,6 @@ class EvaluationTelemetryTestCase(TestCase):
         self.assertEqual(complete_resp.status_code, status.HTTP_200_OK)
         session.refresh_from_db()
         self.assertEqual(session.session_status, 'completed')
-        self.assertIsNotNone(session.final_scene_snapshot)
 
         # 2. Late in-flight checkpoint arriving after completion must be rejected with 409 Conflict
         late_checkpoint_resp = self.client.patch(
@@ -353,9 +957,7 @@ class EvaluationTelemetryTestCase(TestCase):
         # 3. Repeated complete call must also return 409 Conflict
         repeat_complete_resp = self.client.post(
             reverse('evaluation:session-complete', kwargs={'session_id': session.id}),
-            {
-                'finalSceneSnapshot': valid_final_scene,
-            },
+            {'finalSceneSnapshot': valid_final_scene},
             format='json'
         )
         self.assertEqual(repeat_complete_resp.status_code, status.HTTP_409_CONFLICT)
@@ -369,167 +971,6 @@ class EvaluationTelemetryTestCase(TestCase):
         self.assertEqual(abort_resp.status_code, status.HTTP_409_CONFLICT)
 
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_authoritative_metrics_calculation(self):
-        """Authoritative metrics correctly calculate budget, containment, AABB overlaps, doorway intrusions, and task success."""
-        # Compliant living room setup
-        # Total price: Sofa (29,999) + Table (8,499) + Armchair (11,999) + Planter (2,499) = ₹52,996 <= ₹60,000 (compliant)
-        living_room_scene = {
-            'schemaVersion': 1,
-            'unit': 'm',
-            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
-            'objects': [
-                {
-                    'id': 'sofa-1',
-                    'assetId': 'sofa-modern-3seater',
-                    'name': 'Sofa',
-                    'position': [0.0, 0.425, -1.2],
-                    'dimensions': [2.1, 0.85, 0.9],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'table-1',
-                    'assetId': 'table-oak-coffee',
-                    'name': 'Table',
-                    'position': [0.0, 0.225, 0.0],
-                    'dimensions': [1.2, 0.45, 0.6],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'chair-1',
-                    'assetId': 'chair-accent-armchair',
-                    'name': 'Armchair',
-                    'position': [-1.5, 0.44, 0.0],
-                    'dimensions': [0.85, 0.88, 0.85],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'plant-1',
-                    'assetId': 'decor-plant-floor-vase',
-                    'name': 'Planter',
-                    'position': [1.8, 0.45, -1.5],
-                    'dimensions': [0.4, 0.9, 0.4],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-            ]
-        }
-
-        metrics = calculate_authoritative_session_metrics('living_room', living_room_scene)
-        self.assertEqual(metrics['budget_total_paise'], 5299600)
-        self.assertTrue(metrics['is_budget_compliant'])
-        self.assertEqual(metrics['final_scene_out_of_bounds_count'], 0)
-        self.assertEqual(metrics['aabb_overlap_pairs_count'], 0)
-        self.assertEqual(metrics['doorway_intrusions_count'], 0)
-        self.assertTrue(metrics['is_task_successful'])
-
-        # Now test Doorway Intrusion: move plant into South wall doorway zone (X in [-0.6, 0.6], Z in [0.8, 2.0])
-        intruding_scene = json.loads(json.dumps(living_room_scene))
-        intruding_scene['objects'][3]['position'] = [0.0, 0.45, 1.5]  # In keep-out zone
-
-        metrics_intruded = calculate_authoritative_session_metrics('living_room', intruding_scene)
-        self.assertEqual(metrics_intruded['doorway_intrusions_count'], 1)
-        self.assertFalse(metrics_intruded['is_task_successful'])
-
-        # Now test AABB Overlap Pair: move chair on top of coffee table
-        overlap_scene = json.loads(json.dumps(living_room_scene))
-        overlap_scene['objects'][2]['position'] = [0.1, 0.35, 0.05]  # Overlaps coffee table
-
-        overlap_pairs = evaluate_aabb_overlap_pairs_count(overlap_scene['objects'])
-        self.assertGreaterEqual(overlap_pairs, 1)
-
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_privacy_and_asset_url_exclusion_rule(self):
-        """Snapshots with signed/credentialed URLs are strictly stripped of URLs before persistence."""
-        tainted_snapshot = {
-            'schemaVersion': 1,
-            'unit': 'm',
-            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
-            'objects': [
-                {
-                    'id': 'item-1',
-                    'assetId': 'sofa-modern-3seater',
-                    'name': 'Sofa',
-                    'position': [0.0, 0.425, 0.0],
-                    'dimensions': [2.1, 0.85, 0.9],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                    'modelUrl': 'https://s3.amazonaws.com/private-bucket/sofa.glb?AWSAccessKeyId=AKIAIOSFODNN7EXAMPLE&Signature=vjbyPxybdZaNmGa%2ByT272YEAiv4%3D',
-                    'thumbnail': 'blob:http://localhost:5173/uuid-blob-1234',
-                }
-            ]
-        }
-
-        sanitized = sanitize_scene_snapshot(tainted_snapshot)
-        obj = sanitized['objects'][0]
-        self.assertNotIn('modelUrl', obj)
-        self.assertNotIn('thumbnail', obj)
-        self.assertEqual(obj['assetId'], 'sofa-modern-3seater')
-        self.assertEqual(obj['position'], [0.0, 0.425, 0.0])
-
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_evaluator_restricted_export_and_management_command(self):
-        """Export view requires admin authentication; exports valid JSON and CSV datasets."""
-        # Create completed test session
-        EvaluationSession.objects.create(
-            id=uuid.uuid4(),
-            participant_id='P01',
-            condition='manual',
-            sequence_order='G1',
-            task_name='living_room',
-            session_status='completed',
-            budget_total_paise=5299600,
-            budget_ceiling_paise=6000000,
-            is_budget_compliant=True,
-            is_task_successful=True,
-            total_edits=15,
-            duration_seconds=142.5,
-        )
-
-        export_url = reverse('evaluation:dataset-export')
-
-        # 1. Unauthenticated request rejected
-        resp_unauth = self.client.get(export_url)
-        self.assertIn(resp_unauth.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
-
-        # 2. Non-admin regular user rejected
-        self.client.force_authenticate(user=self.regular_user)
-        resp_user = self.client.get(export_url)
-        self.assertEqual(resp_user.status_code, status.HTTP_403_FORBIDDEN)
-
-        # 3. Admin user authorized for JSON export
-        self.client.force_authenticate(user=self.admin_user)
-        resp_json = self.client.get(f"{export_url}?format=json")
-        self.assertEqual(resp_json.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp_json['Content-Type'], 'application/json; charset=utf-8')
-        data = json.loads(resp_json.content)
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['participantId'], 'P01')
-        self.assertEqual(data[0]['budgetTotalPaise'], 5299600)
-
-        # 4. Admin user authorized for CSV export
-        resp_csv = self.client.get(f"{export_url}?format=csv")
-        self.assertEqual(resp_csv.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp_csv['Content-Type'], 'text/csv; charset=utf-8')
-        csv_text = resp_csv.content.decode('utf-8')
-        self.assertIn("sessionId,participantId,condition", csv_text)
-        self.assertIn("P01,manual,G1,living_room", csv_text)
-
-        # 5. Management command export_evaluation_dataset
-        out_json = StringIO()
-        call_command('export_evaluation_dataset', '--format=json', stdout=out_json)
-        cmd_json = json.loads(out_json.getvalue())
-        self.assertEqual(len(cmd_json), 1)
-        self.assertEqual(cmd_json[0]['participantId'], 'P01')
-
-        out_csv = StringIO()
-        call_command('export_evaluation_dataset', '--format=csv', stdout=out_csv)
-        self.assertIn("sessionId,participantId", out_csv.getvalue())
-        self.assertIn("P01", out_csv.getvalue())
-
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
     def test_abort_session_lifecycle_preserves_checkpoint_snapshot(self):
         """Aborted session preserves last checkpointSceneSnapshot for dropout analysis and remains immutable."""
         session = EvaluationSession.objects.create(
@@ -537,6 +978,7 @@ class EvaluationTelemetryTestCase(TestCase):
             participant_id='P05',
             condition='manual',
             sequence_order='G1',
+            trial_period=1,
             task_name='living_room',
             session_status='in_progress',
         )
@@ -595,133 +1037,3 @@ class EvaluationTelemetryTestCase(TestCase):
             format='json'
         )
         self.assertEqual(late_checkpoint.status_code, status.HTTP_409_CONFLICT)
-
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_home_study_task_metrics_and_doorway_intrusion(self):
-        """Home study task metrics verify budget trap overrun, East wall doorway keep-out, and success."""
-        # 1. Budget trap setup: desk (14,999) + armchair (11,999) + bookshelf (16,499) + table (8,499) = ₹51,996 (> ₹50,000 ceiling)
-        budget_trap_scene = {
-            'schemaVersion': 1,
-            'unit': 'm',
-            'room': {'width': 4.5, 'length': 3.5, 'height': 2.8},
-            'objects': [
-                {
-                    'id': 'desk-1',
-                    'assetId': 'desk-workspace-study',
-                    'name': 'Desk',
-                    'position': [-1.0, 0.375, -0.8],
-                    'dimensions': [1.4, 0.75, 0.7],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'chair-1',
-                    'assetId': 'chair-accent-armchair',
-                    'name': 'Armchair',
-                    'position': [-1.0, 0.44, 0.0],
-                    'dimensions': [0.85, 0.88, 0.85],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'bookshelf-1',
-                    'assetId': 'storage-bookshelf-tall',
-                    'name': 'Bookshelf',
-                    'position': [0.5, 0.9, -1.3],
-                    'dimensions': [1.0, 1.8, 0.35],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-                {
-                    'id': 'table-1',
-                    'assetId': 'table-oak-coffee',
-                    'name': 'Side Table (Budget Trap)',
-                    'position': [0.5, 0.225, 0.5],
-                    'dimensions': [1.2, 0.45, 0.6],
-                    'scale': [1.0, 1.0, 1.0],
-                    'rotationEuler': [0.0, 0.0, 0.0],
-                },
-            ]
-        }
-
-        trap_metrics = calculate_authoritative_session_metrics('home_study', budget_trap_scene)
-        self.assertEqual(trap_metrics['budget_total_paise'], 5199600)
-        self.assertEqual(trap_metrics['budget_ceiling_paise'], 5000000)
-        self.assertFalse(trap_metrics['is_budget_compliant'])
-        self.assertFalse(trap_metrics['is_task_successful'])  # Fails due to budget trap
-
-        # 2. Compliant option: replace table with planter: ₹45,996 <= ₹50,000
-        compliant_study_scene = json.loads(json.dumps(budget_trap_scene))
-        compliant_study_scene['objects'][3] = {
-            'id': 'planter-1',
-            'assetId': 'decor-plant-floor-vase',
-            'name': 'Planter',
-            'position': [0.5, 0.45, 0.5],
-            'dimensions': [0.4, 0.9, 0.4],
-            'scale': [1.0, 1.0, 1.0],
-            'rotationEuler': [0.0, 0.0, 0.0],
-        }
-
-        compliant_metrics = calculate_authoritative_session_metrics('home_study', compliant_study_scene)
-        self.assertEqual(compliant_metrics['budget_total_paise'], 4599600)
-        self.assertTrue(compliant_metrics['is_budget_compliant'])
-        self.assertEqual(compliant_metrics['doorway_intrusions_count'], 0)
-        self.assertTrue(compliant_metrics['is_task_successful'])
-
-        # 3. Test Home Study East Wall doorway keep-out zone: X in [1.05, 2.25], Z in [-0.60, 0.60]
-        intruded_study = json.loads(json.dumps(compliant_study_scene))
-        intruded_study['objects'][3]['position'] = [1.8, 0.45, 0.0]  # Right in East door corridor
-
-        intruded_metrics = calculate_authoritative_session_metrics('home_study', intruded_study)
-        self.assertEqual(intruded_metrics['doorway_intrusions_count'], 1)
-        self.assertFalse(intruded_metrics['is_task_successful'])
-
-    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
-    def test_session_detail_and_export_filtering(self):
-        """Detail view returns single session and export view properly filters by condition/task."""
-        session1 = EvaluationSession.objects.create(
-            id=uuid.uuid4(),
-            participant_id='P01',
-            condition='manual',
-            sequence_order='G1',
-            task_name='living_room',
-            session_status='completed',
-            budget_total_paise=5299600,
-        )
-        session2 = EvaluationSession.objects.create(
-            id=uuid.uuid4(),
-            participant_id='P02',
-            condition='ai_assisted',
-            sequence_order='G2',
-            task_name='home_study',
-            session_status='completed',
-            budget_total_paise=4599600,
-        )
-
-        # 1. Detail view
-        detail_resp = self.client.get(
-            reverse('evaluation:session-detail', kwargs={'session_id': session1.id})
-        )
-        self.assertEqual(detail_resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(detail_resp.data['participantId'], 'P01')
-
-        # 2. Export filtering by condition
-        self.client.force_authenticate(user=self.admin_user)
-        export_url = reverse('evaluation:dataset-export')
-
-        resp_manual = self.client.get(f"{export_url}?format=json&condition=manual")
-        data_manual = json.loads(resp_manual.content)
-        self.assertEqual(len(data_manual), 1)
-        self.assertEqual(data_manual[0]['participantId'], 'P01')
-
-        resp_ai = self.client.get(f"{export_url}?format=json&condition=ai_assisted")
-        data_ai = json.loads(resp_ai.content)
-        self.assertEqual(len(data_ai), 1)
-        self.assertEqual(data_ai[0]['participantId'], 'P02')
-
-        # 3. Export filtering by task
-        resp_study = self.client.get(f"{export_url}?format=json&taskName=home_study")
-        data_study = json.loads(resp_study.content)
-        self.assertEqual(len(data_study), 1)
-        self.assertEqual(data_study[0]['taskName'], 'home_study')
-

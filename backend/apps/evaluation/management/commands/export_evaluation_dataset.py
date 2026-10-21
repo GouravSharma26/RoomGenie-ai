@@ -35,18 +35,28 @@ class Command(BaseCommand):
             default=None,
             help="Filter by experimental task."
         )
+        parser.add_argument(
+            '--status',
+            type=str,
+            choices=['in_progress', 'completed', 'aborted'],
+            default=None,
+            help="Filter by session status."
+        )
 
     def handle(self, *args, **options):
         export_format = options['format']
         output_path = options['output']
         condition = options['condition']
         task = options['task']
+        status_filter = options.get('status')
 
         queryset = EvaluationSession.objects.all().order_by('start_time')
         if condition:
             queryset = queryset.filter(condition=condition)
         if task:
             queryset = queryset.filter(task_name=task)
+        if status_filter:
+            queryset = queryset.filter(session_status=status_filter)
 
         count = queryset.count()
 

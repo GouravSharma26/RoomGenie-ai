@@ -47,6 +47,7 @@ class ExperimentSessionRecordSerializer(serializers.ModelSerializer):
     agentTier2SchemaValidCount = serializers.IntegerField(source='agent_tier2_schema_valid_count')
     agentTier3DomainValidCount = serializers.IntegerField(source='agent_tier3_domain_valid_count')
 
+    trialPeriod = serializers.IntegerField(source='trial_period')
     checkpointSceneSnapshot = serializers.JSONField(source='checkpoint_scene_snapshot', allow_null=True)
     finalSceneSnapshot = serializers.JSONField(source='final_scene_snapshot', allow_null=True)
 
@@ -58,6 +59,7 @@ class ExperimentSessionRecordSerializer(serializers.ModelSerializer):
             'participantId',
             'condition',
             'sequenceOrder',
+            'trialPeriod',
             'taskName',
             'sessionStatus',
             'checkpointSequence',
@@ -100,38 +102,75 @@ class StartSessionSerializer(serializers.Serializer):
     condition = serializers.ChoiceField(choices=['manual', 'ai_assisted'], required=True)
     sequenceOrder = serializers.ChoiceField(choices=['G1', 'G2', 'G3', 'G4'], required=True)
     taskName = serializers.ChoiceField(choices=['living_room', 'home_study'], required=True)
+    trialPeriod = serializers.IntegerField(min_value=1, max_value=2, required=False)
+
+    def validate(self, attrs):
+        from apps.evaluation.metrics import validate_study_assignment
+        try:
+            validated_period = validate_study_assignment(
+                sequence_order=attrs['sequenceOrder'],
+                condition=attrs['condition'],
+                task_name=attrs['taskName'],
+                trial_period=attrs.get('trialPeriod')
+            )
+            attrs['trialPeriod'] = validated_period
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+        return attrs
+
+
+def _validate_idle_intervals(intervals: list) -> list[dict]:
+    cleaned = []
+    for idx, item in enumerate(intervals):
+        if not isinstance(item, dict):
+            raise serializers.ValidationError(f"idleIntervals[{idx}] must be a JSON object.")
+        start = item.get('startOffsetSeconds')
+        dur = item.get('durationSeconds')
+        if start is None or not isinstance(start, (int, float)) or start < 0:
+            raise serializers.ValidationError(f"idleIntervals[{idx}].startOffsetSeconds must be a non-negative number.")
+        if dur is None or not isinstance(dur, (int, float)) or dur <= 0:
+            raise serializers.ValidationError(f"idleIntervals[{idx}].durationSeconds must be a positive number.")
+        cleaned.append({
+            'startOffsetSeconds': float(start),
+            'durationSeconds': float(dur),
+        })
+    return cleaned
 
 
 class CheckpointSessionSerializer(serializers.Serializer):
     checkpointSequence = serializers.IntegerField(min_value=1, required=True)
-    activeDurationSeconds = serializers.FloatField(min_value=0.0, required=False, default=0.0)
-    totalEdits = serializers.IntegerField(min_value=0, required=False, default=0)
-    undoRedoCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    attemptedOutOfBoundsCount = serializers.IntegerField(min_value=0, required=False, default=0)
+    activeDurationSeconds = serializers.FloatField(min_value=0.0, required=False)
+    totalEdits = serializers.IntegerField(min_value=0, required=False)
+    undoRedoCount = serializers.IntegerField(min_value=0, required=False)
+    attemptedOutOfBoundsCount = serializers.IntegerField(min_value=0, required=False)
     idleIntervals = serializers.ListField(
         child=serializers.DictField(),
-        required=False,
-        default=list
+        required=False
     )
-    checkpointSceneSnapshot = serializers.DictField(required=False, allow_null=True, default=None)
+    checkpointSceneSnapshot = serializers.DictField(required=False, allow_null=True)
+
+    def validate_idleIntervals(self, value):
+        return _validate_idle_intervals(value)
 
 
 class CompleteSessionSerializer(serializers.Serializer):
     finalSceneSnapshot = serializers.DictField(required=True)
-    activeDurationSeconds = serializers.FloatField(min_value=0.0, required=False, default=0.0)
-    totalEdits = serializers.IntegerField(min_value=0, required=False, default=0)
-    undoRedoCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    attemptedOutOfBoundsCount = serializers.IntegerField(min_value=0, required=False, default=0)
+    activeDurationSeconds = serializers.FloatField(min_value=0.0, required=False)
+    totalEdits = serializers.IntegerField(min_value=0, required=False)
+    undoRedoCount = serializers.IntegerField(min_value=0, required=False)
+    attemptedOutOfBoundsCount = serializers.IntegerField(min_value=0, required=False)
     idleIntervals = serializers.ListField(
         child=serializers.DictField(),
-        required=False,
-        default=list
+        required=False
     )
-    agentProposalsCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    agentAcceptedCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    agentTier1SuccessCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    agentTier2SchemaValidCount = serializers.IntegerField(min_value=0, required=False, default=0)
-    agentTier3DomainValidCount = serializers.IntegerField(min_value=0, required=False, default=0)
+    agentProposalsCount = serializers.IntegerField(min_value=0, required=False)
+    agentAcceptedCount = serializers.IntegerField(min_value=0, required=False)
+    agentTier1SuccessCount = serializers.IntegerField(min_value=0, required=False)
+    agentTier2SchemaValidCount = serializers.IntegerField(min_value=0, required=False)
+    agentTier3DomainValidCount = serializers.IntegerField(min_value=0, required=False)
+
+    def validate_idleIntervals(self, value):
+        return _validate_idle_intervals(value)
 
 
 class AbortSessionSerializer(serializers.Serializer):
