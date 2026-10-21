@@ -190,8 +190,12 @@ class EvaluationTelemetryTestCase(TestCase):
         }
 
         def _make_call():
-            local_client = APIClient()
-            return local_client.post(reverse('evaluation:session-start'), payload, format='json')
+            try:
+                local_client = APIClient()
+                return local_client.post(reverse('evaluation:session-start'), payload, format='json')
+            finally:
+                from django.db import connections
+                connections.close_all()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             futures = [executor.submit(_make_call) for _ in range(2)]
