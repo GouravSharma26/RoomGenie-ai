@@ -15,13 +15,35 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 - **Primary Research Question (RQ1):**  
   *Does an AI-assisted interactive 3D interior design workflow change completion time, task success, budget compliance, and perceived usability compared with manual use of the same 3D editor?*
 
-#### Primary Confirmatory Hypotheses (Pre-Registered Tests)
-1. **$H_{01}$ (Completion Time):** Task completion time (seconds) does not differ between Manual (Condition A) and AI-Assisted (Condition B) workflows (tested via paired $t$-test or Wilcoxon signed-rank test).
-2. **$H_{02}$ (Perceived Usability):** System Usability Scale (SUS) composite score ($0–100$) does not differ between conditions (tested via paired $t$-test or Wilcoxon signed-rank test).
-3. **$H_{03}$ (Budget Compliance Rate):** The proportion of submitted designs meeting or staying below the assigned budget ceiling ($\le \text{ceiling}$) does not differ between conditions (tested via McNemar's test for paired binary proportions).
-4. **$H_{04}$ (Composite Task Success Rate):** The proportion of fully successful designs—satisfying all 4 mandatory functional furniture items, remaining budget-compliant, and exhibiting zero doorway keep-out clearance intrusions—does not differ between conditions (tested via McNemar's test).
+#### Primary Confirmatory Hypotheses & Pre-Registered Decision Rules
+The study evaluates four primary confirmatory hypotheses. All confirmatory hypothesis tests are **two-sided** with an overall family-wise significance threshold of $\alpha = 0.05$.
+
+1. **$H_{01}$ (Task Completion Time):** Active task completion time (seconds) does not differ between Manual (Condition A) and AI-Assisted (Condition B) workflows.
+   - *Primary Test:* Two-sided paired Student's $t$-test on difference scores ($\Delta = \text{Time}_B - \text{Time}_A$).
+   - *Parametric Decision Rule & Alternative:* Normality of paired differences $\Delta$ evaluated via the **Shapiro-Wilk test** ($\alpha = 0.05$) and visual inspection of Q-Q residuals. If normality is rejected ($p < 0.05$) or severe skew dominates, the two-sided **Wilcoxon signed-rank test** serves as the pre-registered non-parametric substitute.
+   - *Effect Size:* Cohen's $d_z$ for paired $t$-test; matched-pairs rank biserial correlation $r$ for Wilcoxon signed-rank test.
+
+2. **$H_{02}$ (Perceived Usability — SUS Score):** System Usability Scale (SUS) composite score ($0–100$) does not differ between conditions.
+   - *Primary Test:* Two-sided paired Student's $t$-test on difference scores ($\Delta = \text{SUS}_B - \text{SUS}_A$).
+   - *Parametric Decision Rule & Alternative:* Normality of paired differences $\Delta$ evaluated via the **Shapiro-Wilk test** ($\alpha = 0.05$). If $p < 0.05$, the two-sided **Wilcoxon signed-rank test** serves as the pre-registered non-parametric substitute.
+   - *Effect Size:* Cohen's $d_z$ for paired $t$-test; matched-pairs rank biserial correlation $r$ for Wilcoxon signed-rank test.
+
+3. **$H_{03}$ (Budget Compliance Rate):** The proportion of submitted designs meeting or staying below the assigned budget ceiling ($\text{budgetTotalPaise} \le \text{budgetCeilingPaise}$) does not differ between conditions.
+   - *Primary Test:* Two-sided **McNemar's test** with continuity correction for paired binary proportions.
+   - *Small-Sample Decision Rule:* If discordant cell count $(b + c) < 25$, the **exact two-sided binomial test** on discordant pairs is pre-registered as the definitive test.
+   - *Effect Size:* Odds Ratio (OR) with 95% confidence intervals on discordant pairs ($b/c$).
+
+4. **$H_{04}$ (Composite Task Success Rate):** The proportion of fully successful designs—satisfying all 4 mandatory functional furniture items, remaining budget-compliant, and exhibiting zero doorway keep-out clearance intrusions—does not differ between conditions.
+   - *Primary Test:* Two-sided **McNemar's test** with continuity correction (exact binomial test if $b + c < 25$).
+   - *Effect Size:* Odds Ratio (OR) with 95% confidence intervals on discordant pairs.
+
+#### Multiple Comparisons Correction (Family-Wise Error Rate Control)
+- **Confirmatory Family:** The four confirmatory hypotheses ($H_{01}, H_{02}, H_{03}, H_{04}$) constitute the formal family of primary statistical tests.
+- **Correction Method:** The **Holm-Bonferroni step-down procedure** (Holm, 1979) will be applied to maintain the family-wise error rate at $\alpha_{\text{FWER}} = 0.05$. Raw $p$-values are ordered $p_{(1)} \le p_{(2)} \le p_{(3)} \le p_{(4)}$ and compared sequentially against critical thresholds $\alpha / (5 - k)$ for $k = 1, 2, 3, 4$ ($\alpha_1 = 0.0125, \alpha_2 = 0.0167, \alpha_3 = 0.025, \alpha_4 = 0.05$).
+- **Reporting Standard:** Both unadjusted raw $p$-values and Holm-adjusted $p$-values ($p_{\text{Holm}}$) will be published alongside 95% confidence intervals and effect sizes.
 
 #### Secondary & Exploratory Outcomes
+All secondary and exploratory outcomes ($E_1$ through $E_7$) are strictly designated as exploratory. They will be analyzed using descriptive statistics, point estimates, and unadjusted 95% confidence intervals to generate post-hoc insights without asserting confirmatory significance claims:
 - **$E_1$ (AABB Overlap Proxy):** Mean count of overlapping furniture Axis-Aligned Bounding Box pairs (`aabbOverlapPairsCount`).
 - **$E_2$ (Manual Adjustment Effort):** Discrete manual interaction counts (`totalEdits`) and undo/redo operations (`undoRedoCount`).
 - **$E_3$ (Doorway Keep-Out Intrusions):** Count of furniture objects intruding into the silent doorway clearance box (`doorwayIntrusionsCount`).
@@ -39,24 +61,28 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 > [!IMPORTANT]
 > **Institutional Governance Note & Mandatory Approval Gate:**  
 > This protocol specifies the research procedure, consent wording, and data handling safeguards. In accordance with university research standards, **formal supervisor or institutional ethics approval must be recorded in writing before recruiting human participants**. This protocol document alone does not replace formal ethics clearance.
-> - **Approval Body:** Departmental Undergraduate Research Review Committee / Project Evaluation Board  
-> - **Protocol Status:** Gated — Formal written supervisor approval required prior to enrolling Participant P01.
+> - **Approval Body:** Departmental Undergraduate Research Review Committee / Project Evaluation Board (Must be confirmed with actual committee / evaluating body prior to recruitment)  
+> - **Protocol Status:** Gated — Formal written supervisor approval and verified contact details required prior to enrolling Participant P01.
 
-### 2.1 Contact Information
+### 2.1 Contact Information & Pre-Recruitment Verification Gate
+> [!WARNING]
+> **Pre-Recruitment Contact Verification Gate:**  
+> The researcher and supervisor email addresses below currently use example/placeholder domain formats. Prior to initiating participant recruitment or conducting pilot trials, the investigator must verify and substitute active, monitored institutional email addresses, and confirm the specific faculty project supervisor responsible for ethical oversight.
+
 - **Principal Investigator:** Gourav Sharma (Undergraduate Researcher, Dept. of Computer Science & Engineering)  
-  *Email:* `gourav.sharma.cse@example.ac.in`
+  *Email:* `gourav.sharma.cse@example.ac.in` *(Placeholder — verify active institutional contact prior to recruitment)*
 - **Faculty Project Supervisor:** Project Supervisor / Course Coordinator (Dept. of Computer Science & Engineering)  
-  *Email:* `supervisor.cse@example.ac.in`
+  *Email:* `supervisor.cse@example.ac.in` *(Placeholder — verify active institutional contact prior to recruitment)*
 
-### 2.2 Privacy & Data Protection Safeguards
-1. **No Personally Identifiable Information (PII):** Participants are assigned an anonymous alphanumeric identifier (e.g., `P01`, `P02`). No real names, emails, IP addresses, or phone numbers are logged in research datasets.
+### 2.2 Privacy, Data Protection & Scientific Terminology
+1. **Coded / Pseudonymized Individual Records:** During active data collection and the withdrawal window, participant data is **coded / pseudonymized**, not irreversibly anonymized. Participants are assigned an alphanumeric code (e.g., `P01`, `P02`). No personal names, personal email addresses, IP addresses, or phone numbers are logged in experimental telemetry tables.
 2. **Local Storage & No Private Media Ingestion:** Experimental trials use the pre-configured local 3D catalogue and standardized synthetic rooms. Participants are **never** asked to upload personal home photography to external cloud APIs during the study trials.
 3. **Voluntary Participation & Unconditional Withdrawal:** Participation is entirely voluntary. Participants may halt a trial or withdraw their data at any point without explanation or penalty.
-4. **Data Retention & Disposal:** Raw anonymized JSON interaction logs and survey responses will be stored in an access-restricted project directory and destroyed upon project examination completion.
+4. **Data Retention & Disposal:** Raw pseudonymized JSON interaction logs and survey responses will be stored in an access-restricted project directory and destroyed upon project examination completion.
 
-### 2.3 Withdrawal Procedure & Irreversibility Deadline
+### 2.3 Withdrawal Procedure & Irreversible Anonymization Deadline
 - **Withdrawal Mechanism:** At the beginning of the study, each participant is provided a physical/digital tear-off slip bearing their unique Participant Code (e.g., `P04`). To request data removal, the participant emails either the investigator or the supervisor citing their code. No personal justification is required.
-- **Withdrawal Deadline:** Participants may withdraw their individual trial data within **14 calendar days** of their test session or prior to the final dataset aggregation lock on **November 15, 2026** (whichever occurs first). Beyond this point, data will have been compiled into anonymized summary matrices, and individual trial logs can no longer be disentangled or removed.
+- **Irreversible Anonymization Deadline:** Participants may withdraw their individual trial data within **14 calendar days** of their test session or prior to the final dataset aggregation lock on **November 15, 2026** (whichever occurs first). Prior to this date, data remains coded / pseudonymized and can be individually deleted. On **November 15, 2026**, individual trial logs are compiled into aggregated statistical matrices, linking codes/slips are permanently destroyed, and the dataset becomes **irreversibly anonymized**. Beyond this point, individual trial logs can no longer be disentangled or removed.
 
 ---
 
@@ -65,8 +91,8 @@ RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tr
 ### Participant Information Sheet
 
 **Study Title:** Evaluating an AI-Assisted 3D Interior Design Workflow with Budget and Spatial Constraints  
-**Investigator:** Gourav Sharma (`gourav.sharma.cse@example.ac.in`)  
-**Supervisor:** Departmental Project Supervisor (`supervisor.cse@example.ac.in`)  
+**Investigator:** Gourav Sharma (`gourav.sharma.cse@example.ac.in` — placeholder, institutional address verified prior to recruitment)  
+**Supervisor:** Departmental Project Supervisor (`supervisor.cse@example.ac.in` — placeholder, institutional address verified prior to recruitment)  
 **Institution:** Department of Computer Science & Engineering  
 
 **Purpose of the Study:**  
@@ -82,7 +108,7 @@ You are invited to participate in a research evaluation comparing two workflows 
 There are no physical or psychological risks beyond normal desktop computer usage.
 
 **Confidentiality & Data Protection:**  
-All responses and design interactions are logged under an anonymous pseudonym (e.g., `P04`). No names or private data will be collected, stored, or published. You may withdraw your data using your Participant Code within 14 days of participation (or prior to November 15, 2026).
+All responses and design interactions are recorded under a coded pseudonym (e.g., `P04`). No names or private contact information will be collected, stored, or published. You may withdraw your data using your Participant Code within 14 days of participation (or prior to the irreversible anonymization aggregation lock on November 15, 2026).
 
 ---
 
@@ -93,7 +119,7 @@ All responses and design interactions are logged under an anonymous pseudonym (e
 [ ] I have had the opportunity to ask questions, and any questions have been answered satisfactorily.
 [ ] I understand that my participation is voluntary and that I am free to withdraw at any time without penalty.
 [ ] I understand that to withdraw my data, I can email the researcher or supervisor citing my Participant Code within 14 days of participation (or prior to November 15, 2026).
-[ ] I understand that all data collected will be strictly anonymized under a participant code and used solely for academic research.
+[ ] I understand that my data will be stored as coded/pseudonymized research records and will become irreversibly anonymized after the study aggregation lock on November 15, 2026.
 [ ] I agree to take part in the study.
 
 Participant Code: ______________          Date: ____________________
@@ -388,36 +414,55 @@ For each axis $A \in \{W, H, D\}$:
 
 ### 9.2 Step 8.2 Architectural Decisions & Telemetry Specification
 
-#### Decision 1: Robust 3-Stage Session Lifecycle (Resolving Refresh vs. Completion Contradiction)
-To guarantee that `in_progress` trials survive accidental browser reloads while ensuring incomplete/aborted sessions are reliably preserved without per-pointer network chatter:
+#### Decision 1: Robust 3-Stage Session Lifecycle & Revision-Ordered Idempotency
+To guarantee that `in_progress` trials survive accidental browser reloads, that out-of-order retried checkpoints never overwrite newer data, and that aborted sessions are reliably preserved without per-pointer network chatter:
 
-1. **Stage 1 — Initialization (`POST /api/v1/evaluation/sessions/start/`):**
+1. **Stage 1 — Session Initialization (`POST /api/v1/evaluation/sessions/start/`):**
    - When a participant opens the task and clicks "Start Task", the client generates a unique `sessionId` (UUIDv4) and registers the session with the backend.
-   - Local browser `sessionStorage` stores `roomgenie_eval_active_session` containing `{ sessionId, participantId, condition, taskName, sequenceOrder }`.
-   - The backend creates an `EvaluationSession` database row with `sessionStatus = 'in_progress'`, `startTime = now()`, and initial metadata.
-   - *Refresh Recovery:* If the participant refreshes or navigates back, the frontend checks `sessionStorage`, rehydrates the in-progress session, and continues tracking without creating duplicate records.
-2. **Stage 2 — Idempotent Periodic Checkpoints (`PATCH /api/v1/evaluation/sessions/{sessionId}/checkpoint/`):**
-   - Transmitted every 30 seconds or after milestone operations (e.g., AI proposal approved, furniture added).
-   - Updates `{ activeDurationSeconds, currentEdits, currentUndoRedo, attemptedOutOfBoundsCount, idleIntervals, sceneSnapshot }`.
-   - All checkpoint updates are strictly idempotent, ensuring network retries never corrupt session state.
-3. **Stage 3A — Completion (`POST /api/v1/evaluation/sessions/{sessionId}/complete/`):**
+   - **Start Request Idempotency:** The client sends `{ sessionId, participantId, condition, taskName, sequenceOrder }`. If the backend receives a request with an existing `sessionId` (e.g., due to an initial network retry or client recovery), it returns HTTP 200 with the existing session record without creating duplicate database rows or resetting timestamps.
+   - The backend creates an `EvaluationSession` row with `sessionStatus = 'in_progress'`, `checkpointSequence = 0`, `checkpointSceneSnapshot = null`, `finalSceneSnapshot = null`, `startTime = now()`, `endTime = null`, and `durationSeconds = null`.
+   - *Refresh Recovery:* Local browser `sessionStorage` stores `roomgenie_eval_active_session` containing `{ sessionId, participantId, condition, taskName, sequenceOrder, checkpointSequence }`. If the participant refreshes or navigates back, the frontend checks `sessionStorage`, rehydrates the session, and continues tracking without re-initializing.
+
+2. **Stage 2 — Revision-Ordered Periodic Checkpoints (`PATCH /api/v1/evaluation/sessions/{sessionId}/checkpoint/`):**
+   - Transmitted every 30 seconds or after milestone operations (e.g., AI proposal approved, furniture added/removed).
+   - **Monotonically Increasing Revision (`checkpointSequence`):** The client maintains a local counter `checkpointSequence` (integer starting at 1 for the first checkpoint and incremented by 1 on each dispatch).
+   - **Dedicated Checkpoint Scene Snapshot (`checkpointSceneSnapshot`):** The checkpoint payload replaces `checkpointSceneSnapshot` with the latest working scene state. Checkpoint updates **never** touch `finalSceneSnapshot` (which remains strictly `null` during `in_progress`).
+   - **Concurrent, Delayed, and Retried Checkpoint Resolution:**
+     - **Newer Revision (`incoming.checkpointSequence > session.checkpointSequence`):** Valid fresh update. The backend commits updated effort counters (`totalEdits`, `undoRedoCount`, `attemptedOutOfBoundsCount`), inactivity tracking (`idleIntervals`, `activeDurationSeconds`), replaces `checkpointSceneSnapshot`, and advances `session.checkpointSequence = incoming.checkpointSequence`. Returns HTTP 200.
+     - **Identical Sequence Retry (`incoming.checkpointSequence === session.checkpointSequence`):** Harmless network retry. Treated idempotently as a safe no-op; returns HTTP 200 with existing status without redundant writes.
+     - **Stale / Out-of-Order Sequence (`incoming.checkpointSequence < session.checkpointSequence`):** Caused by network jitter or delayed retry packets arriving after a newer checkpoint has already been processed. The backend **safely ignores the stale payload** and returns HTTP 200 (or HTTP 409 Conflict with the current sequence number), ensuring older packets cannot overwrite newer interaction counts or scene geometry.
+
+3. **Terminal State Immutability Lock:**
+   - Once a session transitions to a terminal state (`sessionStatus === 'completed'` or `sessionStatus === 'aborted'`), its record is **strictly locked and immutable**.
+   - Any subsequent checkpoint request (`PATCH .../checkpoint/`) arriving after completion or abort is rejected with HTTP 409 Conflict (or safely ignored). A delayed in-flight checkpoint can **never** overwrite terminal research records or the authoritative `finalSceneSnapshot`.
+
+4. **Stage 3A — Completion (`POST /api/v1/evaluation/sessions/{sessionId}/complete/`):**
    - Triggered when the participant clicks the final "Submit Design" button.
-   - Submits the finalized interaction log and the complete, immutable final scene JSON snapshot.
-   - The backend transitions `sessionStatus = 'completed'`, records `endTime = now()`, calculates authoritative server-side metrics, and returns confirmation.
+   - The backend verifies `sessionStatus === 'in_progress'`.
+   - Submits the finalized interaction log and the complete authoritative final scene JSON snapshot.
+   - The backend writes the submitted snapshot to `finalSceneSnapshot` (which was previously `null`), transitions `sessionStatus = 'completed'`, records `endTime = now()`, calculates authoritative server-side metrics (`budgetTotalPaise`, `isBudgetCompliant`, `aabbOverlapPairsCount`, `doorwayIntrusionsCount`, `isTaskSuccessful`), and locks the session.
    - The client clears `sessionStorage` and advances to the post-condition survey.
-4. **Stage 3B — Abort & Incomplete Session Preservation (`POST /api/v1/evaluation/sessions/{sessionId}/abort/`):**
-   - Triggered if the participant clicks "Cancel / Exit Study", or automatically marked by a backend reaper if an `in_progress` session receives no heartbeat for $> 30$ minutes.
-   - Transitions `sessionStatus = 'aborted'`, recording `abortedAt = now()`, `abortReason`, and preserving the last checkpoint's scene and duration for dropout/attrition analyses.
+
+5. **Stage 3B — Abort & Incomplete Session Preservation (`POST /api/v1/evaluation/sessions/{sessionId}/abort/`):**
+   - Triggered if the participant clicks "Cancel / Exit Study", or automatically marked by a backend reaper if an `in_progress` session receives no checkpoint heartbeat for $> 30$ minutes.
+   - Transitions `sessionStatus = 'aborted'`, recording `abortedAt = now()`, `abortReason`, and calculating elapsed `durationSeconds`.
+   - Preserves `checkpointSceneSnapshot` containing the latest known intermediate scene for dropout and attrition analyses. `finalSceneSnapshot` remains strictly `null`.
+   - The terminal lock takes effect.
 
 #### Decision 2: Silent Evaluation of Doorway Keep-Out Box
 - **No In-Editor Visual Hint:** The doorway keep-out clearance box is a scoring metric, not an in-editor visual aid. Rendering a visible overlay on the floor during trials could artificially alter spatial behavior and introduce an extraneous UI confound unrelated to the AI-assisted workflow.
 - **Identical Instructions:** Both conditions receive identical text instructions stating the doorway location and the requirement to maintain a clear circulation corridor.
 - **Silent Evaluation:** The evaluator engine applies the coordinate-based keep-out rule uniformly to both final layouts post-submission. A visual debugging overlay may exist in development mode (`DEBUG=True`), but must be strictly disabled during study trials.
 
-#### Decision 3: Independent Metric Auditability & Inactivity Granularity
-1. **Immutable Final Scene Snapshot (`finalSceneSnapshot`):**  
-   To enable independent replication and auditing of research claims, the evaluation record persists the complete canonical scene JSON (`{ schemaVersion, unit: 'm', room, objects }`). Evaluators can independently re-verify boundary containment, budget math, AABB overlap pairs, and doorway clearance directly on the raw geometry.
-2. **Discrete Inactivity Intervals (`idleIntervals`):**  
+#### Decision 3: Dual Scene Snapshots, Independent Auditability & Inactivity Granularity
+1. **Separation of Checkpoint and Final Scene Snapshots:**  
+   - `checkpointSceneSnapshot`: Continually captures intermediate scene states for recovery and dropout/attrition audit. Preserved upon session abort; remains in the record post-completion as an audit trail of pre-submission state.
+   - `finalSceneSnapshot`: Immutable authoritative scene state captured at the exact moment of formal submission (`POST .../complete/`). Used for official calculation of budget math, room containment, AABB overlap pairs, and doorway clearance. Remains strictly `null` for aborted or in-progress sessions.
+2. **Reconciliation with `frontend/src/types/scene.ts` (`CanonicalScene` and `FurniturePlacement`):**  
+   Both snapshots use standard SI metric dimensions and Three.js coordinate conventions. All physical geometry (`dimensions`, `position`, `rotationEuler`, `scale`) and catalogue references (`assetId`, `name`, `materialOverrides`, `reconstructionJobId`) are fully preserved.
+3. **CRITICAL SECURITY & PRIVACY INVARIANT — NO SIGNED / CREDENTIALED ASSET URLS:**  
+   `modelUrl`, blob URLs (`blob:...`), signed cloud storage URLs with credentials, bearer tokens, or session-scoped query parameters must **NEVER** be persisted in research snapshots (`checkpointSceneSnapshot` or `finalSceneSnapshot`). Assets are referenced purely by immutable catalog `assetId` or stable backend `reconstructionJobId`. This prevents credential leakage in exported datasets and guarantees that snapshots remain readable even after temporary URLs expire.
+4. **Discrete Inactivity Intervals (`idleIntervals`):**  
    Rather than storing only a single opaque cumulative number, telemetry records each discrete pause exceeding 60 seconds (`{ startOffsetSeconds, durationSeconds }`). This distinguishes five 2-minute pauses from a single 10-minute external distraction, directly enabling the pre-registered sensitivity analysis ($> 15\text{ min}$ interruptions).
 
 ---
@@ -431,19 +476,58 @@ interface IdleInterval {
   durationSeconds: number;    // Duration of pause
 }
 
+/** Material overrides snapshot matching frontend/src/types/scene.ts MaterialOverrides */
+interface MaterialOverridesSnapshot {
+  color?: string;
+  roughness?: number;
+  metalness?: number;
+}
+
+/**
+ * Furniture placement snapshot reconciled with frontend/src/types/scene.ts FurniturePlacement.
+ * SECURITY INVARIANT: modelUrl and signed/credentialed asset URLs must NEVER be persisted in research snapshots.
+ */
+interface FurniturePlacementSnapshot {
+  id: string;                               // Placement UUID
+  assetId: string;                          // Catalogue asset reference ID
+  name: string;                             // Display name
+  position: [number, number, number];       // [x, y, z] in metres
+  rotationEuler: [number, number, number];  // [rx, ry, rz] in radians
+  scale: [number, number, number];          // [sx, sy, sz] uniform/axis multipliers
+  dimensions: [number, number, number];     // [width, height, depth] in metres
+  materialOverrides?: MaterialOverridesSnapshot;
+  reconstructionJobId?: string;             // Stable UUID reference to FurnitureReconstructionJob (if custom)
+  isCustomReconstruction?: boolean;         // Flag identifying custom photo-reconstructed items
+}
+
+/** Canonical scene snapshot reconciled with frontend/src/types/scene.ts CanonicalScene */
+interface CanonicalSceneSnapshotJson {
+  schemaVersion: number;                    // Scene schema version (e.g. 1)
+  unit: 'm';                                // SI metres
+  room: {
+    width: number;                          // X axis (metres)
+    length: number;                         // Z axis (metres)
+    height: number;                         // Y axis (metres)
+  };
+  objects: FurniturePlacementSnapshot[];
+}
+
 /** Complete Evaluation Session Record (persisted in DB and exported to JSON/CSV) */
 interface ExperimentSessionRecord {
   schemaVersion: number;              // Version of telemetry schema (e.g. 1)
   sessionId: string;                  // UUIDv4 unique session key
-  participantId: string;              // Anonymized code, e.g. "P04"
+  participantId: string;              // Pseudonymized participant code, e.g. "P04"
   condition: 'manual' | 'ai_assisted';
   sequenceOrder: 'G1' | 'G2' | 'G3' | 'G4';
   taskName: 'living_room' | 'home_study';
   sessionStatus: 'in_progress' | 'completed' | 'aborted';
   
+  // Checkpoint Revision Tracking (monotonically increasing sequence; 0 on start)
+  checkpointSequence: number;         // Incremented by client on each checkpoint; guards against stale out-of-order retries
+
   // Timestamps (endTime and durationSeconds are nullable while in_progress)
   startTime: string;                  // ISO 8601
-  endTime: string | null;             // ISO 8601 (null if in_progress)
+  endTime: string | null;             // ISO 8601 (null if in_progress or aborted)
   durationSeconds: number | null;     // Total elapsed seconds (null until completed/aborted)
   activeDurationSeconds: number;      // Elapsed seconds excluding totalIdleDurationSeconds
   
@@ -480,21 +564,11 @@ interface ExperimentSessionRecord {
   agentTier2SchemaValidCount: number; // Schema-valid candidate layouts
   agentTier3DomainValidCount: number; // Containment-valid candidate layouts
 
-  // Full Raw Scene Auditability (immutable canonical scene snapshot)
-  finalSceneSnapshot: {
-    schemaVersion: number;
-    unit: 'm';
-    room: { width: number; length: number; height: number };
-    objects: Array<{
-      id: string;
-      assetId: string;
-      name: string;
-      dimensions: [number, number, number];
-      position: [number, number, number];
-      rotationEuler: [number, number, number];
-      scale: [number, number, number];
-      materialOverrides?: Record<string, any>;
-    }>;
-  } | null;
+  // Dual Scene Snapshots: In-Flight Recovery vs. Authoritative Submission
+  // Checkpoint Snapshot: Replaced on each valid checkpoint; preserved on abort for dropout analysis; null before first checkpoint
+  checkpointSceneSnapshot: CanonicalSceneSnapshotJson | null;
+
+  // Final Scene Snapshot: Authoritative immutable final scene; written ONLY on completion; null while in_progress or if aborted
+  finalSceneSnapshot: CanonicalSceneSnapshotJson | null;
 }
 ```
