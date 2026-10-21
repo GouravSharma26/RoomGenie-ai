@@ -23,12 +23,14 @@ from apps.evaluation.metrics import (
     validate_study_assignment,
 )
 from apps.evaluation.models import EvaluationSession
+from apps.evaluation.views import _hash_secret
 from apps.furniture.models import FurnitureAsset
 
 
 class EvaluationTelemetryTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.test_secret = 'super_secret_test_token_1234567890'
         self.admin_user = User.objects.create_superuser(
             username='admin_evaluator',
             email='evaluator@university.edu',
@@ -104,6 +106,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 reverse('evaluation:session-start'),
                 {
                     'sessionId': session_id,
+                    'sessionSecret': self.test_secret,
                     'participantId': 'P01',
                     'condition': 'manual',
                     'sequenceOrder': 'G1',
@@ -117,45 +120,52 @@ class EvaluationTelemetryTestCase(TestCase):
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
     def test_start_session_creation_idempotency_and_mismatched_rejection(self):
         """
-        Start endpoint creates session, issues capability secret, returns 200 on identical retry,
-        and rejects requests with mismatched assignment parameters with 409 Conflict.
+        Start endpoint creates session with client-generated secret hash, returns 200 on identical retry,
+        and rejects requests with mismatched assignment parameters or secret with 409 Conflict.
         """
         session_id = str(uuid.uuid4())
         payload = {
             'sessionId': session_id,
+            'sessionSecret': self.test_secret,
             'participantId': 'P01',
             'condition': 'manual',
             'sequenceOrder': 'G1',
             'taskName': 'living_room',
         }
 
-        # 1. First start request creates session and returns sessionSecret
+        # 1. First start request creates session
         resp1 = self.client.post(reverse('evaluation:session-start'), payload, format='json')
         self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp1.data['sessionId'], session_id)
         self.assertEqual(resp1.data['sessionStatus'], 'in_progress')
         self.assertEqual(resp1.data['checkpointSequence'], 0)
         self.assertEqual(resp1.data['trialPeriod'], 1)  # G1 manual living_room is Period 1
-        self.assertIn('sessionSecret', resp1.data)
-        secret = resp1.data['sessionSecret']
 
-        # 2. Idempotent retry with same UUID and matching parameters returns existing record (200)
+        # 2. Idempotent retry with same UUID and matching parameters and secret returns existing record (200)
         resp2 = self.client.post(reverse('evaluation:session-start'), payload, format='json')
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         self.assertEqual(resp2.data['sessionId'], session_id)
         self.assertEqual(EvaluationSession.objects.filter(id=session_id).count(), 1)
 
-        # 3. Mismatched participantId with same UUID returns 409 Conflict
+        # 3. Lost-response retry with wrong capability secret returns 409 Conflict
+        wrong_secret_payload = dict(payload)
+        wrong_secret_payload['sessionSecret'] = 'different_secret_attempt_1234'
+        resp_sec = self.client.post(reverse('evaluation:session-start'), wrong_secret_payload, format='json')
+        self.assertEqual(resp_sec.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("capability secret", resp_sec.data['error'])
+
+        # 4. Mismatched participantId with same UUID returns 409 Conflict
         mismatched_p = dict(payload)
         mismatched_p['participantId'] = 'P99'
         resp_p = self.client.post(reverse('evaluation:session-start'), mismatched_p, format='json')
         self.assertEqual(resp_p.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("participantId", resp_p.data['error'])
 
-        # 4. Mismatched condition with same UUID returns 409 Conflict
+        # 5. Mismatched condition with same UUID returns 409 Conflict
         # Note: G1 with ai_assisted + home_study is valid G1 assignment, but differs from existing session
         mismatched_c = {
             'sessionId': session_id,
+            'sessionSecret': self.test_secret,
             'participantId': 'P01',
             'condition': 'ai_assisted',
             'sequenceOrder': 'G1',
@@ -166,12 +176,13 @@ class EvaluationTelemetryTestCase(TestCase):
 
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
     def test_start_session_concurrency_race_handling(self):
-        """Simultaneous start requests with the same UUID are handled concurrency-safely without crashes."""
+        """Simultaneous start requests with the same UUID and secret are handled concurrency-safely without crashes."""
         import concurrent.futures
 
         s_id = str(uuid.uuid4())
         payload = {
             'sessionId': s_id,
+            'sessionSecret': self.test_secret,
             'participantId': 'P_CONCURRENCY',
             'condition': 'manual',
             'sequenceOrder': 'G1',
@@ -218,6 +229,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 reverse('evaluation:session-start'),
                 {
                     'sessionId': s_id,
+                    'sessionSecret': self.test_secret,
                     'participantId': f'P_{seq}_{expected_period}',
                     'condition': cond,
                     'sequenceOrder': seq,
@@ -241,6 +253,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 reverse('evaluation:session-start'),
                 {
                     'sessionId': s_id,
+                    'sessionSecret': self.test_secret,
                     'participantId': 'P_INVALID',
                     'condition': cond,
                     'sequenceOrder': seq,
@@ -256,6 +269,7 @@ class EvaluationTelemetryTestCase(TestCase):
             reverse('evaluation:session-start'),
             {
                 'sessionId': s_id,
+                'sessionSecret': self.test_secret,
                 'participantId': 'P_CONTRADICT',
                 'condition': 'manual',
                 'sequenceOrder': 'G1',
@@ -281,6 +295,7 @@ class EvaluationTelemetryTestCase(TestCase):
             reverse('evaluation:session-start'),
             {
                 'sessionId': s_id,
+                'sessionSecret': self.test_secret,
                 'participantId': 'P02',
                 'condition': 'manual',
                 'sequenceOrder': 'G1',
@@ -289,7 +304,10 @@ class EvaluationTelemetryTestCase(TestCase):
             format='json'
         )
         self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
-        secret = start_resp.data['sessionSecret']
+        secret = self.test_secret
+        EvaluationSession.objects.filter(id=s_id).update(
+            start_time=timezone.now() - datetime.timedelta(seconds=120)
+        )
 
         url = reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id})
 
@@ -393,6 +411,7 @@ class EvaluationTelemetryTestCase(TestCase):
             reverse('evaluation:session-start'),
             {
                 'sessionId': s_id,
+                'sessionSecret': self.test_secret,
                 'participantId': 'P03',
                 'condition': 'manual',
                 'sequenceOrder': 'G1',
@@ -400,7 +419,10 @@ class EvaluationTelemetryTestCase(TestCase):
             },
             format='json'
         )
-        secret = start_resp.data['sessionSecret']
+        secret = self.test_secret
+        EvaluationSession.objects.filter(id=s_id).update(
+            start_time=timezone.now() - datetime.timedelta(seconds=300)
+        )
 
         # Checkpoint 1: sets totalEdits=15, undoRedoCount=4, activeDurationSeconds=120.0, idleIntervals
         self.client.patch(
@@ -585,8 +607,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 valid_objects,
                 is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=0
             )
         )
 
@@ -596,8 +617,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 valid_objects[:3],
                 is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=0
             )
         )
 
@@ -608,8 +628,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 extra_objects,
                 is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=0
             )
         )
 
@@ -620,8 +639,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 wrong_choice,
                 is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=0
             )
         )
 
@@ -631,23 +649,39 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 valid_objects,
                 is_budget_compliant=True,
-                doorway_intrusions_count=1,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=1
             )
         )
 
-        # 6. Out of bounds > 0 = FAILS
+        # 6. Budget non-compliant = FAILS
         self.assertFalse(
             evaluate_task_success(
                 'living_room',
                 valid_objects,
-                is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=1
+                is_budget_compliant=False,
+                doorway_intrusions_count=0
             )
         )
 
-        # 7. AABB overlap pairs present but no doorway intrusion and budget compliant = SUCCESS
+        # 7. Out of bounds items are tracked separately in finalSceneOutOfBoundsCount
+        # and do NOT disqualify H04 per the preregistered protocol.
+        # Verify authoritative metrics record out-of-bounds count while calculating H04
+        oob_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {'id': '1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [3.5, 0.425, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                {'id': '2', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.2, 0.45, 0.6], 'position': [0.0, 0.225, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                {'id': '3', 'assetId': 'chair-accent-armchair', 'name': 'Armchair', 'dimensions': [0.85, 0.88, 0.85], 'position': [-1.5, 0.44, 0.0], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+                {'id': '4', 'assetId': 'decor-plant-floor-vase', 'name': 'Planter', 'dimensions': [0.4, 0.9, 0.4], 'position': [1.8, 0.45, -1.5], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
+            ]
+        }
+        oob_metrics = calculate_authoritative_session_metrics('living_room', oob_scene)
+        self.assertGreater(oob_metrics['final_scene_out_of_bounds_count'], 0)
+        self.assertTrue(oob_metrics['is_task_successful'])
+
+        # 8. AABB overlap pairs present but no doorway intrusion and budget compliant = SUCCESS
         # (AABB overlaps are exploratory metric E1 and not a failure criterion for H04)
         overlap_objects = [
             {'assetId': 'sofa-modern-3seater', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, -1.2], 'scale': [1,1,1], 'rotationEuler': [0,0,0]},
@@ -663,8 +697,7 @@ class EvaluationTelemetryTestCase(TestCase):
                 'living_room',
                 overlap_objects,
                 is_budget_compliant=True,
-                doorway_intrusions_count=0,
-                final_scene_out_of_bounds_count=0
+                doorway_intrusions_count=0
             )
         )
 
@@ -881,6 +914,8 @@ class EvaluationTelemetryTestCase(TestCase):
             task_name='living_room',
             session_status='in_progress',
             budget_ceiling_paise=6000000,
+            start_time=timezone.now() - datetime.timedelta(seconds=400),
+            session_secret_hash=_hash_secret(self.test_secret),
         )
 
         valid_final_scene = {
@@ -936,7 +971,8 @@ class EvaluationTelemetryTestCase(TestCase):
                 'undoRedoCount': 2,
                 'activeDurationSeconds': 180.0,
             },
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(complete_resp.status_code, status.HTTP_200_OK)
         session.refresh_from_db()
@@ -949,7 +985,8 @@ class EvaluationTelemetryTestCase(TestCase):
                 'checkpointSequence': 10,
                 'totalEdits': 999,
             },
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(late_checkpoint_resp.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("terminal state", late_checkpoint_resp.data['error'])
@@ -958,7 +995,8 @@ class EvaluationTelemetryTestCase(TestCase):
         repeat_complete_resp = self.client.post(
             reverse('evaluation:session-complete', kwargs={'session_id': session.id}),
             {'finalSceneSnapshot': valid_final_scene},
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(repeat_complete_resp.status_code, status.HTTP_409_CONFLICT)
 
@@ -966,7 +1004,8 @@ class EvaluationTelemetryTestCase(TestCase):
         abort_resp = self.client.post(
             reverse('evaluation:session-abort', kwargs={'session_id': session.id}),
             {'abortReason': 'user_cancelled'},
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(abort_resp.status_code, status.HTTP_409_CONFLICT)
 
@@ -981,6 +1020,8 @@ class EvaluationTelemetryTestCase(TestCase):
             trial_period=1,
             task_name='living_room',
             session_status='in_progress',
+            start_time=timezone.now() - datetime.timedelta(seconds=400),
+            session_secret_hash=_hash_secret(self.test_secret),
         )
 
         checkpoint_snapshot = {
@@ -1009,14 +1050,16 @@ class EvaluationTelemetryTestCase(TestCase):
                 'totalEdits': 4,
                 'checkpointSceneSnapshot': checkpoint_snapshot,
             },
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
 
         # 2. Abort the session
         abort_resp = self.client.post(
             reverse('evaluation:session-abort', kwargs={'session_id': session.id}),
             {'abortReason': 'user_cancelled'},
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(abort_resp.status_code, status.HTTP_200_OK)
         session.refresh_from_db()
@@ -1034,6 +1077,255 @@ class EvaluationTelemetryTestCase(TestCase):
         late_checkpoint = self.client.patch(
             reverse('evaluation:session-checkpoint', kwargs={'session_id': session.id}),
             {'checkpointSequence': 2},
-            format='json'
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
         )
         self.assertEqual(late_checkpoint.status_code, status.HTTP_409_CONFLICT)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_session_authorization_bypass_prevented_when_hash_empty(self):
+        """When session_secret_hash is empty, non-staff requests must be denied with 403 Forbidden."""
+        session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_NO_SECRET',
+            condition='manual',
+            sequence_order='G1',
+            trial_period=1,
+            task_name='living_room',
+            session_status='in_progress',
+            session_secret_hash='',  # empty hash
+        )
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': session.id})
+        resp = self.client.patch(url, {'checkpointSequence': 1}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("no configured capability secret", resp.data['detail'])
+
+        # Authenticated staff user CAN access sessions with or without secret
+        self.client.force_authenticate(user=self.admin_user)
+        staff_resp = self.client.patch(url, {'checkpointSequence': 1}, format='json')
+        self.assertEqual(staff_resp.status_code, status.HTTP_200_OK)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_session_authorization_query_param_rejected(self):
+        """Capability secrets provided in URL query string are rejected (headers only)."""
+        session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_QUERY_ATTEMPT',
+            condition='manual',
+            sequence_order='G1',
+            trial_period=1,
+            task_name='living_room',
+            session_status='in_progress',
+            session_secret_hash=_hash_secret(self.test_secret),
+        )
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': session.id})
+        # Sending via query param ?sessionSecret=...
+        resp = self.client.patch(f"{url}?sessionSecret={self.test_secret}", {'checkpointSequence': 1}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("Missing session authorization capability secret", resp.data['detail'])
+
+        # Header works
+        header_resp = self.client.patch(url, {'checkpointSequence': 1}, format='json', HTTP_X_SESSION_SECRET=self.test_secret)
+        self.assertEqual(header_resp.status_code, status.HTTP_200_OK)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_session_authorization_bearer_header_accepted(self):
+        """Capability secret provided in Authorization: Bearer <secret> is accepted."""
+        session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_BEARER',
+            condition='manual',
+            sequence_order='G1',
+            trial_period=1,
+            task_name='living_room',
+            session_status='in_progress',
+            session_secret_hash=_hash_secret(self.test_secret),
+        )
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': session.id})
+        resp = self.client.patch(
+            url,
+            {'checkpointSequence': 1},
+            format='json',
+            HTTP_AUTHORIZATION=f"Bearer {self.test_secret}"
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_reaper_concurrency_race_condition_protection(self):
+        """
+        If a session was inactive during scan but refreshed by a checkpoint before lock acquisition,
+        the reaper must recheck updated_at <= cutoff and NOT abort it.
+        """
+        now = timezone.now()
+        forty_mins_ago = now - datetime.timedelta(minutes=40)
+        session = EvaluationSession.objects.create(
+            id=uuid.uuid4(),
+            participant_id='P_RACER',
+            condition='manual',
+            sequence_order='G1',
+            task_name='living_room',
+            session_status='in_progress',
+            session_secret_hash=_hash_secret(self.test_secret),
+        )
+        EvaluationSession.objects.filter(id=session.id).update(updated_at=forty_mins_ago)
+
+        # Simulate concurrent heartbeat right before the lock:
+        # If updated_at is touched to now, reaper must spare the session
+        EvaluationSession.objects.filter(id=session.id).update(updated_at=now)
+
+        out = StringIO()
+        call_command('reap_stale_evaluation_sessions', timeout_minutes=30, stdout=out)
+
+        session.refresh_from_db()
+        self.assertEqual(session.session_status, 'in_progress')
+        self.assertIsNone(session.aborted_at)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_canonical_scene_validation_rejects_booleans(self):
+        """Boolean values (e.g. True/False) in numeric vector fields must be rejected."""
+        bool_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'item-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [True, 0.425, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                }
+            ]
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(bool_scene, expected_task_name='living_room')
+        self.assertIn("must be a finite number", str(ctx.exception))
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_canonical_scene_validation_rejects_vectors_not_length_three(self):
+        """Vectors with more or fewer than 3 components must be rejected."""
+        four_vec_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'item-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [0.0, 0.425, 0.0, 1.0],  # 4 components
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                }
+            ]
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(four_vec_scene, expected_task_name='living_room')
+        self.assertIn("length exactly 3", str(ctx.exception))
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_canonical_scene_validation_rejects_over_fifty_objects(self):
+        """Scenes exceeding the 50-object maximum bound are rejected before AABB overlap calculation."""
+        many_objects = [
+            {
+                'id': f'item-{i}',
+                'assetId': 'decor-plant-floor-vase',
+                'name': f'Plant {i}',
+                'position': [0.0, 0.0, 0.0],
+                'dimensions': [0.4, 0.9, 0.4],
+                'scale': [1.0, 1.0, 1.0],
+                'rotationEuler': [0.0, 0.0, 0.0],
+            }
+            for i in range(51)
+        ]
+        scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': many_objects
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(scene, expected_task_name='living_room')
+        self.assertIn("Too many placed items in scene (51)", str(ctx.exception))
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_canonical_scene_validation_rejects_bearer_prefix_and_spaces_in_ids(self):
+        """Credential patterns with Bearer and spaces in placement IDs/assetIds must be rejected."""
+        # Bearer token pattern
+        bearer_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'item-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+                    'position': [0.0, 0.0, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                }
+            ]
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_and_sanitize_canonical_scene(bearer_scene, expected_task_name='living_room')
+        self.assertIn("credential string detected", str(ctx.exception).lower())
+
+        # Space in placement ID
+        spaced_id_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'item with spaces',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [0.0, 0.0, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                }
+            ]
+        }
+        with self.assertRaises(ValueError) as ctx2:
+            validate_and_sanitize_canonical_scene(spaced_id_scene, expected_task_name='living_room')
+        self.assertIn("unsafe characters", str(ctx2.exception))
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_active_duration_bounds_and_idle_interval_validation(self):
+        """
+        activeDurationSeconds exceeding elapsed time or total elapsed duration with idle intervals
+        must be rejected with HTTP 400 Bad Request.
+        """
+        s_id = str(uuid.uuid4())
+        self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'sessionSecret': self.test_secret,
+                'participantId': 'P_TIME_CHECK',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json'
+        )
+        url = reverse('evaluation:session-checkpoint', kwargs={'session_id': s_id})
+
+        # Claiming 99999.0s active duration on a session created 1 second ago -> 400 Bad Request
+        resp = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 1,
+                'activeDurationSeconds': 99999.0,
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot exceed elapsed session time", resp.data['error'])

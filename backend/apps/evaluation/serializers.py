@@ -98,6 +98,7 @@ class ExperimentSessionRecordSerializer(serializers.ModelSerializer):
 
 class StartSessionSerializer(serializers.Serializer):
     sessionId = serializers.UUIDField(required=True)
+    sessionSecret = serializers.CharField(min_length=16, max_length=128, required=True)
     participantId = serializers.CharField(max_length=64, required=True)
     condition = serializers.ChoiceField(choices=['manual', 'ai_assisted'], required=True)
     sequenceOrder = serializers.ChoiceField(choices=['G1', 'G2', 'G3', 'G4'], required=True)

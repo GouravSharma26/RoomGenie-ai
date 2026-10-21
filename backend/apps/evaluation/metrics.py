@@ -115,14 +115,17 @@ TASK_SPECIFICATIONS = {
 }
 
 URL_CREDENTIAL_PATTERN = re.compile(
-    r'(https?://|blob:|data:|ftp://|\btoken=|\bsig=|\bsignature=|\bkey=|\bsecret=|\bcredential=|\bauth=)',
+    r'(https?://|blob:|data:|ftp://|\bbearer\b|\bbearer\s+|\btoken\b|\btoken=|\bsig=|\bsignature=|\bkey=|\bsecret=|\bcredential=|\bauth=|\bpassword\b)',
     re.IGNORECASE
 )
-SAFE_IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.\:\s]+$')
+SAFE_IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+SAFE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.\s\(\)\'\"]+$')
 HEX_COLOR_PATTERN = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
 
 
 def _is_finite_number(val: Any) -> bool:
+    if isinstance(val, bool):
+        return False
     if isinstance(val, (int, float)):
         return not (math.isnan(val) or math.isinf(val))
     return False
@@ -192,6 +195,8 @@ def validate_and_sanitize_canonical_scene(
     raw_objects = snapshot.get('objects')
     if not isinstance(raw_objects, list):
         raise ValueError("Scene 'objects' must be a list of placed furniture items.")
+    if len(raw_objects) > 50:
+        raise ValueError(f"Too many placed items in scene ({len(raw_objects)}). Maximum permitted is 50.")
 
     sanitized_objects = []
     seen_placement_ids = set()
@@ -200,7 +205,7 @@ def validate_and_sanitize_canonical_scene(
         if not isinstance(obj, dict):
             raise ValueError(f"Placed item at index {idx} must be a dictionary.")
 
-        # ID: unique placement ID
+        # ID: unique placement ID (no whitespace)
         placement_id = obj.get('id')
         if not placement_id or not isinstance(placement_id, str):
             raise ValueError(f"Item at index {idx} is missing a non-empty string 'id'.")
@@ -227,14 +232,16 @@ def validate_and_sanitize_canonical_scene(
             raise ValueError(f"Item '{placement_id}' 'name' must be a string.")
         name = name.strip()[:128]
         _check_no_url_or_credentials(name, f"objects[{idx}].name")
+        if not SAFE_NAME_PATTERN.match(name):
+            raise ValueError(f"Item name '{name}' contains unsafe characters.")
 
-        # 3-component vectors: position, rotationEuler, scale, dimensions
+        # Exactly 3-component vectors: position, rotationEuler, scale, dimensions
         def _parse_vec3(key: str, positive_only: bool = False) -> list[float]:
             vec = obj.get(key)
-            if not isinstance(vec, (list, tuple)) or len(vec) < 3:
-                raise ValueError(f"Item '{placement_id}' '{key}' must be a 3-component vector [x, y, z].")
+            if not isinstance(vec, (list, tuple)) or len(vec) != 3:
+                raise ValueError(f"Item '{placement_id}' '{key}' must be a 3-component vector [x, y, z] of length exactly 3.")
             parsed = []
-            for coord_idx, v in enumerate(vec[:3]):
+            for coord_idx, v in enumerate(vec):
                 if not _is_finite_number(v):
                     raise ValueError(f"Item '{placement_id}' '{key}[{coord_idx}]' must be a finite number.")
                 v_float = float(v)
@@ -446,25 +453,23 @@ def evaluate_task_success(
     task_name: str,
     objects: list[dict[str, Any]],
     is_budget_compliant: bool,
-    doorway_intrusions_count: int,
-    final_scene_out_of_bounds_count: int = 0
+    doorway_intrusions_count: int
 ) -> bool:
     """
-    Determines composite task success (H04) strictly adhering to pre-registered protocol:
+    Determines composite task success (H04) strictly adhering to pre-registered protocol
+    (docs/RESEARCH_PROTOCOL_AND_TASKS.md Section 1.2 & Section 9.3):
     1. Satisfies all 4 mandatory functional furniture items:
        - All 3 required fixed assets for the task
        - Exactly 1 permitted choice asset for the task
        - Total placed furniture count == EXACTLY 4
-    2. Strictly budget compliant (budgetTotalPaise <= budgetCeilingPaise with all assets having known prices).
+    2. Strictly budget compliant (budgetTotalPaise <= budgetCeilingPaise with all assets having known catalogue prices).
     3. Exactly zero doorway keep-out clearance intrusions (doorwayIntrusionsCount == 0).
-    4. Exactly zero room boundary violations (finalSceneOutOfBoundsCount == 0).
-    (Note: AABB overlap pairs count is an exploratory outcome E1 and is NOT a disqualifier for H04).
+    (Note: Room boundary containment is recorded independently as finalSceneOutOfBoundsCount,
+    and AABB overlaps as exploratory metric E1. Neither is a disqualifier for H04 in the pre-registered protocol).
     """
     if not is_budget_compliant:
         return False
     if doorway_intrusions_count > 0:
-        return False
-    if final_scene_out_of_bounds_count > 0:
         return False
 
     task_spec = TASK_SPECIFICATIONS.get(task_name)
@@ -535,8 +540,7 @@ def calculate_authoritative_session_metrics(
         task_name=task_name,
         objects=objects,
         is_budget_compliant=is_budget_compliant,
-        doorway_intrusions_count=doorway_intrusions_count,
-        final_scene_out_of_bounds_count=out_of_bounds_count
+        doorway_intrusions_count=doorway_intrusions_count
     )
 
     return {

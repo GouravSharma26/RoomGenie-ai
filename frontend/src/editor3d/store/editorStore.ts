@@ -15,6 +15,7 @@ import {
 } from '../validation/sceneValidation';
 import { SAMPLE_CATALOG } from '../data/catalog';
 import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
+import { recordEdit, recordOutOfBoundsAttempt } from '../../services/evaluationTelemetry';
 
 interface EditorState {
   scene: CanonicalScene;
@@ -146,6 +147,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedId: id,
       };
     });
+    recordEdit();
   },
 
   addCustomPlacement: (params) => {
@@ -194,6 +196,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedId: id,
       };
     });
+    recordEdit();
     return id;
   },
 
@@ -229,6 +232,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const obj = state.scene.objects[objIndex];
       const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
 
+      if (Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001) {
+        recordOutOfBoundsAttempt();
+      }
+      recordEdit();
+
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -245,6 +253,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementRotation: (id, rotation) => {
+    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
@@ -271,6 +280,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementScale: (id, scale) => {
+    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
@@ -297,6 +307,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementColor: (id, color) => {
+    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
@@ -359,6 +370,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       },
       selectedId: newId,
     });
+    recordEdit();
   },
 
   deleteSelected: () => {
@@ -375,6 +387,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       },
       selectedId: null,
     });
+    recordEdit();
   },
 
   deleteObject: (id) => {
@@ -388,6 +401,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       },
       selectedId: state.selectedId === id ? null : state.selectedId,
     }));
+    recordEdit();
   },
 
   clearScene: () => {
@@ -403,6 +417,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: null,
       currentDesignId: null,
     }));
+    recordEdit();
   },
 
   triggerCameraReset: () => {

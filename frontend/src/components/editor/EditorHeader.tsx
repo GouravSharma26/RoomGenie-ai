@@ -9,10 +9,12 @@ import {
   DollarSign,
   Sparkles,
   Camera,
-  Smartphone
+  Smartphone,
+  Activity
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
+import { getActiveSession } from '../../services/evaluationTelemetry';
 
 interface EditorHeaderProps {
   onOpenHelp: () => void;
@@ -22,6 +24,7 @@ interface EditorHeaderProps {
   onOpenPhotoVision?: () => void;
   onOpenPhotoTo3D?: () => void;
   onOpenArPlacement?: () => void;
+  onOpenEvaluationTrial?: () => void;
 }
 
 export const EditorHeader: React.FC<EditorHeaderProps> = ({
@@ -32,6 +35,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   onOpenPhotoVision,
   onOpenPhotoTo3D,
   onOpenArPlacement,
+  onOpenEvaluationTrial,
 }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
@@ -198,6 +202,24 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
           >
             <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
             <span>AR View</span>
+          </button>
+        )}
+
+        {/* Study Evaluation Trial Trigger */}
+        {onOpenEvaluationTrial && (
+          <button
+            onClick={onOpenEvaluationTrial}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1.5 transition active:scale-95 border ${
+              getActiveSession()
+                ? 'bg-emerald-600/20 border-emerald-500/60 text-emerald-300 hover:bg-emerald-600/30 shadow-emerald-900/20'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+            }`}
+            title="Open Research Evaluation Protocol & Telemetry Modal"
+          >
+            <Activity className="w-3.5 h-3.5 text-indigo-400" />
+            <span>
+              {getActiveSession() ? `Trial: ${getActiveSession()?.participantId}` : 'Study Trial'}
+            </span>
           </button>
         )}
 

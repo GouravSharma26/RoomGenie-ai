@@ -50,11 +50,11 @@ def _verify_session_secret(session: EvaluationSession, request) -> None:
     if request.user and request.user.is_authenticated and request.user.is_staff:
         return
 
-    # If session has no secret hash configured, bypass (for tests/legacy)
+    # Deny non-staff access when the hash is missing
     if not session.session_secret_hash:
-        return
+        raise PermissionDenied("Session has no configured capability secret.")
 
-    provided = request.headers.get('X-Session-Secret') or request.query_params.get('sessionSecret')
+    provided = request.headers.get('X-Session-Secret')
     if not provided and request.headers.get('Authorization', '').startswith('Bearer '):
         provided = request.headers.get('Authorization')[7:].strip()
 
@@ -82,10 +82,11 @@ class StartSessionView(APIView):
     """
     Stage 1 — Session Initialization.
     Idempotent & Concurrency-Safe:
-    - If a session with sessionId already exists with identical parameters, returns HTTP 200.
-    - If assignment parameters mismatch existing session, returns HTTP 409 Conflict.
+    - Client generates high-entropy sessionSecret before first request and reuses it on retries.
+    - Server stores only the SHA-256 hash in session_secret_hash.
+    - If a session with sessionId already exists with identical parameters and matching secret, returns HTTP 200.
+    - If assignment parameters or capability secret mismatch existing session, returns HTTP 409 Conflict.
     - Protects against concurrency collisions using atomic transactions and IntegrityError recovery.
-    - Issues a high-entropy session bearer secret for capability-based authorization.
     """
     permission_classes = [AllowAny]
 
@@ -97,6 +98,8 @@ class StartSessionView(APIView):
         data = serializer.validated_data
 
         session_id = data['sessionId']
+        client_secret = data['sessionSecret']
+        client_secret_hash = _hash_secret(client_secret)
         task_name = data['taskName']
         participant_id = data['participantId']
         condition = data['condition']
@@ -104,7 +107,7 @@ class StartSessionView(APIView):
         trial_period = data['trialPeriod']
         task_spec = TASK_SPECIFICATIONS.get(task_name, TASK_SPECIFICATIONS['living_room'])
 
-        # Check existing record for parameter congruence
+        # Check existing record for parameter and capability secret congruence
         with transaction.atomic():
             existing_session = EvaluationSession.objects.filter(id=session_id).first()
             if existing_session:
@@ -126,12 +129,16 @@ class StartSessionView(APIView):
                         status=status.HTTP_409_CONFLICT
                     )
 
+                if not existing_session.session_secret_hash or not hmac.compare_digest(client_secret_hash, existing_session.session_secret_hash):
+                    return Response(
+                        {
+                            "error": "Session capability secret does not match the existing session secret hash."
+                        },
+                        status=status.HTTP_409_CONFLICT
+                    )
+
                 response_data = ExperimentSessionRecordSerializer(existing_session).data
                 return Response(response_data, status=status.HTTP_200_OK)
-
-            # Generate capability secret
-            session_secret = secrets.token_urlsafe(32)
-            session_secret_hash = _hash_secret(session_secret)
 
             try:
                 with transaction.atomic():
@@ -144,7 +151,7 @@ class StartSessionView(APIView):
                         task_name=task_name,
                         budget_ceiling_paise=task_spec['budget_ceiling_paise'],
                         session_status='in_progress',
-                        session_secret_hash=session_secret_hash,
+                        session_secret_hash=client_secret_hash,
                         checkpoint_sequence=0,
                         start_time=timezone.now(),
                     )
@@ -161,13 +168,17 @@ class StartSessionView(APIView):
                         {"error": "Session UUID conflict with divergent assignment parameters."},
                         status=status.HTTP_409_CONFLICT
                     )
+                if not existing.session_secret_hash or not hmac.compare_digest(client_secret_hash, existing.session_secret_hash):
+                    return Response(
+                        {"error": "Session capability secret mismatch on concurrent session creation."},
+                        status=status.HTTP_409_CONFLICT
+                    )
                 return Response(
                     ExperimentSessionRecordSerializer(existing).data,
                     status=status.HTTP_200_OK
                 )
 
         response_data = ExperimentSessionRecordSerializer(new_session).data
-        response_data['sessionSecret'] = session_secret
         return Response(response_data, status=status.HTTP_201_CREATED)
 
 
@@ -248,6 +259,12 @@ class CheckpointSessionView(APIView):
             session.checkpoint_sequence = incoming_seq
 
             if 'activeDurationSeconds' in data:
+                elapsed_seconds = max(0.0, (timezone.now() - session.start_time).total_seconds())
+                if data['activeDurationSeconds'] > elapsed_seconds + 5.0:
+                    return Response(
+                        {"error": f"activeDurationSeconds ({data['activeDurationSeconds']}) cannot exceed elapsed session time ({elapsed_seconds:.1f}s)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 session.active_duration_seconds = data['activeDurationSeconds']
             if 'totalEdits' in data:
                 session.total_edits = data['totalEdits']
@@ -319,14 +336,31 @@ class CompleteSessionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            end_time = timezone.now()
+            duration_seconds = max(0.0, (end_time - session.start_time).total_seconds())
+
+            if 'activeDurationSeconds' in data:
+                if data['activeDurationSeconds'] > duration_seconds + 5.0:
+                    return Response(
+                        {"error": f"activeDurationSeconds ({data['activeDurationSeconds']}) cannot exceed elapsed session duration ({duration_seconds:.1f}s)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            if 'idleIntervals' in data:
+                idle_intervals = data['idleIntervals']
+                total_idle, max_gap, has_prolonged = _compute_idle_aggregates(idle_intervals)
+                active_val = data.get('activeDurationSeconds', session.active_duration_seconds)
+                if active_val + total_idle > duration_seconds + 10.0:
+                    return Response(
+                        {"error": f"Sum of active duration ({active_val:.1f}s) and total idle duration ({total_idle:.1f}s) exceeds elapsed session duration ({duration_seconds:.1f}s)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
             # Calculate authoritative server-side metrics
             metrics = calculate_authoritative_session_metrics(
                 session.task_name,
                 sanitized_final_scene
             )
-
-            end_time = timezone.now()
-            duration_seconds = max(0.0, (end_time - session.start_time).total_seconds())
 
             session.final_scene_snapshot = sanitized_final_scene
             session.budget_total_paise = metrics['budget_total_paise']

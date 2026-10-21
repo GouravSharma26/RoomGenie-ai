@@ -45,8 +45,8 @@ class Command(BaseCommand):
         for session_id in list(candidates.values_list('id', flat=True)):
             with transaction.atomic():
                 session = EvaluationSession.objects.select_for_update().filter(id=session_id).first()
-                if not session or session.session_status != 'in_progress':
-                    # Raced with completion or explicit abort
+                if not session or session.session_status != 'in_progress' or session.updated_at > cutoff:
+                    # Raced with completion, explicit abort, or recent checkpoint heartbeat
                     continue
 
                 if dry_run:

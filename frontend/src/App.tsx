@@ -24,6 +24,7 @@ import { AiAgentDrawer } from './components/editor/AiAgentDrawer';
 import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 import { ArPlacementModal } from './components/editor/ArPlacementModal';
+import { EvaluationTrialModal } from './components/editor/EvaluationTrialModal';
 import { ensureAuthenticated, getDesignById } from './services/designApi';
 import { useEditorStore } from './editor3d/store/editorStore';
 
@@ -39,6 +40,7 @@ export default function App() {
   const [isPhotoVisionOpen, setIsPhotoVisionOpen] = useState<boolean>(false);
   const [isPhotoTo3DOpen, setIsPhotoTo3DOpen] = useState<boolean>(false);
   const [isArModalOpen, setIsArModalOpen] = useState<boolean>(false);
+  const [isEvaluationTrialOpen, setIsEvaluationTrialOpen] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -162,6 +164,7 @@ export default function App() {
             onOpenPhotoVision={() => setIsPhotoVisionOpen(true)}
             onOpenPhotoTo3D={() => setIsPhotoTo3DOpen(true)}
             onOpenArPlacement={() => setIsArModalOpen(true)}
+            onOpenEvaluationTrial={() => setIsEvaluationTrialOpen(true)}
           />
 
           {/* 3D Viewport with Left and Right Toolbars */}
@@ -180,6 +183,7 @@ export default function App() {
           <RoomPhotoVisionModal isOpen={isPhotoVisionOpen} onClose={() => setIsPhotoVisionOpen(false)} />
           <PhotoTo3DModal isOpen={isPhotoTo3DOpen} onClose={() => setIsPhotoTo3DOpen(false)} />
           <ArPlacementModal isOpen={isArModalOpen} onClose={() => setIsArModalOpen(false)} />
+          <EvaluationTrialModal isOpen={isEvaluationTrialOpen} onClose={() => setIsEvaluationTrialOpen(false)} />
         </div>
       ) : (
         /* System Status Dashboard View */

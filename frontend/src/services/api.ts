@@ -31,3 +31,5 @@ export async function checkBackendHealth(): Promise<HealthResponse> {
     };
   }
 }
+
+export * from './evaluationTelemetry';
