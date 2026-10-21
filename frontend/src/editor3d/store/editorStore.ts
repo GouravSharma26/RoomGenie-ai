@@ -26,9 +26,12 @@ interface EditorState {
   gridSnap: boolean;
   history: CanonicalScene[];
   future: CanonicalScene[];
+  activeGestureSnapshot: CanonicalScene | null;
   currentDesignId: string | null;
 
   // Actions
+  startInteraction: () => void;
+  endInteraction: () => void;
   setCurrentDesignId: (id: string | null) => void;
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
   addFurniture: (item: FurnitureCatalogItem) => void;
@@ -83,12 +86,12 @@ const initialScene: CanonicalScene = {
 
 const MAX_HISTORY = 50;
 
-function pushSnapshot(state: EditorState): { history: CanonicalScene[]; future: CanonicalScene[] } {
-  const snapshot: CanonicalScene = {
-    schemaVersion: state.scene.schemaVersion,
-    unit: state.scene.unit,
-    room: { ...state.scene.room },
-    objects: state.scene.objects.map((obj) => ({
+function cloneCanonicalScene(scene: CanonicalScene): CanonicalScene {
+  return {
+    schemaVersion: scene.schemaVersion,
+    unit: scene.unit,
+    room: { ...scene.room },
+    objects: scene.objects.map((obj) => ({
       ...obj,
       dimensions: [...obj.dimensions] as Vector3Tuple,
       position: [...obj.position] as Vector3Tuple,
@@ -97,6 +100,10 @@ function pushSnapshot(state: EditorState): { history: CanonicalScene[]; future: 
       materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
     })),
   };
+}
+
+function pushSnapshot(state: EditorState): { history: CanonicalScene[]; future: CanonicalScene[] } {
+  const snapshot = cloneCanonicalScene(state.scene);
   return {
     history: [...state.history, snapshot].slice(-MAX_HISTORY),
     future: [],
@@ -112,7 +119,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   gridSnap: true,
   history: [],
   future: [],
+  activeGestureSnapshot: null,
   currentDesignId: null,
+
+  startInteraction: () => {
+    set((state) => {
+      if (state.activeGestureSnapshot !== null) return state;
+      return {
+        activeGestureSnapshot: cloneCanonicalScene(state.scene),
+      };
+    });
+  },
+
+  endInteraction: () => {
+    set((state) => {
+      if (!state.activeGestureSnapshot) return state;
+      const initial = state.activeGestureSnapshot;
+      const current = state.scene;
+      const hasChanged = JSON.stringify(initial) !== JSON.stringify(current);
+      if (hasChanged) {
+        recordEdit();
+        return {
+          activeGestureSnapshot: null,
+          history: [...state.history, initial].slice(-MAX_HISTORY),
+          future: [],
+        };
+      }
+      return {
+        activeGestureSnapshot: null,
+      };
+    });
+  },
 
   setCurrentDesignId: (id) => set({ currentDesignId: id }),
 
@@ -270,15 +307,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001) {
         recordOutOfBoundsAttempt();
       }
-      recordEdit();
 
-      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
         position: clampedPos,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture: update scene only
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+        };
+      }
+
+      // Discrete standalone edit: push snapshot & record edit
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
         scene: {
@@ -290,7 +338,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementRotation: (id, rotation) => {
-    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
@@ -300,7 +347,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp position with new rotation so corners do not pierce room boundaries
       const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, obj.scale, validatedRot);
 
-      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -308,6 +354,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         rotationEuler: validatedRot,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture: update scene only
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+        };
+      }
+
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
         scene: {
@@ -319,7 +377,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementScale: (id, scale) => {
-    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
@@ -329,7 +386,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp position with new scale to avoid boundary clipping
       const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, validatedS, obj.rotationEuler);
 
-      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -337,6 +393,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampedPos,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture: update scene only
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+        };
+      }
+
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
         scene: {
@@ -517,6 +585,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: newHistory,
       future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
       selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
+      activeGestureSnapshot: null,
     });
     recordUndoRedo();
   },
@@ -545,6 +614,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: [...history, currentSnapshot].slice(-MAX_HISTORY),
       future: newFuture,
       selectedId: next.objects.length > 0 ? next.objects[0].id : null,
+      activeGestureSnapshot: null,
     });
     recordUndoRedo();
   },

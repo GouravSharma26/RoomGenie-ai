@@ -296,21 +296,18 @@ class CheckpointSessionView(APIView):
             # Non-destructive counter preservation: update ONLY if provided
             session.checkpoint_sequence = incoming_seq
 
+            # Unconditionally calculate elapsed session time
+            now = timezone.now()
+            elapsed_seconds = max(0.0, (now - session.start_time).total_seconds())
+
             if 'activeDurationSeconds' in data:
-                elapsed_seconds = max(0.0, (timezone.now() - session.start_time).total_seconds())
                 if data['activeDurationSeconds'] > elapsed_seconds + 5.0:
                     return Response(
                         {"error": f"activeDurationSeconds ({data['activeDurationSeconds']}) cannot exceed elapsed session time ({elapsed_seconds:.1f}s)."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                session.active_duration_seconds = data['activeDurationSeconds']
-            if 'totalEdits' in data:
-                session.total_edits = data['totalEdits']
-            if 'undoRedoCount' in data:
-                session.undo_redo_count = data['undoRedoCount']
-            if 'attemptedOutOfBoundsCount' in data:
-                session.attempted_out_of_bounds_count = data['attemptedOutOfBoundsCount']
 
+            validated_idle_data = None
             if 'idleIntervals' in data:
                 try:
                     total_idle, max_gap, has_prolonged = _validate_and_compute_idle_aggregates(
@@ -322,14 +319,28 @@ class CheckpointSessionView(APIView):
                         {"error": f"Invalid idleIntervals: {str(exc)}"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
+                validated_idle_data = (total_idle, max_gap, has_prolonged)
 
-                active_val = data.get('activeDurationSeconds', session.active_duration_seconds)
-                if active_val + total_idle > elapsed_seconds + 10.0:
+            effective_active = data.get('activeDurationSeconds', session.active_duration_seconds or 0.0)
+            effective_idle = validated_idle_data[0] if validated_idle_data is not None else (session.total_idle_duration_seconds or 0.0)
+            if 'activeDurationSeconds' in data or 'idleIntervals' in data:
+                if effective_active + effective_idle > elapsed_seconds + 10.0:
                     return Response(
-                        {"error": f"Sum of active duration ({active_val:.1f}s) and total idle duration ({total_idle:.1f}s) exceeds elapsed session time ({elapsed_seconds:.1f}s)."},
+                        {"error": f"Sum of active duration ({effective_active:.1f}s) and total idle duration ({effective_idle:.1f}s) exceeds elapsed session time ({elapsed_seconds:.1f}s)."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
+            if 'activeDurationSeconds' in data:
+                session.active_duration_seconds = data['activeDurationSeconds']
+            if 'totalEdits' in data:
+                session.total_edits = data['totalEdits']
+            if 'undoRedoCount' in data:
+                session.undo_redo_count = data['undoRedoCount']
+            if 'attemptedOutOfBoundsCount' in data:
+                session.attempted_out_of_bounds_count = data['attemptedOutOfBoundsCount']
+
+            if validated_idle_data is not None:
+                total_idle, max_gap, has_prolonged = validated_idle_data
                 session.idle_intervals = data['idleIntervals']
                 session.total_idle_duration_seconds = total_idle
                 session.max_single_idle_gap_seconds = max_gap
@@ -413,13 +424,16 @@ class CompleteSessionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                active_val = data.get('activeDurationSeconds', session.active_duration_seconds)
-                if active_val + total_idle > duration_seconds + 10.0:
+                validated_idle_data = (total_idle, max_gap, has_prolonged)
+
+            effective_active = data.get('activeDurationSeconds', session.active_duration_seconds or 0.0)
+            effective_idle = validated_idle_data[0] if validated_idle_data is not None else (session.total_idle_duration_seconds or 0.0)
+            if 'activeDurationSeconds' in data or 'idleIntervals' in data:
+                if effective_active + effective_idle > duration_seconds + 10.0:
                     return Response(
-                        {"error": f"Sum of active duration ({active_val:.1f}s) and total idle duration ({total_idle:.1f}s) exceeds elapsed session duration ({duration_seconds:.1f}s)."},
+                        {"error": f"Sum of active duration ({effective_active:.1f}s) and total idle duration ({effective_idle:.1f}s) exceeds elapsed session duration ({duration_seconds:.1f}s)."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                validated_idle_data = (total_idle, max_gap, has_prolonged)
 
             # Calculate authoritative server-side metrics
             metrics = calculate_authoritative_session_metrics(

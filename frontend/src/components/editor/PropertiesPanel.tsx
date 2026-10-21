@@ -33,6 +33,8 @@ export const PropertiesPanel: React.FC = () => {
   const updateColor = useEditorStore((state) => state.updatePlacementColor);
   const duplicateSelected = useEditorStore((state) => state.duplicateSelected);
   const deleteSelected = useEditorStore((state) => state.deleteSelected);
+  const startInteraction = useEditorStore((state) => state.startInteraction);
+  const endInteraction = useEditorStore((state) => state.endInteraction);
 
   const selectedObject = objects.find((obj) => obj.id === selectedId);
 
@@ -132,6 +134,11 @@ export const PropertiesPanel: React.FC = () => {
             step="0.05"
             value={posX}
             onChange={(e) => handlePositionXChange(parseFloat(e.target.value))}
+            onPointerDown={startInteraction}
+            onPointerUp={endInteraction}
+            onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
+            onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
+            onBlur={endInteraction}
             className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
           />
         </div>
@@ -149,6 +156,11 @@ export const PropertiesPanel: React.FC = () => {
             step="0.05"
             value={posZ}
             onChange={(e) => handlePositionZChange(parseFloat(e.target.value))}
+            onPointerDown={startInteraction}
+            onPointerUp={endInteraction}
+            onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
+            onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
+            onBlur={endInteraction}
             className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
           />
         </div>
@@ -170,6 +182,11 @@ export const PropertiesPanel: React.FC = () => {
           step="5"
           value={normalizedRotY}
           onChange={(e) => handleRotationYChange(parseFloat(e.target.value))}
+          onPointerDown={startInteraction}
+          onPointerUp={endInteraction}
+          onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
+          onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
+          onBlur={endInteraction}
           className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
         />
 
@@ -209,6 +226,11 @@ export const PropertiesPanel: React.FC = () => {
           step="0.05"
           value={scaleUniform}
           onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
+          onPointerDown={startInteraction}
+          onPointerUp={endInteraction}
+          onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
+          onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
+          onBlur={endInteraction}
           className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
         />
 

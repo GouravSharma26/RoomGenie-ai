@@ -13,11 +13,14 @@ import {
 } from 'lucide-react';
 import {
   getActiveSession,
+  getPendingSession,
+  clearPendingSession,
   startEvaluationSession,
   sendEvaluationCheckpoint,
   completeEvaluationSession,
   abortEvaluationSession,
   type ActiveEvaluationSession,
+  type PendingEvaluationSession,
   type EvaluationCondition,
   type EvaluationSequence,
   type EvaluationTask,
@@ -39,23 +42,34 @@ const SEQUENCE_MAPPINGS: Record<EvaluationSequence, { P1: [EvaluationCondition, 
 };
 
 export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOpen, onClose }) => {
+  const initialPending = getPendingSession();
   const [activeSession, setActiveSessionState] = useState<ActiveEvaluationSession | null>(() => getActiveSession());
+  const [pendingSession, setPendingSessionState] = useState<PendingEvaluationSession | null>(initialPending);
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-  const [participantId, setParticipantId] = useState('P01');
-  const [sequenceOrder, setSequenceOrder] = useState<EvaluationSequence>('G1');
-  const [condition, setCondition] = useState<EvaluationCondition>('manual');
-  const [taskName, setTaskName] = useState<EvaluationTask>('living_room');
+  const [participantId, setParticipantId] = useState(initialPending?.participantId || 'P01');
+  const [sequenceOrder, setSequenceOrder] = useState<EvaluationSequence>(initialPending?.sequenceOrder || 'G1');
+  const [condition, setCondition] = useState<EvaluationCondition>(initialPending?.condition || 'manual');
+  const [taskName, setTaskName] = useState<EvaluationTask>(initialPending?.taskName || 'living_room');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<ExperimentSessionRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [abortReason, setAbortReason] = useState<AbortReason>('user_cancelled');
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
 
-  // Sync active session state when modal opens
+  // Sync active and pending session state when modal opens
   if (isOpen !== prevIsOpen) {
     setPrevIsOpen(isOpen);
     if (isOpen) {
-      setActiveSessionState(getActiveSession());
+      const active = getActiveSession();
+      const pending = getPendingSession();
+      setActiveSessionState(active);
+      setPendingSessionState(pending);
+      if (pending && !active) {
+        setParticipantId(pending.participantId);
+        setSequenceOrder(pending.sequenceOrder);
+        setCondition(pending.condition);
+        setTaskName(pending.taskName);
+      }
       setErrorMsg(null);
     }
   }
@@ -71,6 +85,44 @@ export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOp
     derivedPeriod = 2;
   }
 
+  const handleRetryPending = async () => {
+    if (!pendingSession) return;
+    setErrorMsg(null);
+    try {
+      setIsSubmitting(true);
+      await startEvaluationSession({
+        sessionId: pendingSession.sessionId,
+        sessionSecret: pendingSession.sessionSecret,
+        participantId: pendingSession.participantId,
+        condition: pendingSession.condition,
+        sequenceOrder: pendingSession.sequenceOrder,
+        taskName: pendingSession.taskName,
+        trialPeriod: pendingSession.trialPeriod,
+      });
+
+      if (pendingSession.taskName === 'living_room') {
+        useEditorStore.getState().setRoomDimensions({ width: 5.0, length: 4.0, height: 2.8 });
+      } else {
+        useEditorStore.getState().setRoomDimensions({ width: 4.5, length: 3.5, height: 2.8 });
+      }
+
+      const active = getActiveSession();
+      setActiveSessionState(active);
+      setPendingSessionState(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDiscardPending = () => {
+    clearPendingSession();
+    setPendingSessionState(null);
+    setErrorMsg(null);
+  };
+
   const handleStart = async () => {
     setErrorMsg(null);
     if (!derivedPeriod) {
@@ -80,7 +132,15 @@ export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOp
 
     try {
       setIsSubmitting(true);
+      const isMatchingPending = pendingSession &&
+        pendingSession.participantId === participantId.trim() &&
+        pendingSession.condition === condition &&
+        pendingSession.sequenceOrder === sequenceOrder &&
+        pendingSession.taskName === taskName;
+
       await startEvaluationSession({
+        sessionId: isMatchingPending ? pendingSession.sessionId : undefined,
+        sessionSecret: isMatchingPending ? pendingSession.sessionSecret : undefined,
         participantId: participantId.trim(),
         condition,
         sequenceOrder,
@@ -97,6 +157,7 @@ export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOp
 
       const active = getActiveSession();
       setActiveSessionState(active);
+      setPendingSessionState(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorMsg(msg);
@@ -329,6 +390,40 @@ export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOp
           ) : (
             /* Configure and Start Trial */
             <div className="space-y-4">
+              {pendingSession && (
+                <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-700/60 text-amber-200 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-amber-400 text-sm">
+                      <RotateCcw className="w-4 h-4 text-amber-400" />
+                      Pending / Lost Start Session Detected
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-900/60 border border-amber-600 text-amber-300">
+                      Unconfirmed
+                    </span>
+                  </div>
+                  <p className="text-amber-200/90 leading-relaxed">
+                    A previous trial start request for Participant <strong>{pendingSession.participantId}</strong> ({pendingSession.sequenceOrder}, {pendingSession.condition.replace('_', ' ')}, {pendingSession.taskName.replace('_', ' ')}) was initiated, but the server response was interrupted or the page reloaded. You can retry with the preserved credentials or discard to start fresh.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={handleRetryPending}
+                      disabled={isSubmitting}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 transition disabled:opacity-50 shadow-md shadow-amber-600/20"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      {isSubmitting ? 'Retrying...' : 'Retry / Resume Session'}
+                    </button>
+                    <button
+                      onClick={handleDiscardPending}
+                      disabled={isSubmitting}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs transition disabled:opacity-50"
+                    >
+                      Discard Pending
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-400 flex items-start gap-2">
                 <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <span>
@@ -421,7 +516,7 @@ export const EvaluationTrialModal: React.FC<EvaluationTrialModalProps> = ({ isOp
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-indigo-600/20 inline-flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  {isSubmitting ? 'Starting...' : 'Start Evaluation Trial'}
+                  {isSubmitting ? 'Starting...' : pendingSession ? 'Retry / Start Evaluation Trial' : 'Start Evaluation Trial'}
                 </button>
               </div>
             </div>

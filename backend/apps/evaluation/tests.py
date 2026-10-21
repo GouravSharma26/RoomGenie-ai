@@ -1450,3 +1450,31 @@ class EvaluationTelemetryTestCase(TestCase):
         self.assertEqual(resp_excess.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue("extends beyond elapsed session time" in str(resp_excess.data) or "exceeds elapsed session" in str(resp_excess.data))
 
+        # 4. Sparse payload: providing only idleIntervals (omitting activeDurationSeconds)
+        # Must calculate elapsed_seconds unconditionally and succeed without UnboundLocalError
+        resp_sparse_idle = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 2,
+                'idleIntervals': [{'startOffsetSeconds': 0.0, 'durationSeconds': 0.1}],
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp_sparse_idle.status_code, status.HTTP_200_OK)
+        session = EvaluationSession.objects.get(id=s_id)
+        self.assertEqual(session.total_idle_duration_seconds, 0.1)
+
+        # 5. Sparse payload: providing only activeDurationSeconds, checked against stored idle
+        resp_excess_active = self.client.patch(
+            url,
+            {
+                'checkpointSequence': 3,
+                'activeDurationSeconds': 500.0,
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(resp_excess_active.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue("cannot exceed elapsed" in str(resp_excess_active.data) or "exceeds elapsed" in str(resp_excess_active.data))
+
