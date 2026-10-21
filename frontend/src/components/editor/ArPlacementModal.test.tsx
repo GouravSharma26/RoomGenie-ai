@@ -173,6 +173,7 @@ describe('ArPlacementModal', () => {
         setRotationY: vi.fn(),
         setScale: vi.fn(),
         repositionToReticle: vi.fn().mockReturnValue(true),
+        isDisposed: () => false,
       };
     });
 
