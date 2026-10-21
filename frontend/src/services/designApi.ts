@@ -91,12 +91,24 @@ export async function saveDesignToBackend(
     : `${API_BASE_URL}/api/v1/designs/`;
   const method = existingId ? 'PATCH' : 'POST';
 
+  // Sanitize scene objects by omitting ephemeral blob: URLs before persistence
+  const sanitizedScene: CanonicalScene = {
+    ...scene,
+    objects: scene.objects.map((obj) => {
+      if (obj.modelUrl && obj.modelUrl.startsWith('blob:')) {
+        const { modelUrl: _modelUrl, ...rest } = obj;
+        return rest;
+      }
+      return obj;
+    }),
+  };
+
   const res = await fetch(url, {
     method,
     headers: getAuthHeaders(token),
     body: JSON.stringify({
       title,
-      scene_json: scene,
+      scene_json: sanitizedScene,
     }),
   });
 

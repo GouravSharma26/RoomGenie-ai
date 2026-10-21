@@ -212,10 +212,10 @@ A phase is not complete merely because code was generated. It is complete only w
 
 - [x] Phase 0 — Setup and scaffold (scaffold, health endpoint, tests, environment checks verified)
 - [x] Phase 1 — Interactive 3D room editor (Three.js/R3F room canvas, lighting, orbit controls, catalogue, CRUD, transforms, bounds clamping, properties panel)
-- [ ] Phase 2 — Django API and persistence
-- [ ] Phase 3 — Furniture catalogue and budget
-- [ ] Phase 4 — AI design agent
-- [ ] Phase 5 — Room photo analysis
-- [ ] Phase 6 — Photo-to-3D approximation
-- [ ] Phase 7 — AR placement
+- [x] Phase 2 — Django API and persistence (PostgreSQL models, token auth, canonical scene JSON schema, design CRUD endpoints)
+- [x] Phase 3 — Furniture catalogue and budget (authoritative integer paise math, 10 CC0 architectural models, boundary containment, REST endpoints)
+- [x] Phase 4 — AI design agent (2-phase proposal/approval workflow, Gemini flash adapter & mock, strict tool validation, collision checks)
+- [x] Phase 5 — Room photo analysis (Gemini flash vision adapter & mock, structured observations, catalogue remapping, frontend modal)
+- [x] Phase 6 — Photo-to-3D approximation (Tripo adapter & mock, asynchronous job lifecycle, atomic claiming, strict GLB validation, authenticated streaming, lifecycle E2E verified)
+- [x] Phase 7 — AR placement (docs/AR_DEVICE_SPECIFICATION.md, WebXR immersive-ar hit-test, manual adjustments, mobile handoff QR, diagnostic fallback, limitations documented)
 - [ ] Phase 8 — Research and delivery

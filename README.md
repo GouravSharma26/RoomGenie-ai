@@ -197,7 +197,19 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Strict user-ownership isolation (sessions and runs isolated by `owner=request.user`, 404 for cross-user queries)
   - Interactive frontend slide-out `AiAgentDrawer.tsx` with conversation history, suggested prompt chips, structured proposal preview card, authoritative budget impact, and Approve/Discard controls
   - Automated tests passing: 64 Django tests, 28 frontend Vitest tests, 0 lint warnings, production bundle verified
-- [ ] **Phase 5 — Room photo analysis**
-- [ ] **Phase 6 — Photo-to-3D furniture approximation**
-- [ ] **Phase 7 — Real-world AR placement**
+- [x] **Phase 5 — Room photo analysis**
+  - Gemini Flash vision adapter (`GeminiRoomVisionAdapter`) and deterministic mock adapter (`MockRoomVisionAdapter`)
+  - Structured room layout observation: furniture detection mapped to CC0 catalogue, architectural features, palette, confidence scoring, uncertainty notes
+  - Two-stage confirmation modal (`RoomPhotoVisionModal.tsx`) with drag-and-drop photo upload, observations review, catalogue remapping, and explicit user application
+- [x] **Phase 6 — Photo-to-3D furniture approximation**
+  - Asynchronous reconstruction pipeline with Tripo adapter (`v3.1-20260211`), deterministic mock engine, and catalogue fallback
+  - Strict Khronos glTF 2.0 binary (`.glb`) validator with header, chunk, and bounds enforcement
+  - Authenticated streaming endpoint (`GET /api/v1/furniture/reconstructions/{id}/download/`) with path traversal protection and secure in-memory streaming
+  - End-to-end asset lifecycle verified across placement, backend persistence, rehydration, duplication, and deletion
+- [x] **Phase 7 — Real-world AR placement**
+  - Reference hardware specification (`docs/AR_DEVICE_SPECIFICATION.md`) targeting Android 10+ ARCore (Pixel/Galaxy) and iOS 15+ Quick Look
+  - W3C WebXR `immersive-ar` session mode with horizontal floor plane `hit-test` reticle detection
+  - Interactive AR placement dialog (`ArPlacementModal.tsx`) with manual adjustments (floor offset, 360° yaw rotation, 0.5x–2.0x scale)
+  - Clear fallback message for unsupported/desktop devices, QR code mobile handoff launcher, and Google Scene Viewer intent integration
+  - Comprehensive physical limitations documented for tracking drift, scale variance, and lighting estimation
 - [ ] **Phase 8 — Research, testing, and delivery**

@@ -23,6 +23,7 @@ import { BudgetBreakdownModal } from './components/editor/BudgetBreakdownModal';
 import { AiAgentDrawer } from './components/editor/AiAgentDrawer';
 import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
+import { ArPlacementModal } from './components/editor/ArPlacementModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -35,6 +36,7 @@ export default function App() {
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
   const [isPhotoVisionOpen, setIsPhotoVisionOpen] = useState<boolean>(false);
   const [isPhotoTo3DOpen, setIsPhotoTo3DOpen] = useState<boolean>(false);
+  const [isArModalOpen, setIsArModalOpen] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     setLoading(true);
@@ -71,8 +73,8 @@ export default function App() {
               <span className="font-bold text-base tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
                 RoomGenie AI
               </span>
-              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-                Phase 6 Active
+              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-medium">
+                Phase 7 Active
               </span>
             </div>
           </div>
@@ -123,6 +125,7 @@ export default function App() {
             onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
             onOpenPhotoVision={() => setIsPhotoVisionOpen(true)}
             onOpenPhotoTo3D={() => setIsPhotoTo3DOpen(true)}
+            onOpenArPlacement={() => setIsArModalOpen(true)}
           />
 
           {/* 3D Viewport with Left and Right Toolbars */}
@@ -140,6 +143,7 @@ export default function App() {
           <AiAgentDrawer isOpen={isAiAssistantOpen} onClose={() => setIsAiAssistantOpen(false)} />
           <RoomPhotoVisionModal isOpen={isPhotoVisionOpen} onClose={() => setIsPhotoVisionOpen(false)} />
           <PhotoTo3DModal isOpen={isPhotoTo3DOpen} onClose={() => setIsPhotoTo3DOpen(false)} />
+          <ArPlacementModal isOpen={isArModalOpen} onClose={() => setIsArModalOpen(false)} />
         </div>
       ) : (
         /* System Status Dashboard View */

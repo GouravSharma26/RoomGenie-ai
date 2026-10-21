@@ -8,7 +8,8 @@ import {
   Cloud, 
   DollarSign,
   Sparkles,
-  Camera
+  Camera,
+  Smartphone
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SAMPLE_CATALOG } from '../../editor3d/data/catalog';
@@ -20,6 +21,7 @@ interface EditorHeaderProps {
   onOpenAiAssistant?: () => void;
   onOpenPhotoVision?: () => void;
   onOpenPhotoTo3D?: () => void;
+  onOpenArPlacement?: () => void;
 }
 
 export const EditorHeader: React.FC<EditorHeaderProps> = ({
@@ -29,6 +31,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   onOpenAiAssistant,
   onOpenPhotoVision,
   onOpenPhotoTo3D,
+  onOpenArPlacement,
 }) => {
   const room = useEditorStore((state) => state.scene.room);
   const objects = useEditorStore((state) => state.scene.objects);
@@ -183,6 +186,18 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
           >
             <Layers className="w-3.5 h-3.5 text-cyan-400" />
             <span>Photo to 3D</span>
+          </button>
+        )}
+
+        {/* AR Real-World Placement Trigger */}
+        {onOpenArPlacement && (
+          <button
+            onClick={onOpenArPlacement}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition active:scale-95"
+            title="Preview furniture in real-world space using Augmented Reality (AR)"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+            <span>AR View</span>
           </button>
         )}
 

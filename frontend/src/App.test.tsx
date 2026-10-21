@@ -182,13 +182,27 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 6 Active')).toBeInTheDocument();
+    expect(screen.getByText('Phase 7 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Room Photo/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Photo to 3D/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /AR View/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /AI Designer/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Save & Load/i })).toBeInTheDocument();
     expect(screen.getByTestId('mock-room-canvas')).toBeInTheDocument();
+  });
+
+  it('opens AR Placement modal when AR View button is clicked', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: /AR View/i }));
+    expect(screen.getByRole('heading', { name: /Augmented Reality \(AR\) Furniture Placement/i })).toBeInTheDocument();
   });
 
   it('opens Photo-to-3D Reconstruction modal when button is clicked', async () => {

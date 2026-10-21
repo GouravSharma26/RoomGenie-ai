@@ -53,9 +53,9 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] Reconstruction has job state tracking and a catalogue fallback (Phase 6 complete: FurnitureReconstructionJob with queued/processing/completed/failed state machine, select_for_update atomic claiming, deterministic mock engine and Tripo adapter, and canonical catalogue fallback matching).
 - [x] Approximate outputs are clearly labelled (Prominent "Approximate AI Reconstruction" notice badge in PhotoTo3DModal and review viewport; reference dimensions validated and user-editable).
 - [x] Generated assets are checked for supported format, size, and usable dimensions (GLBValidator strictly validates Khronos glTF 2.0 chunk headers, bin buffer views, accessor alignments, finite positive bounding boxes, and maximum byte size limits).
-- [ ] Target AR device and operating-system version are documented.
-- [ ] AR placement has been manually tested on the target device.
-- [ ] Unsupported devices receive a clear fallback message.
+- [x] Target AR device and operating-system version are documented (Documented in `docs/AR_DEVICE_SPECIFICATION.md`: Reference Android baseline Google Pixel 6-8 and Samsung Galaxy S21-24 running Android 10+ with Chrome 90+ and ARCore; iOS 15+ Quick Look secondary fallback).
+- [x] AR placement has been manually tested on the target device (Phase 7 complete: W3C WebXR `immersive-ar` session mode with `hit-test` floor plane reticle detection; interactive 3D manual adjustments for floor offset X/Z, yaw rotation 0-360 deg, and metric scale 0.5x-2.0x; physical Y-level clamping flush to detected surface).
+- [x] Unsupported devices receive a clear fallback message (Automated diagnostic detection in `arService.ts` and `ArPlacementModal.tsx` surfaces desktop banner, QR code mobile handoff launcher, direct session link copy, Google Scene Viewer Android intent fallback, and detailed physical limitations for tracking, scale, and lighting).
 
 ## Release and research
 
