@@ -60,6 +60,18 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
   const [xrSessionController, setXrSessionController] = useState<WebXrSessionController | null>(null);
   const [isPlacedInXr, setIsPlacedInXr] = useState<boolean>(false);
   const arOverlayRef = useRef<HTMLDivElement>(null);
+  const isLaunchingRef = useRef<boolean>(false);
+
+  const isXrActiveOrLaunching = isLaunchingWebXr || xrSessionController !== null;
+
+  useEffect(() => {
+    return () => {
+      isLaunchingRef.current = false;
+      if (xrSessionController) {
+        void xrSessionController.endSession();
+      }
+    };
+  }, [xrSessionController]);
 
   // Determine active item to place
   const activePlacedItem = useMemo(() => {
@@ -142,6 +154,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
   };
 
   const handleLaunchWebXr = async () => {
+    isLaunchingRef.current = true;
     try {
       setIsLaunchingWebXr(true);
       setWebXrError(null);
@@ -165,6 +178,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
           }));
         },
         onSessionEnd: () => {
+          isLaunchingRef.current = false;
           setIsLaunchingWebXr(false);
           setXrSessionController(null);
         },
@@ -172,9 +186,18 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
           setWebXrError(err.message);
         },
       });
+
+      if (!isLaunchingRef.current || controller.isDisposed?.()) {
+        void controller.endSession();
+        return;
+      }
+
+      setIsLaunchingWebXr(false);
       setXrSessionController(controller);
     } catch (err: any) {
+      isLaunchingRef.current = false;
       setIsLaunchingWebXr(false);
+      setXrSessionController(null);
       setWebXrError(
         err?.message ||
           'Failed to launch WebXR session. Please ensure camera permissions are granted and ARCore is installed.'
@@ -183,15 +206,21 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
   };
 
   const handleEndWebXr = async () => {
+    isLaunchingRef.current = false;
     if (xrSessionController) {
       await xrSessionController.endSession();
     }
+    setIsLaunchingWebXr(false);
+    setXrSessionController(null);
   };
 
   const handleCloseModal = () => {
+    isLaunchingRef.current = false;
     if (xrSessionController) {
       void xrSessionController.endSession();
     }
+    setIsLaunchingWebXr(false);
+    setXrSessionController(null);
     onClose();
   };
 
@@ -319,7 +348,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
             <div className="relative bg-slate-950 border border-slate-800 rounded-xl overflow-hidden h-72 flex flex-col justify-end shadow-inner">
               {/* Active 3D Model Preview */}
               <div className="absolute inset-0">
-                {!xrSessionController ? (
+                {!isXrActiveOrLaunching ? (
                   <ModelPreviewCanvas
                     modelUrl={activeModelUrl}
                     dimensions={scaledDimensions}
@@ -328,7 +357,9 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-300 p-4 text-center">
                     <span className="w-4 h-4 rounded-full bg-cyan-400 animate-ping mb-3" />
-                    <p className="text-xs font-semibold text-white">Live WebXR Camera View Active</p>
+                    <p className="text-xs font-semibold text-white">
+                      {isLaunchingWebXr ? 'Launching WebXR AR Camera...' : 'Live WebXR Camera View Active'}
+                    </p>
                     <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
                       Background 3D preview is paused to maximize mobile GPU frame rates and hit-test responsiveness.
                     </p>
@@ -686,8 +717,9 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
       <div
         ref={arOverlayRef}
         id="webxr-ar-overlay"
+        data-testid="webxr-ar-overlay"
         className={
-          xrSessionController
+          isXrActiveOrLaunching
             ? 'fixed inset-0 pointer-events-none z-[10000] flex flex-col justify-between p-4'
             : 'hidden'
         }
@@ -696,14 +728,14 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
         <div className="flex items-center justify-between pointer-events-auto">
           <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md">
             {transform.surfaceDetected ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-testid="webxr-surface-detected">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                 <span className="text-xs font-semibold text-emerald-300">
                   {isPlacedInXr ? 'Furniture Placed' : 'Floor Acquired — Tap to Place'}
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-testid="webxr-scanning-feedback">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                 <span className="text-xs font-semibold text-amber-300">
                   Scanning floor... Point camera down

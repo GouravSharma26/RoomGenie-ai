@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ArPlacementModal } from './ArPlacementModal';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import * as arService from '../../services/arService';
@@ -192,7 +192,9 @@ describe('ArPlacementModal', () => {
     });
 
     // Simulate surface detection change from camera frame
-    capturedSurfaceCallback!(true);
+    act(() => {
+      capturedSurfaceCallback!(true);
+    });
     await waitFor(() => {
       expect(screen.getByTestId('surface-detected-indicator')).toBeInTheDocument();
     });
@@ -286,7 +288,9 @@ describe('ArPlacementModal', () => {
     });
 
     // Trigger placement callback
-    capturedPlacedCallback!([0.5, 0, -1.2], 0, 1.0);
+    act(() => {
+      capturedPlacedCallback!([0.5, 0, -1.2], 0, 1.0);
+    });
 
     // Reposition button should now be available in the live modal HUD
     await waitFor(() => {
@@ -308,6 +312,128 @@ describe('ArPlacementModal', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('ar-placement-modal')).toBeInTheDocument();
+    });
+  });
+
+  it('unmounts preview canvas and shows scanning HUD while startWebXrArSession is pending, then completes on success', async () => {
+    vi.spyOn(arService, 'checkArCapability').mockResolvedValue({
+      isWebXrSupported: true,
+      isSceneViewerSupported: true,
+      isQuickLookSupported: false,
+      deviceCategory: 'android-arcore',
+      recommendation: 'webxr',
+      statusTitle: 'WebXR Immersive-AR Compatible',
+      statusDescription: 'WebXR ready',
+      limitations: arService.AR_LIMITATIONS,
+    });
+
+    let resolveSession!: (controller: any) => void;
+    const sessionPromise = new Promise((resolve) => {
+      resolveSession = resolve;
+    });
+
+    vi.spyOn(webXrArSession, 'startWebXrArSession').mockImplementation(() => sessionPromise as any);
+
+    render(<ArPlacementModal isOpen={true} onClose={vi.fn()} />);
+
+    // Initial state: preview canvas is mounted, overlay is hidden
+    expect(screen.getByTestId('mock-preview-canvas')).toBeInTheDocument();
+    expect(screen.getByTestId('webxr-ar-overlay')).toHaveClass('hidden');
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Launch WebXR AR Session/i })).toBeInTheDocument();
+    });
+
+    // Initiate launch
+    fireEvent.click(screen.getByRole('button', { name: /Launch WebXR AR Session/i }));
+
+    // Verify IMMEDIATE state while startWebXrArSession is still pending:
+    // 1. Preview canvas is unmounted
+    expect(screen.queryByTestId('mock-preview-canvas')).toBeNull();
+    // 2. Launching placeholder is shown in its place
+    expect(screen.getByText(/Launching WebXR AR Camera\.\.\./i)).toBeInTheDocument();
+    // 3. WebXR DOM overlay is displayed (not hidden)
+    const overlay = screen.getByTestId('webxr-ar-overlay');
+    expect(overlay).not.toHaveClass('hidden');
+    // 4. Scanning HUD feedback appears immediately inside the overlay
+    expect(screen.getByTestId('webxr-scanning-feedback')).toBeInTheDocument();
+    expect(screen.getByText(/Scanning floor\.\.\. Point camera down/i)).toBeInTheDocument();
+    // 5. Launch button is disabled and shows launching text
+    expect(screen.getByRole('button', { name: /Launching AR Camera\.\.\./i })).toBeDisabled();
+
+    // Now resolve the pending session
+    const mockController = {
+      endSession: vi.fn().mockResolvedValue(undefined),
+      isPlaced: () => false,
+      isSurfaceDetected: () => false,
+      setRotationY: vi.fn(),
+      setScale: vi.fn(),
+      repositionToReticle: vi.fn(),
+      isDisposed: () => false,
+    };
+    act(() => {
+      resolveSession(mockController);
+    });
+
+    // State transitions to live session
+    await waitFor(() => {
+      expect(screen.getByText(/WebXR AR Camera Live/i)).toBeInTheDocument();
+      expect(screen.getByText(/Live WebXR Camera View Active/i)).toBeInTheDocument();
+    });
+
+    // Preview canvas remains unmounted, overlay remains visible
+    expect(screen.queryByTestId('mock-preview-canvas')).toBeNull();
+    expect(screen.getByTestId('webxr-ar-overlay')).not.toHaveClass('hidden');
+  });
+
+  it('restores preview canvas, hides overlay, and shows error message when startWebXrArSession fails', async () => {
+    vi.spyOn(arService, 'checkArCapability').mockResolvedValue({
+      isWebXrSupported: true,
+      isSceneViewerSupported: true,
+      isQuickLookSupported: false,
+      deviceCategory: 'android-arcore',
+      recommendation: 'webxr',
+      statusTitle: 'WebXR Immersive-AR Compatible',
+      statusDescription: 'WebXR ready',
+      limitations: arService.AR_LIMITATIONS,
+    });
+
+    let rejectSession!: (err: any) => void;
+    const sessionPromise = new Promise((_, reject) => {
+      rejectSession = reject;
+    });
+
+    vi.spyOn(webXrArSession, 'startWebXrArSession').mockImplementation(() => sessionPromise as any);
+
+    render(<ArPlacementModal isOpen={true} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Launch WebXR AR Session/i })).toBeInTheDocument();
+    });
+
+    // Launch WebXR
+    fireEvent.click(screen.getByRole('button', { name: /Launch WebXR AR Session/i }));
+
+    // While pending: preview unmounted and overlay active
+    expect(screen.queryByTestId('mock-preview-canvas')).toBeNull();
+    expect(screen.getByTestId('webxr-ar-overlay')).not.toHaveClass('hidden');
+    expect(screen.getByTestId('webxr-scanning-feedback')).toBeInTheDocument();
+
+    // Reject the pending session promise
+    act(() => {
+      rejectSession(new Error('User denied camera permission for WebXR session'));
+    });
+
+    // On failure:
+    await waitFor(() => {
+      // 1. Error message is displayed
+      expect(screen.getByText(/User denied camera permission for WebXR session/i)).toBeInTheDocument();
+      // 2. Preview canvas is restored
+      expect(screen.getByTestId('mock-preview-canvas')).toBeInTheDocument();
+      // 3. WebXR DOM overlay is hidden
+      expect(screen.getByTestId('webxr-ar-overlay')).toHaveClass('hidden');
+      // 4. Launch button is restored and enabled
+      expect(screen.getByRole('button', { name: /Launch WebXR AR Session/i })).not.toBeDisabled();
     });
   });
 });
