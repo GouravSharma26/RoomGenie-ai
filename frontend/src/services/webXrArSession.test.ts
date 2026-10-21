@@ -454,5 +454,219 @@ describe('webXrArSession', () => {
     expect(mockRenderer.dispose).toHaveBeenCalled();
     expect(document.querySelectorAll('canvas').length).toBe(initialCanvasCount);
   });
+
+  it('session ending while requestReferenceSpace("viewer") is pending aborts initialization, cleans up, and rejects', async () => {
+    let endListener: (() => void) | null = null;
+    let resolveViewerSpace: ((val: any) => void) | null = null;
+
+    const mockSession = {
+      requestReferenceSpace: vi.fn().mockImplementation((type: string) => {
+        if (type === 'viewer') {
+          return new Promise((resolve) => {
+            resolveViewerSpace = resolve;
+          });
+        }
+        return Promise.resolve({ type });
+      }),
+      requestHitTestSource: vi.fn(),
+      addEventListener: vi.fn().mockImplementation((event: string, handler: any) => {
+        if (event === 'end') endListener = handler;
+      }),
+      removeEventListener: vi.fn(),
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    Object.defineProperty(navigator, 'xr', {
+      value: {
+        isSessionSupported: vi.fn().mockResolvedValue(true),
+        requestSession: vi.fn().mockResolvedValue(mockSession),
+      },
+      configurable: true,
+    });
+
+    const mockRenderer = {
+      setPixelRatio: vi.fn(),
+      setSize: vi.fn(),
+      xr: {
+        enabled: false,
+        setSession: vi.fn().mockResolvedValue(undefined),
+      },
+      setAnimationLoop: vi.fn(),
+      render: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    const initialCanvasCount = document.querySelectorAll('canvas').length;
+
+    const initPromise = startWebXrArSession({
+      modelUrl: null,
+      rendererFactory: () => mockRenderer as any,
+    });
+
+    // Wait microtasks for requestSession to resolve and addEventListener to be registered
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Verify session end listener was registered early before viewerSpace resolved
+    expect(endListener).toBeDefined();
+
+    // Trigger session end while viewerSpace is pending
+    endListener!();
+
+    // Now viewerSpace resolves after session has ended
+    resolveViewerSpace!({ type: 'viewer' });
+
+    // Expect initialization to reject
+    await expect(initPromise).rejects.toThrow(/session ended/i);
+
+    // Renderer must be disposed
+    expect(mockRenderer.dispose).toHaveBeenCalled();
+
+    // Canvas must be removed from DOM
+    expect(document.querySelectorAll('canvas').length).toBe(initialCanvasCount);
+
+    // Animation loop callback must NEVER have been registered
+    expect(mockRenderer.setAnimationLoop).not.toHaveBeenCalledWith(expect.any(Function));
+
+    // Subsequent reference spaces / hit-test sources must NOT have been requested
+    expect(mockSession.requestHitTestSource).not.toHaveBeenCalled();
+  });
+
+  it('session ending while requestReferenceSpace("local-floor") is pending aborts initialization, cleans up, and rejects', async () => {
+    let endListener: (() => void) | null = null;
+    let resolveFloorSpace: ((val: any) => void) | null = null;
+
+    const mockSession = {
+      requestReferenceSpace: vi.fn().mockImplementation((type: string) => {
+        if (type === 'local-floor') {
+          return new Promise((resolve) => {
+            resolveFloorSpace = resolve;
+          });
+        }
+        return Promise.resolve({ type });
+      }),
+      requestHitTestSource: vi.fn(),
+      addEventListener: vi.fn().mockImplementation((event: string, handler: any) => {
+        if (event === 'end') endListener = handler;
+      }),
+      removeEventListener: vi.fn(),
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    Object.defineProperty(navigator, 'xr', {
+      value: {
+        isSessionSupported: vi.fn().mockResolvedValue(true),
+        requestSession: vi.fn().mockResolvedValue(mockSession),
+      },
+      configurable: true,
+    });
+
+    const mockRenderer = {
+      setPixelRatio: vi.fn(),
+      setSize: vi.fn(),
+      xr: {
+        enabled: false,
+        setSession: vi.fn().mockResolvedValue(undefined),
+      },
+      setAnimationLoop: vi.fn(),
+      render: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    const initialCanvasCount = document.querySelectorAll('canvas').length;
+
+    const initPromise = startWebXrArSession({
+      modelUrl: null,
+      rendererFactory: () => mockRenderer as any,
+    });
+
+    // Allow viewer reference space promise microtask to resolve
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(endListener).toBeDefined();
+
+    // Trigger session end while local-floor is pending
+    endListener!();
+
+    // Now resolve floor space
+    resolveFloorSpace!({ type: 'local-floor' });
+
+    // Expect initialization to reject
+    await expect(initPromise).rejects.toThrow(/session ended/i);
+
+    expect(mockRenderer.dispose).toHaveBeenCalled();
+    expect(document.querySelectorAll('canvas').length).toBe(initialCanvasCount);
+    expect(mockRenderer.setAnimationLoop).not.toHaveBeenCalledWith(expect.any(Function));
+    expect(mockSession.requestHitTestSource).not.toHaveBeenCalled();
+  });
+
+  it('session ending while requestHitTestSource() is pending aborts initialization, cleans up, and rejects', async () => {
+    let endListener: (() => void) | null = null;
+    let resolveHitTestSource: ((val: any) => void) | null = null;
+    const cancelHitTestSource = vi.fn();
+
+    const mockSession = {
+      requestReferenceSpace: vi.fn().mockImplementation((type: string) => {
+        return Promise.resolve({ type });
+      }),
+      requestHitTestSource: vi.fn().mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolveHitTestSource = resolve;
+        });
+      }),
+      addEventListener: vi.fn().mockImplementation((event: string, handler: any) => {
+        if (event === 'end') endListener = handler;
+      }),
+      removeEventListener: vi.fn(),
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    Object.defineProperty(navigator, 'xr', {
+      value: {
+        isSessionSupported: vi.fn().mockResolvedValue(true),
+        requestSession: vi.fn().mockResolvedValue(mockSession),
+      },
+      configurable: true,
+    });
+
+    const mockRenderer = {
+      setPixelRatio: vi.fn(),
+      setSize: vi.fn(),
+      xr: {
+        enabled: false,
+        setSession: vi.fn().mockResolvedValue(undefined),
+      },
+      setAnimationLoop: vi.fn(),
+      render: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    const initialCanvasCount = document.querySelectorAll('canvas').length;
+
+    const initPromise = startWebXrArSession({
+      modelUrl: null,
+      rendererFactory: () => mockRenderer as any,
+    });
+
+    // Allow reference spaces promises microtasks to resolve
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(endListener).toBeDefined();
+
+    // Trigger session end while requestHitTestSource is pending
+    endListener!();
+
+    // Now resolve hit test source
+    resolveHitTestSource!({ cancel: cancelHitTestSource });
+
+    // Expect initialization to reject
+    await expect(initPromise).rejects.toThrow(/session ended/i);
+
+    // Hit-test source must be cancelled immediately to prevent leaks
+    expect(cancelHitTestSource).toHaveBeenCalled();
+
+    expect(mockRenderer.dispose).toHaveBeenCalled();
+    expect(document.querySelectorAll('canvas').length).toBe(initialCanvasCount);
+    expect(mockRenderer.setAnimationLoop).not.toHaveBeenCalledWith(expect.any(Function));
+  });
 });
 

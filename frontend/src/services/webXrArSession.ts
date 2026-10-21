@@ -242,6 +242,9 @@ export async function startWebXrArSession(
     }
   };
 
+  // Register session end listener immediately as soon as cleanup is available
+  session.addEventListener('end', cleanup);
+
   try {
     // 3. Setup Three.js WebGLRenderer & XR Canvas
     canvas = document.createElement('canvas');
@@ -265,6 +268,9 @@ export async function startWebXrArSession(
     renderer.xr.enabled = true;
 
     await renderer.xr.setSession(session);
+    if (isDisposed) {
+      throw new Error('WebXR session ended during renderer session binding.');
+    }
 
     // 4. Setup Scene, Camera & Lighting
     scene = new THREE.Scene();
@@ -347,14 +353,38 @@ export async function startWebXrArSession(
 
     // 7. Request Reference Spaces & Hit Test Source
     const viewerSpace = await session.requestReferenceSpace('viewer');
+    if (isDisposed) {
+      throw new Error('WebXR session ended while requesting viewer reference space.');
+    }
+
     const localFloorSpace = await session.requestReferenceSpace('local-floor');
-    hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    if (isDisposed) {
+      throw new Error('WebXR session ended while requesting local-floor reference space.');
+    }
+
+    const acquiredHitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    if (isDisposed) {
+      if (acquiredHitTestSource?.cancel) {
+        try {
+          acquiredHitTestSource.cancel();
+        } catch {}
+      }
+      throw new Error('WebXR session ended while requesting hit-test source.');
+    }
+    hitTestSource = acquiredHitTestSource;
 
     let surfaceDetected = false;
     let modelPlaced = false;
 
     // 8. XR Animation / Frame Loop
     renderer.setAnimationLoop((_timestamp: number, frame: any) => {
+      if (isDisposed) {
+        try {
+          renderer.setAnimationLoop(null);
+        } catch {}
+        return;
+      }
+
       if (frame && hitTestSource && localFloorSpace) {
         const hitTestResults = frame.getHitTestResults(hitTestSource);
         if (hitTestResults.length > 0) {
@@ -401,7 +431,6 @@ export async function startWebXrArSession(
     };
 
     session.addEventListener('select', onSelect);
-    session.addEventListener('end', cleanup);
 
     isInitialized = true;
 
