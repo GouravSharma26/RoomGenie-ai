@@ -15,5 +15,6 @@ urlpatterns = [
     path('api/v1/designs/', include('apps.designs.urls', namespace='designs')),
     path('api/v1/budgets/estimate/', BudgetEstimateView.as_view(), name='budget-estimate'),
     path('api/v1/agent/', include('apps.ai_agent.urls')),
+    path('api/v1/evaluation/', include('apps.evaluation.urls', namespace='evaluation')),
 ]
 
