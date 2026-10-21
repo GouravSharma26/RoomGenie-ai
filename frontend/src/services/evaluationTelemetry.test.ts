@@ -354,6 +354,80 @@ describe('evaluationTelemetry service', () => {
     expect(updated?.agentTier3DomainValidCount).toBe(1);
   });
 
+  it('records out-of-bounds attempts from AI proposals once per proposal without inflation', () => {
+    const session: ActiveEvaluationSession = {
+      sessionId: '33333333-3333-4333-a333-333333333333',
+      sessionSecret: 'secret_ai_test',
+      participantId: 'P_AI',
+      condition: 'ai_assisted',
+      sequenceOrder: 'G1',
+      taskName: 'living_room',
+      trialPeriod: 1,
+      startTime: new Date().toISOString(),
+      checkpointSequence: 0,
+      totalEdits: 0,
+      undoRedoCount: 0,
+      attemptedOutOfBoundsCount: 0,
+      agentProposalsCount: 0,
+      agentAcceptedCount: 0,
+      agentTier1SuccessCount: 0,
+      agentTier2SchemaValidCount: 0,
+      agentTier3DomainValidCount: 0,
+      idleIntervals: [],
+    };
+    saveActiveSession(session);
+
+    // 1. Valid proposal: does NOT increment attemptedOutOfBoundsCount
+    recordAgentProposal({
+      accepted: false,
+      tier1Success: true,
+      tier2Valid: true,
+      tier3Valid: true,
+      hasOutOfBoundsViolation: false,
+    });
+    let s = getActiveSession();
+    expect(s?.agentProposalsCount).toBe(1);
+    expect(s?.attemptedOutOfBoundsCount).toBe(0);
+
+    // 2. Proposal with out-of-bounds placement: increments attemptedOutOfBoundsCount by exactly 1
+    recordAgentProposal({
+      accepted: false,
+      tier1Success: true,
+      tier2Valid: true,
+      tier3Valid: false,
+      hasOutOfBoundsViolation: true,
+    });
+    s = getActiveSession();
+    expect(s?.agentProposalsCount).toBe(2);
+    expect(s?.attemptedOutOfBoundsCount).toBe(1);
+
+    // 3. Non-boundary invalid proposal (e.g. budget ceiling breach, tier3Valid=false but no boundary clash):
+    // MUST NOT increment attemptedOutOfBoundsCount
+    recordAgentProposal({
+      accepted: false,
+      tier1Success: true,
+      tier2Valid: true,
+      tier3Valid: false,
+      hasOutOfBoundsViolation: false,
+    });
+    s = getActiveSession();
+    expect(s?.agentProposalsCount).toBe(3);
+    expect(s?.attemptedOutOfBoundsCount).toBe(1); // Still 1
+
+    // 4. Failed proposal (tier1Success=false, network error):
+    // MUST NOT increment attemptedOutOfBoundsCount
+    recordAgentProposal({
+      accepted: false,
+      tier1Success: false,
+      tier2Valid: false,
+      tier3Valid: false,
+      hasOutOfBoundsViolation: false,
+    });
+    s = getActiveSession();
+    expect(s?.agentProposalsCount).toBe(4);
+    expect(s?.attemptedOutOfBoundsCount).toBe(1); // Still 1
+  });
+
   it('wires undo/redo store actions directly to recordUndoRedo telemetry', () => {
     const session: ActiveEvaluationSession = {
       sessionId: '44444444-4444-4444-a444-444444444444',

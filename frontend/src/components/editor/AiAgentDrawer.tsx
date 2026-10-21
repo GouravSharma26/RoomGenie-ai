@@ -26,7 +26,19 @@ import {
   type BudgetDiff 
 } from '../../services/agentApi';
 import type { CanonicalScene } from '../../types/scene';
+import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
 import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
+
+function checkSceneHasOutOfBounds(scene?: CanonicalScene | null): boolean {
+  if (!scene || !scene.room || !Array.isArray(scene.objects)) return false;
+  for (const obj of scene.objects) {
+    const clamped = clampPositionToRoom(obj.position, obj.dimensions, scene.room, obj.scale, obj.rotationEuler);
+    if (Math.abs(clamped[0] - obj.position[0]) > 0.001 || Math.abs(clamped[2] - obj.position[2]) > 0.001) {
+      return true;
+    }
+  }
+  return false;
+}
 
 interface AiAgentDrawerProps {
   isOpen: boolean;
@@ -147,13 +159,25 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // Telemetry: record AI proposal multi-tier validity
+      // Telemetry: record AI proposal multi-tier validity & explicit room-containment violations
+      const budgetDiff = response.budget_diff || response.run?.validation_results?.budget_diff;
       const hasErrors = Boolean(response.run?.validation_results?.errors && response.run.validation_results.errors.length > 0);
       const isSchemaValid = Boolean(response.candidate_scene && !hasErrors);
+
+      // Explicit room containment check from AI evaluation
+      const hasExplicitViolations = Array.isArray(budgetDiff?.room_violations) && budgetDiff.room_violations.length > 0;
+      const isExplicitContainmentInvalid = budgetDiff?.room_containment_valid === false;
+      const hasOutOfBoundsInCandidate = Boolean(response.candidate_scene && checkSceneHasOutOfBounds(response.candidate_scene));
+
+      // Unit of counting: exactly one boundary violation attempt is counted if the proposal violates room containment
+      const hasOutOfBoundsViolation = Boolean(
+        response.candidate_scene && (isExplicitContainmentInvalid || hasExplicitViolations || hasOutOfBoundsInCandidate)
+      );
+
       const isDomainValid = Boolean(
         response.candidate_scene &&
         response.run?.validation_results?.is_valid &&
-        response.budget_diff?.room_containment_valid
+        !hasOutOfBoundsViolation
       );
 
       recordAgentProposal({
@@ -161,6 +185,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         tier1Success: true,
         tier2Valid: isSchemaValid,
         tier3Valid: isDomainValid,
+        hasOutOfBoundsViolation,
       });
     } catch (err: any) {
       setErrorMsg(err.message || 'Error communicating with AI assistant.');
@@ -169,6 +194,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         tier1Success: false,
         tier2Valid: false,
         tier3Valid: false,
+        hasOutOfBoundsViolation: false,
       });
     } finally {
       setIsLoading(false);

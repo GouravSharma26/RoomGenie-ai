@@ -282,6 +282,7 @@ export function recordAgentProposal(outcome: {
   tier1Success: boolean;
   tier2Valid: boolean;
   tier3Valid: boolean;
+  hasOutOfBoundsViolation?: boolean;
 }): void {
   const session = getActiveSession();
   if (!session) return;
@@ -290,6 +291,9 @@ export function recordAgentProposal(outcome: {
   if (outcome.tier1Success) session.agentTier1SuccessCount += 1;
   if (outcome.tier2Valid) session.agentTier2SchemaValidCount += 1;
   if (outcome.tier3Valid) session.agentTier3DomainValidCount += 1;
+  if (outcome.hasOutOfBoundsViolation) {
+    session.attemptedOutOfBoundsCount += 1;
+  }
   saveActiveSession(session);
 }
 
