@@ -217,5 +217,5 @@ A phase is not complete merely because code was generated. It is complete only w
 - [x] Phase 4 — AI design agent (2-phase proposal/approval workflow, Gemini flash adapter & mock, strict tool validation, collision checks)
 - [x] Phase 5 — Room photo analysis (Gemini flash vision adapter & mock, structured observations, catalogue remapping, frontend modal)
 - [x] Phase 6 — Photo-to-3D approximation (Tripo adapter & mock, asynchronous job lifecycle, atomic claiming, strict GLB validation, authenticated streaming, lifecycle E2E verified)
-- [ ] Phase 7 — AR placement (Physical device test verified on realme Narzo 70 Turbo 5G; reticle tracking and instant repositioning optimized in commit 874bb98; pending final code review)
+- [x] Phase 7 — AR placement (Physical device test verified on realme Narzo 70 Turbo 5G; 1:1 metric hit-test floor placement, instant repositioning, capped 1.75x DPR, and initialization scanning HUD verified; docs/MANUAL_AR_TESTING_PROTOCOL.md signed off)
 - [ ] Phase 8 — Research and delivery
