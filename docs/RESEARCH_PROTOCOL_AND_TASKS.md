@@ -320,7 +320,8 @@ graph TD
    - *Definition:* Evaluates whether any furniture 3D bounding box overlaps with the task's defined doorway keep-out box. Evaluated **silently** on the final submitted scene without rendering an in-editor visual hint during participant trials.  
    - *Unit:* Integer count of intruding objects in the final submitted scene.
 3. **Attempted vs. Final Boundary Violations:**  
-   - `attemptedOutOfBoundsCount`: Runtime count of instances where a participant dragged furniture against boundary clamps or where an AI proposal contained out-of-bounds placements.
+   - `attemptedOutOfBoundsCount`: Runtime count of instances where a participant attempted to place or move furniture beyond boundary clamps, or where an AI proposal contained out-of-bounds placements.
+     - *Unit of Counting:* Exactly one boundary violation attempt is counted per discrete user action or continuous gesture (e.g. continuous slider dragging against boundary clamps counts as at most one boundary violation attempt, recorded at gesture completion / pointer release). Intermediate clamped updates during active dragging are grouped and do not inflate the metric. Standalone discrete updates (outside active gestures) increment the metric immediately if clamped.
    - `finalSceneOutOfBoundsCount`: Post-submission verification of the final scene snapshot against canonical room bounds (expected to be 0 for validly saved designs).
 4. **Manual Adjustments Count (`totalEdits`):**  
    - *Definition:* Total discrete manual interactions performed in the editor:

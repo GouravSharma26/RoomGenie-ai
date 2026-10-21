@@ -199,7 +199,8 @@ export function checkInactivityThreshold(): void {
   }
 }
 
-function onUserActivity() {
+export function flushOngoingIdleInterval(): void {
+  checkInactivityThreshold();
   const now = Date.now();
   if (currentIdleStart !== null) {
     const idleSeconds = (now - currentIdleStart) / 1000;
@@ -218,6 +219,10 @@ function onUserActivity() {
     currentIdleStart = null;
   }
   lastInteractionTimestamp = now;
+}
+
+export function onUserActivity(): void {
+  flushOngoingIdleInterval();
 }
 
 export function attachActivityListeners(): void {
@@ -512,12 +517,21 @@ export async function sendEvaluationCheckpoint(
 export async function completeEvaluationSession(
   finalScene: CanonicalScene
 ): Promise<ExperimentSessionRecord> {
+  const existing = getActiveSession();
+  if (!existing) {
+    throw new Error('No active evaluation session to complete.');
+  }
+
+  // 1. Flush any pending/ongoing idle time to sessionStorage
+  flushOngoingIdleInterval();
+
+  // 2. Reload the updated session from storage to capture newly flushed idle intervals
   const active = getActiveSession();
   if (!active) {
     throw new Error('No active evaluation session to complete.');
   }
 
-  onUserActivity(); // Flush any pending idle time
+  // 3. Calculate active duration using the refreshed session and closed intervals
   const activeDuration = calculateActiveDurationSeconds(active);
 
   const payload = {

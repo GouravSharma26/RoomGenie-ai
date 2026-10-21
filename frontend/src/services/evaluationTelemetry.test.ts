@@ -18,6 +18,7 @@ import {
   generateSessionUUID,
   initEvaluationTelemetry,
   stopHeartbeat,
+  onUserActivity,
   type ActiveEvaluationSession,
 } from './evaluationTelemetry';
 import { useEditorStore } from '../editor3d/store/editorStore';
@@ -479,6 +480,138 @@ describe('evaluationTelemetry service', () => {
     expect(getActiveSession()).toBeNull();
     expect(getPendingSession()).toBeNull();
     expect(result.sessionStatus).toBe('completed');
+  });
+
+  it('flushes ongoing idle interval on completion, includes it in payload, and maintains consistent active and idle duration', async () => {
+    vi.useFakeTimers();
+
+    const startTime = new Date(1000000).toISOString();
+    vi.setSystemTime(1000000);
+
+    const session: ActiveEvaluationSession = {
+      sessionId: '77777777-7777-4777-a777-777777777777',
+      sessionSecret: 'complete_idle_test_secret',
+      participantId: 'P_IDLE_TEST',
+      condition: 'manual',
+      sequenceOrder: 'G1',
+      taskName: 'living_room',
+      trialPeriod: 1,
+      startTime: startTime,
+      checkpointSequence: 0,
+      totalEdits: 3,
+      undoRedoCount: 0,
+      attemptedOutOfBoundsCount: 0,
+      agentProposalsCount: 0,
+      agentAcceptedCount: 0,
+      agentTier1SuccessCount: 0,
+      agentTier2SchemaValidCount: 0,
+      agentTier3DomainValidCount: 0,
+      idleIntervals: [],
+    };
+    saveActiveSession(session);
+
+    // Initialize telemetry so listeners and timestamps are bound at t=1000000 (0s relative)
+    initEvaluationTelemetry();
+
+    // User is active for first 5 seconds
+    await vi.advanceTimersByTimeAsync(5000);
+    onUserActivity(); // active interaction at t=5s (5000ms)
+
+    // User is now idle for 20 seconds (t=5s to t=25s)
+    await vi.advanceTimersByTimeAsync(20000);
+
+    // Complete evaluation session at t=25s
+    let sentPayload: any = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_url, opts) => {
+      sentPayload = JSON.parse(opts?.body as string);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...session,
+          sessionStatus: 'completed',
+        }),
+      } as Response;
+    });
+
+    await completeEvaluationSession(sampleScene);
+
+    expect(sentPayload).not.toBeNull();
+    // 1. The final idle interval MUST be present in the completion payload
+    expect(sentPayload.idleIntervals).toHaveLength(1);
+    expect(sentPayload.idleIntervals[0].durationSeconds).toBeCloseTo(20.0, 1);
+    expect(sentPayload.idleIntervals[0].startOffsetSeconds).toBeCloseTo(5.0, 1);
+
+    // 2. activeDurationSeconds must exclude the 20s idle period (25s total elapsed - 20s idle = 5.0s active)
+    expect(sentPayload.activeDurationSeconds).toBeCloseTo(5.0, 1);
+
+    // 3. active-plus-idle duration must be consistent with elapsed time (25.0s)
+    const totalIdle = sentPayload.idleIntervals.reduce((sum: number, intv: { durationSeconds: number }) => sum + intv.durationSeconds, 0);
+    expect(sentPayload.activeDurationSeconds + totalIdle).toBeCloseTo(25.0, 1);
+  });
+
+  it('preserves final idle interval when user resumes activity immediately before submitting design', async () => {
+    vi.useFakeTimers();
+
+    vi.setSystemTime(2000000);
+    const session: ActiveEvaluationSession = {
+      sessionId: '88888888-8888-4888-a888-888888888888',
+      sessionSecret: 'complete_resume_test_secret',
+      participantId: 'P_RESUME_TEST',
+      condition: 'manual',
+      sequenceOrder: 'G1',
+      taskName: 'living_room',
+      trialPeriod: 1,
+      startTime: new Date(2000000).toISOString(),
+      checkpointSequence: 0,
+      totalEdits: 4,
+      undoRedoCount: 0,
+      attemptedOutOfBoundsCount: 0,
+      agentProposalsCount: 0,
+      agentAcceptedCount: 0,
+      agentTier1SuccessCount: 0,
+      agentTier2SchemaValidCount: 0,
+      agentTier3DomainValidCount: 0,
+      idleIntervals: [],
+    };
+    saveActiveSession(session);
+    initEvaluationTelemetry();
+
+    // 6s active (interact at t=3s and t=6s to stay below 10s inactivity threshold)
+    await vi.advanceTimersByTimeAsync(3000);
+    onUserActivity();
+    await vi.advanceTimersByTimeAsync(3000);
+    onUserActivity();
+
+    // 30s idle (threshold >= 10s, idle from t=6s to t=36s)
+    await vi.advanceTimersByTimeAsync(30000);
+
+    // User resumes activity by clicking (fires onUserActivity)
+    onUserActivity();
+
+    // Immediately calls completeEvaluationSession
+    let sentPayload: any = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_url, opts) => {
+      sentPayload = JSON.parse(opts?.body as string);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...session,
+          sessionStatus: 'completed',
+        }),
+      } as Response;
+    });
+
+    await completeEvaluationSession(sampleScene);
+
+    expect(sentPayload).not.toBeNull();
+    expect(sentPayload.idleIntervals).toHaveLength(1);
+    expect(sentPayload.idleIntervals[0].durationSeconds).toBeCloseTo(30.0, 1);
+    expect(sentPayload.idleIntervals[0].startOffsetSeconds).toBeCloseTo(6.0, 1);
+    expect(sentPayload.activeDurationSeconds).toBeCloseTo(6.0, 1);
+    const totalIdle = sentPayload.idleIntervals.reduce((sum: number, intv: { durationSeconds: number }) => sum + intv.durationSeconds, 0);
+    expect(sentPayload.activeDurationSeconds + totalIdle).toBeCloseTo(36.0, 1);
   });
 
   it('aborts session with specified reason and clears active and pending sessionStorage', async () => {

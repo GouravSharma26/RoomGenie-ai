@@ -27,6 +27,7 @@ interface EditorState {
   history: CanonicalScene[];
   future: CanonicalScene[];
   activeGestureSnapshot: CanonicalScene | null;
+  gestureHadOutOfBoundsAttempt: boolean;
   currentDesignId: string | null;
 
   // Actions
@@ -120,6 +121,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   history: [],
   future: [],
   activeGestureSnapshot: null,
+  gestureHadOutOfBoundsAttempt: false,
   currentDesignId: null,
 
   startInteraction: () => {
@@ -127,6 +129,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (state.activeGestureSnapshot !== null) return state;
       return {
         activeGestureSnapshot: cloneCanonicalScene(state.scene),
+        gestureHadOutOfBoundsAttempt: false,
       };
     });
   },
@@ -137,16 +140,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const initial = state.activeGestureSnapshot;
       const current = state.scene;
       const hasChanged = JSON.stringify(initial) !== JSON.stringify(current);
+
+      // Boundary clamp attempt unit of counting:
+      // A continuous gesture (e.g. dragging a slider against boundary clamps) constitutes
+      // at most ONE boundary violation attempt, committed upon gesture completion.
+      if (state.gestureHadOutOfBoundsAttempt) {
+        recordOutOfBoundsAttempt();
+      }
+
       if (hasChanged) {
         recordEdit();
         return {
           activeGestureSnapshot: null,
+          gestureHadOutOfBoundsAttempt: false,
           history: [...state.history, initial].slice(-MAX_HISTORY),
           future: [],
         };
       }
       return {
         activeGestureSnapshot: null,
+        gestureHadOutOfBoundsAttempt: false,
       };
     });
   },
@@ -303,10 +316,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const obj = state.scene.objects[objIndex];
       const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
-
-      if (Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001) {
-        recordOutOfBoundsAttempt();
-      }
+      const isClamped = Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001;
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
@@ -315,13 +325,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       if (state.activeGestureSnapshot !== null) {
-        // Continuous intermediate update during active gesture: update scene only
+        // Continuous intermediate update during active gesture:
+        // Do NOT increment attemptedOutOfBoundsCount on intermediate ticks.
+        // Instead, track that a boundary clamp attempt occurred during this gesture.
         return {
           scene: {
             ...state.scene,
             objects: updatedObjects,
           },
+          gestureHadOutOfBoundsAttempt: state.gestureHadOutOfBoundsAttempt || isClamped,
         };
+      }
+
+      // Discrete standalone edit (not part of an active gesture):
+      if (isClamped) {
+        recordOutOfBoundsAttempt();
       }
 
       // Discrete standalone edit: push snapshot & record edit
@@ -586,6 +604,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
       selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
       activeGestureSnapshot: null,
+      gestureHadOutOfBoundsAttempt: false,
     });
     recordUndoRedo();
   },
@@ -615,6 +634,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: newFuture,
       selectedId: next.objects.length > 0 ? next.objects[0].id : null,
       activeGestureSnapshot: null,
+      gestureHadOutOfBoundsAttempt: false,
     });
     recordUndoRedo();
   },
