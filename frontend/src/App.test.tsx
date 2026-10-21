@@ -3,9 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from './App';
 import * as api from './services/api';
 import * as agentApi from './services/agentApi';
+import * as designApi from './services/designApi';
+import { useEditorStore } from './editor3d/store/editorStore';
 
 vi.mock('./services/api');
 vi.mock('./services/designApi', () => ({
+  ensureAuthenticated: vi.fn().mockResolvedValue('mock-token'),
+  getDesignById: vi.fn(),
   listSavedDesigns: vi.fn().mockResolvedValue([]),
   saveDesignToBackend: vi.fn().mockResolvedValue({ id: 'test-id', title: 'Test' }),
   deleteDesignFromBackend: vi.fn().mockResolvedValue(undefined),
@@ -203,6 +207,72 @@ describe('RoomGenie AI App Component', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /AR View/i }));
     expect(screen.getByRole('heading', { name: /Augmented Reality \(AR\) Furniture Placement/i })).toBeInTheDocument();
+  });
+
+  it('restores design, authenticates, and auto-opens AR flow when ar=true handoff URL is loaded', async () => {
+    vi.mocked(api.checkBackendHealth).mockResolvedValue({
+      status: 'ok',
+      service: 'RoomGenie AI Backend',
+      version: '0.1.0',
+      database: 'connected',
+    });
+
+    const mockDesignRecord = {
+      id: 'design-handoff-xyz',
+      owner_username: 'engineer',
+      room_id: null,
+      title: 'Handoff Penthouse',
+      description: '',
+      budget: null,
+      style_preferences: [],
+      scene_json: {
+        schemaVersion: 1,
+        unit: 'm' as const,
+        room: { width: 6.0, length: 5.0, height: 2.8 },
+        objects: [
+          {
+            id: 'handoff-chair-1',
+            assetId: 'chair-modern-wood',
+            name: 'Handoff Chair',
+            dimensions: [0.6, 0.85, 0.6] as [number, number, number],
+            position: [0, 0.425, 0] as [number, number, number],
+            rotationEuler: [0, 0, 0] as [number, number, number],
+            scale: [1, 1, 1] as [number, number, number],
+          },
+        ],
+      },
+      object_count: 1,
+      created_at: '2026-10-21T00:00:00Z',
+      updated_at: '2026-10-21T00:00:00Z',
+    };
+
+    vi.mocked(designApi.getDesignById).mockResolvedValue(mockDesignRecord);
+
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        search: '?ar=true&designId=design-handoff-xyz&assetId=handoff-chair-1',
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(designApi.ensureAuthenticated).toHaveBeenCalled();
+      expect(designApi.getDesignById).toHaveBeenCalledWith('design-handoff-xyz');
+      expect(screen.getByRole('heading', { name: /Augmented Reality \(AR\) Furniture Placement/i })).toBeInTheDocument();
+      expect(useEditorStore.getState().currentDesignId).toBe('design-handoff-xyz');
+      expect(useEditorStore.getState().scene.room.width).toBe(6.0);
+    });
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+      configurable: true,
+    });
   });
 
   it('opens Photo-to-3D Reconstruction modal when button is clicked', async () => {

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ArPlacementModal } from './ArPlacementModal';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import * as arService from '../../services/arService';
+import * as webXrArSession from '../../services/webXrArSession';
 
 // Mock Three.js / Canvas preview
 vi.mock('./ModelPreviewCanvas', () => ({
@@ -35,6 +36,7 @@ describe('ArPlacementModal', () => {
         ],
       },
       selectedId: 'placement-test-chair',
+      currentDesignId: 'design-e2e-789',
     });
   });
 
@@ -84,7 +86,40 @@ describe('ArPlacementModal', () => {
     });
 
     fireEvent.click(copyButton);
-    expect(writeTextMock).toHaveBeenCalled();
+    expect(writeTextMock).toHaveBeenCalledWith(
+      expect.stringContaining('designId=design-e2e-789')
+    );
+  });
+
+  it('displays searching surface state initially and allows toggling in simulator', async () => {
+    vi.spyOn(arService, 'checkArCapability').mockResolvedValue({
+      isWebXrSupported: false,
+      isSceneViewerSupported: false,
+      isQuickLookSupported: false,
+      deviceCategory: 'desktop',
+      recommendation: 'mobile-handoff',
+      statusTitle: 'Desktop Browser',
+      statusDescription: 'Desktop mode',
+      limitations: arService.AR_LIMITATIONS,
+    });
+
+    render(<ArPlacementModal isOpen={true} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ar-unsupported-fallback')).toBeInTheDocument();
+    });
+
+    // Initially surface is searching
+    expect(screen.getByTestId('surface-searching-indicator')).toBeInTheDocument();
+    expect(screen.getByText(/Searching for floor surface\.\.\./i)).toBeInTheDocument();
+
+    // Click toggle button
+    const toggleBtn = screen.getByRole('button', { name: /Simulate Surface Found/i });
+    fireEvent.click(toggleBtn);
+
+    // Now surface is acquired
+    expect(screen.getByTestId('surface-detected-indicator')).toBeInTheDocument();
+    expect(screen.getByText(/Floor Plane Acquired \(Y = 0\.00 m\)/i)).toBeInTheDocument();
   });
 
   it('allows manual adjustment of scale and updates dimensions in the HUD', async () => {
@@ -114,7 +149,60 @@ describe('ArPlacementModal', () => {
     });
   });
 
-  it('displays authenticated streaming notice when a custom reconstructed item is selected', async () => {
+  it('launches real WebXR session when supported and handles camera frame surface tracking and session end', async () => {
+    vi.spyOn(arService, 'checkArCapability').mockResolvedValue({
+      isWebXrSupported: true,
+      isSceneViewerSupported: true,
+      isQuickLookSupported: false,
+      deviceCategory: 'android-arcore',
+      recommendation: 'webxr',
+      statusTitle: 'WebXR Immersive-AR Compatible',
+      statusDescription: 'WebXR ready',
+      limitations: arService.AR_LIMITATIONS,
+    });
+
+    const mockEndSession = vi.fn().mockResolvedValue(undefined);
+    let capturedSurfaceCallback: ((detected: boolean) => void) | undefined;
+
+    vi.spyOn(webXrArSession, 'startWebXrArSession').mockImplementation(async (opts) => {
+      capturedSurfaceCallback = opts.onSurfaceDetectedChange;
+      return {
+        endSession: mockEndSession,
+        isPlaced: () => false,
+        isSurfaceDetected: () => true,
+        setRotationY: vi.fn(),
+        setScale: vi.fn(),
+        repositionToReticle: vi.fn().mockReturnValue(true),
+      };
+    });
+
+    render(<ArPlacementModal isOpen={true} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Launch WebXR AR Session/i })).toBeInTheDocument();
+    });
+
+    // Launch WebXR AR Session
+    fireEvent.click(screen.getByRole('button', { name: /Launch WebXR AR Session/i }));
+
+    await waitFor(() => {
+      expect(webXrArSession.startWebXrArSession).toHaveBeenCalled();
+      expect(screen.getByText(/WebXR AR Camera Live/i)).toBeInTheDocument();
+    });
+
+    // Simulate surface detection change from camera frame
+    capturedSurfaceCallback!(true);
+    await waitFor(() => {
+      expect(screen.getByTestId('surface-detected-indicator')).toBeInTheDocument();
+    });
+
+    // End session
+    const endBtn = screen.getByRole('button', { name: /End AR Camera Session/i });
+    fireEvent.click(endBtn);
+    expect(mockEndSession).toHaveBeenCalled();
+  });
+
+  it('displays authenticated streaming notice and suppresses Google Scene Viewer for custom reconstructions', async () => {
     useEditorStore.setState({
       scene: {
         schemaVersion: 1,
@@ -142,11 +230,15 @@ describe('ArPlacementModal', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Reconstructed Heritage Desk/i)).toBeInTheDocument();
-      expect(screen.getByText(/This AI reconstructed asset \(job-reco\.\.\.\) is streamed privately in-session/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/This AI reconstructed asset \(job-reco\.\.\.\) is streamed privately in-session/i)
+      ).toBeInTheDocument();
+      // Ensure Google Scene Viewer link is NEVER rendered for private blob reconstructions
+      expect(screen.queryByText(/Launch Google Scene Viewer/i)).toBeNull();
     });
   });
 
-  it('calls onClose when close button is clicked', async () => {
+  it('calls onClose and ends active session when close button is clicked', async () => {
     const handleClose = vi.fn();
     render(<ArPlacementModal isOpen={true} onClose={handleClose} />);
 

@@ -24,6 +24,8 @@ import { AiAgentDrawer } from './components/editor/AiAgentDrawer';
 import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 import { ArPlacementModal } from './components/editor/ArPlacementModal';
+import { ensureAuthenticated, getDesignById } from './services/designApi';
+import { useEditorStore } from './editor3d/store/editorStore';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -58,6 +60,40 @@ export default function App() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  // Handle incoming mobile AR handoff route (?ar=true&designId=...&assetId=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('ar') === 'true') {
+      const designId = params.get('designId');
+      const assetId = params.get('assetId');
+
+      void (async () => {
+        try {
+          await ensureAuthenticated();
+          if (designId) {
+            const record = await getDesignById(designId);
+            if (record && record.scene_json) {
+              useEditorStore.getState().loadScene(record.scene_json);
+              useEditorStore.getState().setCurrentDesignId(record.id);
+            }
+          }
+          if (assetId) {
+            const objs = useEditorStore.getState().scene.objects;
+            const matched = objs.find((o) => o.id === assetId || o.assetId === assetId);
+            if (matched) {
+              useEditorStore.getState().selectObject(matched.id);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to restore AR handoff session:', err);
+        } finally {
+          setIsArModalOpen(true);
+        }
+      })();
+    }
   }, []);
 
   return (

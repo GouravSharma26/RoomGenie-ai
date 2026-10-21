@@ -206,10 +206,12 @@ Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.exampl
   - Strict Khronos glTF 2.0 binary (`.glb`) validator with header, chunk, and bounds enforcement
   - Authenticated streaming endpoint (`GET /api/v1/furniture/reconstructions/{id}/download/`) with path traversal protection and secure in-memory streaming
   - End-to-end asset lifecycle verified across placement, backend persistence, rehydration, duplication, and deletion
-- [x] **Phase 7 — Real-world AR placement**
+- [ ] **Phase 7 — Real-world AR placement (Code Complete; Physical Device Run Pending)**
   - Reference hardware specification (`docs/AR_DEVICE_SPECIFICATION.md`) targeting Android 10+ ARCore (Pixel/Galaxy) and iOS 15+ Quick Look
-  - W3C WebXR `immersive-ar` session mode with horizontal floor plane `hit-test` reticle detection
-  - Interactive AR placement dialog (`ArPlacementModal.tsx`) with manual adjustments (floor offset, 360° yaw rotation, 0.5x–2.0x scale)
-  - Clear fallback message for unsupported/desktop devices, QR code mobile handoff launcher, and Google Scene Viewer intent integration
-  - Comprehensive physical limitations documented for tracking drift, scale variance, and lighting estimation
+  - Three.js WebXR runtime (`webXrArSession.ts`) with `immersive-ar` mode, viewer space `XRHitTestSource`, real-time animation loop, reticle tracking, and tap-to-place
+  - Interactive AR placement dialog (`ArPlacementModal.tsx`) with dynamic surface detection HUD, manual adjustments (floor offset, 360° yaw rotation, 0.5x–2.0x scale), and active session controls
+  - Mobile handoff route (`?ar=true&designId=...&assetId=...`) restoring user authentication, design scene, and auto-opening AR flow on mobile
+  - Private authenticated reconstruction protection (Google Scene Viewer suppressed for private assets to preserve security boundaries)
+  - Clear fallback message for unsupported/desktop devices, QR code mobile handoff launcher, and comprehensive physical limitations documented
+  - Detailed physical testing protocol and execution record in `docs/MANUAL_AR_TESTING_PROTOCOL.md`
 - [ ] **Phase 8 — Research, testing, and delivery**

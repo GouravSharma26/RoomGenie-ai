@@ -24,6 +24,7 @@ import {
   type ArCapabilityResult,
   type ArPlacementTransform,
 } from '../../services/arService';
+import { startWebXrArSession, type WebXrSessionController } from '../../services/webXrArSession';
 import { ModelPreviewCanvas } from './ModelPreviewCanvas';
 
 interface ArPlacementModalProps {
@@ -34,6 +35,7 @@ interface ArPlacementModalProps {
 export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onClose }) => {
   const scene = useEditorStore((state) => state.scene);
   const selectedId = useEditorStore((state) => state.selectedId);
+  const currentDesignId = useEditorStore((state) => state.currentDesignId);
 
   // AR capability detection state
   const [capability, setCapability] = useState<ArCapabilityResult | null>(null);
@@ -48,13 +50,15 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
     position: [0, 0, -1.5],
     rotationY: 0,
     scale: 1.0,
-    surfaceDetected: true,
+    surfaceDetected: false,
   });
 
   // Handoff link copying state
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [webXrError, setWebXrError] = useState<string | null>(null);
   const [isLaunchingWebXr, setIsLaunchingWebXr] = useState<boolean>(false);
+  const [xrSessionController, setXrSessionController] = useState<WebXrSessionController | null>(null);
+  const [isPlacedInXr, setIsPlacedInXr] = useState<boolean>(false);
 
   // Determine active item to place
   const activePlacedItem = useMemo(() => {
@@ -128,6 +132,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
 
   const handleCopyHandoffLink = () => {
     const handoffUrl = generateMobileHandoffUrl({
+      designId: currentDesignId,
       selectedAssetId: activePlacedItem?.assetId || activeCatalogItem?.id,
     });
     navigator.clipboard.writeText(handoffUrl);
@@ -136,22 +141,34 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
   };
 
   const handleLaunchWebXr = async () => {
-    if (typeof navigator === 'undefined' || !('xr' in navigator)) {
-      setWebXrError('WebXR Device API is not available on this browser.');
-      return;
-    }
     try {
       setIsLaunchingWebXr(true);
       setWebXrError(null);
-      const xr = (navigator as unknown as { xr: { requestSession: (mode: string, options?: any) => Promise<any> } }).xr;
-      const session = await xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test', 'local-floor'],
-        optionalFeatures: ['dom-overlay', 'light-estimation'],
+      const controller = await startWebXrArSession({
+        modelUrl: activeModelUrl,
+        dimensions: baseDimensions,
+        onSurfaceDetectedChange: (detected) => {
+          setTransform((prev) => ({ ...prev, surfaceDetected: detected }));
+        },
+        onPlaced: (pos, rotY, s) => {
+          setIsPlacedInXr(true);
+          setTransform((prev) => ({
+            ...prev,
+            position: pos,
+            rotationY: rotY,
+            scale: s,
+            surfaceDetected: true,
+          }));
+        },
+        onSessionEnd: () => {
+          setIsLaunchingWebXr(false);
+          setXrSessionController(null);
+        },
+        onError: (err) => {
+          setWebXrError(err.message);
+        },
       });
-      // Session successfully initiated
-      session.addEventListener('end', () => {
-        setIsLaunchingWebXr(false);
-      });
+      setXrSessionController(controller);
     } catch (err: any) {
       setIsLaunchingWebXr(false);
       setWebXrError(
@@ -161,11 +178,34 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
     }
   };
 
+  const handleEndWebXr = async () => {
+    if (xrSessionController) {
+      await xrSessionController.endSession();
+    }
+  };
+
+  const handleCloseModal = () => {
+    if (xrSessionController) {
+      void xrSessionController.endSession();
+    }
+    onClose();
+  };
+
   const handleUpdateTransform = (updates: Partial<ArPlacementTransform>) => {
-    setTransform((prev) => clampArPlacement(prev, updates));
+    const updated = clampArPlacement(transform, updates);
+    setTransform(updated);
+    if (xrSessionController) {
+      if (updates.rotationY !== undefined) {
+        xrSessionController.setRotationY(updated.rotationY);
+      }
+      if (updates.scale !== undefined) {
+        xrSessionController.setScale(updated.scale);
+      }
+    }
   };
 
   const handoffUrl = generateMobileHandoffUrl({
+    designId: currentDesignId,
     selectedAssetId: activePlacedItem?.assetId || activeCatalogItem?.id,
   });
 
@@ -196,7 +236,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCloseModal}
             className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
             aria-label="Close AR Modal"
           >
@@ -285,12 +325,37 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
               {/* Reticle / Floor Surface Alignment HUD */}
               <div className="relative z-10 p-3 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-xs font-medium text-emerald-300 flex items-center gap-1">
-                    <Scan className="w-3.5 h-3.5" />
-                    Floor Plane Acquired (Y = 0.00 m)
-                  </span>
+                  {transform.surfaceDetected ? (
+                    <div className="flex items-center gap-1.5" data-testid="surface-detected-indicator">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-xs font-medium text-emerald-300 flex items-center gap-1">
+                        <Scan className="w-3.5 h-3.5" />
+                        Floor Plane Acquired (Y = 0.00 m)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5" data-testid="surface-searching-indicator">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="text-xs font-medium text-amber-300 flex items-center gap-1">
+                        <Scan className="w-3.5 h-3.5" />
+                        Searching for floor surface...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Surface simulator toggle button */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTransform((prev) => ({ ...prev, surfaceDetected: !prev.surfaceDetected }))
+                    }
+                    className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900/90 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700/80 transition"
+                    title="Toggle floor surface detection state in simulator"
+                  >
+                    {transform.surfaceDetected ? 'Simulate Surface Lost' : 'Simulate Surface Found'}
+                  </button>
                 </div>
+
                 <div className="text-[11px] font-mono text-slate-300 bg-slate-900/90 px-2 py-0.5 rounded border border-slate-800">
                   Size: {scaledDimensions[0]}m &times; {scaledDimensions[1]}m &times; {scaledDimensions[2]}m
                 </div>
@@ -407,26 +472,55 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                 </div>
               ) : capability?.isWebXrSupported ? (
                 <div className="space-y-3">
-                  <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/50 text-emerald-300">
-                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-400" />
-                    <div>
-                      <h4 className="text-xs font-bold text-white">
-                        WebXR Immersive-AR Compatible
-                      </h4>
-                      <p className="text-[11px] text-emerald-300/90 mt-0.5">
-                        {capability.statusDescription}
-                      </p>
-                    </div>
-                  </div>
+                  {xrSessionController ? (
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/50 text-emerald-300">
+                        <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-400 animate-pulse" />
+                        <div>
+                          <h4 className="text-xs font-bold text-white">
+                            WebXR AR Camera Live
+                          </h4>
+                          <p className="text-[11px] text-emerald-300/90 mt-0.5 leading-relaxed">
+                            {isPlacedInXr
+                              ? 'Furniture object placed on floor surface. Use manual adjustment controls below.'
+                              : transform.surfaceDetected
+                              ? 'Floor plane acquired! Tap camera viewport to place furniture.'
+                              : 'Scanning room... Point camera at textured floor with good ambient lighting.'}
+                          </p>
+                        </div>
+                      </div>
 
-                  <button
-                    onClick={handleLaunchWebXr}
-                    disabled={isLaunchingWebXr}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 transition active:scale-98"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    <span>{isLaunchingWebXr ? 'Launching AR Camera...' : 'Launch WebXR AR Session'}</span>
-                  </button>
+                      <button
+                        onClick={handleEndWebXr}
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-700 text-slate-200 hover:text-rose-300 font-semibold text-xs flex items-center justify-center gap-2 transition"
+                      >
+                        <span>End AR Camera Session</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/50 text-emerald-300">
+                        <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-400" />
+                        <div>
+                          <h4 className="text-xs font-bold text-white">
+                            WebXR Immersive-AR Compatible
+                          </h4>
+                          <p className="text-[11px] text-emerald-300/90 mt-0.5">
+                            {capability.statusDescription}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleLaunchWebXr}
+                        disabled={isLaunchingWebXr}
+                        className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 transition active:scale-98"
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        <span>{isLaunchingWebXr ? 'Launching AR Camera...' : 'Launch WebXR AR Session'}</span>
+                      </button>
+                    </>
+                  )}
 
                   {webXrError && (
                     <div className="text-[11px] text-rose-400 bg-rose-950/40 border border-rose-800/40 p-2.5 rounded-lg">
@@ -489,8 +583,18 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                     </div>
                   </div>
 
-                  {/* External Google Scene Viewer fallback for public models */}
-                  {activeModelUrl && !isCustomReconstruction && (
+                  {/* Private Reconstructed Model vs External Scene Viewer Notice */}
+                  {isCustomReconstruction ? (
+                    <div className="p-3 bg-purple-950/40 border border-purple-800/40 rounded-lg text-[11px] text-purple-300 space-y-1">
+                      <div className="font-semibold text-purple-200 flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-purple-400" />
+                        Private Authenticated Asset
+                      </div>
+                      <p className="text-purple-300/80 leading-relaxed">
+                        This model was reconstructed via AI and streams securely in-memory. External apps (like Google Scene Viewer) cannot pass RoomGenie authentication headers. Use in-browser WebXR AR on your mobile device to view this model.
+                      </p>
+                    </div>
+                  ) : activeModelUrl && !activeModelUrl.startsWith('blob:') ? (
                     <a
                       href={generateSceneViewerIntentUrl(activeModelUrl, itemName, handoffUrl)}
                       target="_blank"
@@ -500,7 +604,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                       <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
                       <span>Launch Google Scene Viewer (Android)</span>
                     </a>
-                  )}
+                  ) : null}
                 </div>
               )}
             </div>

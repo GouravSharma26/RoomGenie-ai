@@ -26,6 +26,7 @@ interface DesignPersistenceModalProps {
 export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ isOpen, onClose }) => {
   const scene = useEditorStore((state) => state.scene);
   const loadScene = useEditorStore((state) => state.loadScene);
+  const setStoreCurrentDesignId = useEditorStore((state) => state.setCurrentDesignId);
 
   const [designs, setDesigns] = useState<DesignRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -84,6 +85,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
       const saveId = asNew ? null : currentDesignId;
       const saved = await saveDesignToBackend(title, scene, saveId);
       setCurrentDesignId(saved.id);
+      setStoreCurrentDesignId(saved.id);
       setStatusMsg({ type: 'success', text: `Saved "${saved.title}" successfully!` });
       await refreshDesigns();
     } catch (err: any) {
@@ -96,6 +98,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
   const handleLoad = (record: DesignRecord) => {
     loadScene(record.scene_json);
     setCurrentDesignId(record.id);
+    setStoreCurrentDesignId(record.id);
     setTitle(record.title);
     setStatusMsg({ type: 'success', text: `Loaded "${record.title}" into 3D Editor.` });
   };
@@ -107,6 +110,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
       await deleteDesignFromBackend(id);
       if (currentDesignId === id) {
         setCurrentDesignId(null);
+        setStoreCurrentDesignId(null);
       }
       setStatusMsg({ type: 'success', text: 'Design deleted.' });
       await refreshDesigns();

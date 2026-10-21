@@ -217,5 +217,5 @@ A phase is not complete merely because code was generated. It is complete only w
 - [x] Phase 4 — AI design agent (2-phase proposal/approval workflow, Gemini flash adapter & mock, strict tool validation, collision checks)
 - [x] Phase 5 — Room photo analysis (Gemini flash vision adapter & mock, structured observations, catalogue remapping, frontend modal)
 - [x] Phase 6 — Photo-to-3D approximation (Tripo adapter & mock, asynchronous job lifecycle, atomic claiming, strict GLB validation, authenticated streaming, lifecycle E2E verified)
-- [x] Phase 7 — AR placement (docs/AR_DEVICE_SPECIFICATION.md, WebXR immersive-ar hit-test, manual adjustments, mobile handoff QR, diagnostic fallback, limitations documented)
+- [ ] Phase 7 — AR placement (WebXR hit-test frame loop, reticle tracking, tap-to-place, manual adjustments, mobile handoff, fallback diagnostics; physical device test pending developer execution)
 - [ ] Phase 8 — Research and delivery

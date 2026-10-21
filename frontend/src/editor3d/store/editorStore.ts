@@ -24,8 +24,10 @@ interface EditorState {
   viewMode: 'perspective' | 'top';
   gridSnap: boolean;
   history: CanonicalScene[];
+  currentDesignId: string | null;
 
   // Actions
+  setCurrentDesignId: (id: string | null) => void;
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
   addFurniture: (item: FurnitureCatalogItem) => void;
   addCustomPlacement: (params: {
@@ -81,6 +83,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   viewMode: 'perspective',
   gridSnap: true,
   history: [],
+  currentDesignId: null,
+
+  setCurrentDesignId: (id) => set({ currentDesignId: id }),
 
   setRoomDimensions: (dims) => {
     set((state) => {
@@ -396,6 +401,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         objects: [],
       },
       selectedId: null,
+      currentDesignId: null,
     }));
   },
 
