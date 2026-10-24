@@ -34,6 +34,8 @@ ALLOWED_HOSTS = [
     for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') 
     if host.strip()
 ]
+if DEBUG:
+    ALLOWED_HOSTS = list(set(ALLOWED_HOSTS + ['*']))
 
 # Application definition
 INSTALLED_APPS = [
@@ -161,6 +163,8 @@ CORS_ALLOWED_ORIGINS = [
     ).split(',')
     if origin.strip()
 ]
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # AI and Model Provider Baseline Settings
 AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', 'mock').lower()
