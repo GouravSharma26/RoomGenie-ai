@@ -102,6 +102,18 @@ class EvaluationSession(models.Model):
     checkpoint_scene_snapshot = models.JSONField(null=True, blank=True)
     final_scene_snapshot = models.JSONField(null=True, blank=True)
 
+    # Standard Usability Survey (System Usability Scale - Brooke 1996)
+    sus_responses = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="10-item System Usability Scale Likert responses (1-5)."
+    )
+    sus_score = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Composite System Usability Scale score (0-100)."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

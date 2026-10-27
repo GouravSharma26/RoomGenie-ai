@@ -480,6 +480,12 @@ class CompleteSessionView(APIView):
             if 'agentTier3DomainValidCount' in data:
                 session.agent_tier3_domain_valid_count = data['agentTier3DomainValidCount']
 
+            if 'susResponses' in data and data['susResponses'] is not None:
+                from apps.evaluation.metrics import calculate_sus_score
+                sus_calc = calculate_sus_score(data['susResponses'])
+                session.sus_responses = sus_calc['normalized_responses']
+                session.sus_score = sus_calc['score']
+
             session.session_status = 'completed'
             session.save()
 

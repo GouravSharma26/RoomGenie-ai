@@ -40,6 +40,7 @@ CSV_EXPORT_FIELDS = [
     'agentTier1SuccessCount',
     'agentTier2SchemaValidCount',
     'agentTier3DomainValidCount',
+    'susScore',
 ]
 
 

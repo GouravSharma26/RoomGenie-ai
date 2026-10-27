@@ -557,3 +557,119 @@ def calculate_authoritative_session_metrics(
         'doorway_intrusions_count': doorway_intrusions_count,
         'is_task_successful': is_task_successful,
     }
+
+
+# Standard 10-Item System Usability Scale (SUS) questionnaire (Brooke, 1996)
+SUS_QUESTIONS = [
+    "I think that I would like to use this system frequently.",
+    "I found the system unnecessarily complex.",
+    "I thought the system was easy to use.",
+    "I think that I would need the support of a technical person to be able to use this system.",
+    "I found the various functions in this system were well integrated.",
+    "I thought there was too much inconsistency in this system.",
+    "I would imagine that most people would learn to use this system very quickly.",
+    "I found the system very cumbersome to use.",
+    "I felt very confident using the system.",
+    "I needed to learn a lot of things before I could get going with this system.",
+]
+
+
+def validate_sus_responses(responses: Any) -> tuple[bool, list[int], str | None]:
+    """
+    Validates that survey responses contain all 10 integer answers (1..10)
+    with Likert values strictly within the range [1, 5].
+    Returns (is_valid, missing_questions, error_message).
+    """
+    if not isinstance(responses, dict):
+        return False, list(range(1, 11)), "SUS responses must be a JSON dictionary mapping question numbers (1..10) to Likert ratings (1..5)."
+
+    normalized: dict[int, int] = {}
+    missing: list[int] = []
+
+    for q in range(1, 11):
+        # Support both integer and string keys e.g. 1 or "1"
+        val = responses.get(q) if q in responses else responses.get(str(q))
+        if val is None:
+            missing.append(q)
+            continue
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            return False, [], f"Question {q} response must be an integer between 1 and 5."
+        int_val = int(val)
+        if int_val < 1 or int_val > 5:
+            return False, [], f"Question {q} rating '{int_val}' is out of range. Must be between 1 and 5."
+        normalized[q] = int_val
+
+    if missing:
+        return False, missing, f"Missing responses for {len(missing)} question(s): {missing}."
+
+    return True, [], None
+
+
+def calculate_sus_score(responses: dict[Any, Any] | list[int]) -> dict[str, Any]:
+    """
+    Calculates composite System Usability Scale (SUS) score conforming strictly to
+    Brooke (1996) and Bangor, Kortum & Miller (2008, 2009).
+
+    Formula:
+      - Odd items (1, 3, 5, 7, 9): contribution = rating - 1
+      - Even items (2, 4, 6, 8, 10): contribution = 5 - rating
+      - SUS = 2.5 * sum(contributions)
+
+    Grading Bands (Bangor et al.):
+      - >= 85.0: Grade A (Excellent Usability)
+      - 71.0 - 84.9: Grade B (Good Usability)
+      - 65.0 - 70.9: Grade C (Acceptable / Average; 68.0 industry mean)
+      - 50.0 - 64.9: Grade D (Marginal / Below Average)
+      - < 50.0: Grade F (Poor / Not Acceptable)
+    """
+    if isinstance(responses, list):
+        resp_dict = {i + 1: val for i, val in enumerate(responses)}
+    else:
+        resp_dict = responses
+
+    is_valid, missing, err = validate_sus_responses(resp_dict)
+    if not is_valid:
+        raise ValueError(err or "Invalid SUS responses.")
+
+    # Normalize keys to ints
+    norm = {int(k): int(v) for k, v in resp_dict.items() if str(k).isdigit() and 1 <= int(k) <= 10}
+
+    total_contribution = 0.0
+    item_contributions: dict[int, float] = {}
+
+    for i in range(1, 11):
+        q_val = norm[i]
+        if i % 2 == 1:
+            contrib = float(q_val - 1)
+        else:
+            contrib = float(5 - q_val)
+        item_contributions[i] = contrib
+        total_contribution += contrib
+
+    raw_score = total_contribution * 2.5
+    score = round(max(0.0, min(100.0, raw_score)), 1)
+
+    if score >= 85.0:
+        grade = 'A'
+        description = 'Excellent Usability'
+    elif score >= 71.0:
+        grade = 'B'
+        description = 'Good Usability'
+    elif score >= 65.0:
+        grade = 'C'
+        description = 'Acceptable / Average'
+    elif score >= 50.0:
+        grade = 'D'
+        description = 'Marginal / Below Average'
+    else:
+        grade = 'F'
+        description = 'Poor / Not Acceptable'
+
+    return {
+        'score': score,
+        'grade': grade,
+        'description': description,
+        'item_contributions': item_contributions,
+        'normalized_responses': norm,
+    }
+

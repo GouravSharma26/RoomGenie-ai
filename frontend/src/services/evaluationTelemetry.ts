@@ -48,6 +48,8 @@ export interface ExperimentSessionRecord {
   agentTier3DomainValidCount: number;
   checkpointSceneSnapshot?: CanonicalScene | null;
   finalSceneSnapshot?: CanonicalScene | null;
+  susScore?: number | null;
+  susResponses?: Record<string, number> | null;
 }
 
 export interface ActiveEvaluationSession {
@@ -523,7 +525,8 @@ export async function sendEvaluationCheckpoint(
 }
 
 export async function completeEvaluationSession(
-  finalScene: CanonicalScene
+  finalScene: CanonicalScene,
+  susResponses?: Record<number | string, number>
 ): Promise<ExperimentSessionRecord> {
   const existing = getActiveSession();
   if (!existing) {
@@ -542,7 +545,7 @@ export async function completeEvaluationSession(
   // 3. Calculate active duration using the refreshed session and closed intervals
   const activeDuration = calculateActiveDurationSeconds(active);
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     finalSceneSnapshot: finalScene,
     activeDurationSeconds: activeDuration,
     totalEdits: active.totalEdits,
@@ -555,6 +558,10 @@ export async function completeEvaluationSession(
     agentTier2SchemaValidCount: active.agentTier2SchemaValidCount,
     agentTier3DomainValidCount: active.agentTier3DomainValidCount,
   };
+
+  if (susResponses) {
+    payload.susResponses = susResponses;
+  }
 
   const response = await fetch(
     `${API_BASE_URL}/api/v1/evaluation/sessions/${active.sessionId}/complete/`,

@@ -21,6 +21,9 @@ from apps.evaluation.metrics import (
     sanitize_scene_snapshot,
     validate_and_sanitize_canonical_scene,
     validate_study_assignment,
+    calculate_sus_score,
+    validate_sus_responses,
+    SUS_QUESTIONS,
 )
 from apps.evaluation.models import EvaluationSession
 from apps.evaluation.views import _hash_secret
@@ -1477,4 +1480,165 @@ class EvaluationTelemetryTestCase(TestCase):
         )
         self.assertEqual(resp_excess_active.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue("cannot exceed elapsed" in str(resp_excess_active.data) or "exceeds elapsed" in str(resp_excess_active.data))
+
+    def test_sus_scoring_formula_and_grades(self):
+        """
+        Verifies standard System Usability Scale (SUS) calculations strictly adhering to
+        Brooke (1996) and Bangor, Kortum & Miller (2008, 2009).
+        """
+        self.assertEqual(len(SUS_QUESTIONS), 10)
+
+        # 1. Ideal response: odd=5, even=1 -> score 100.0, Grade A
+        ideal = {i: 5 if i % 2 == 1 else 1 for i in range(1, 11)}
+        res_ideal = calculate_sus_score(ideal)
+        self.assertEqual(res_ideal['score'], 100.0)
+        self.assertEqual(res_ideal['grade'], 'A')
+        self.assertEqual(res_ideal['description'], 'Excellent Usability')
+
+        # 2. Worst response: odd=1, even=5 -> score 0.0, Grade F
+        worst = {i: 1 if i % 2 == 1 else 5 for i in range(1, 11)}
+        res_worst = calculate_sus_score(worst)
+        self.assertEqual(res_worst['score'], 0.0)
+        self.assertEqual(res_worst['grade'], 'F')
+        self.assertEqual(res_worst['description'], 'Poor / Not Acceptable')
+
+        # 3. All-neutral response: all=3 -> score 50.0, Grade D
+        neutral = {i: 3 for i in range(1, 11)}
+        res_neutral = calculate_sus_score(neutral)
+        self.assertEqual(res_neutral['score'], 50.0)
+        self.assertEqual(res_neutral['grade'], 'D')
+
+        # 4. Realistic response: [5, 1, 4, 2, 5, 1, 5, 2, 4, 1]
+        # odd: (5-1)=4, (4-1)=3, (5-1)=4, (5-1)=4, (4-1)=3 -> sum=18
+        # even: (5-1)=4, (5-2)=3, (5-1)=4, (5-2)=3, (5-1)=4 -> sum=18
+        # total contrib = 36 -> 36 * 2.5 = 90.0 (Grade A)
+        sample = {1: 5, 2: 1, 3: 4, 4: 2, 5: 5, 6: 1, 7: 5, 8: 2, 9: 4, 10: 1}
+        res_sample = calculate_sus_score(sample)
+        self.assertEqual(res_sample['score'], 90.0)
+        self.assertEqual(res_sample['grade'], 'A')
+
+        # 5. Incomplete responses raise ValueError
+        incomplete = {1: 4, 2: 2, 3: 4}
+        with self.assertRaises(ValueError):
+            calculate_sus_score(incomplete)
+
+        # 6. Out-of-bounds ratings raise ValueError
+        out_of_bounds = {i: 3 for i in range(1, 11)}
+        out_of_bounds[5] = 6
+        with self.assertRaises(ValueError):
+            calculate_sus_score(out_of_bounds)
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_complete_session_with_valid_and_invalid_sus_responses(self):
+        """
+        Verifies that /complete/ endpoint validates and records SUS survey responses
+        and calculated scores upon session submission.
+        """
+        # 1. Start a session
+        s_id = str(uuid.uuid4())
+        start_resp = self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'sessionSecret': self.test_secret,
+                'participantId': 'P_SUS_TEST',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
+
+        valid_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [0.0, 0.425, -1.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1, 1, 1],
+                    'rotationEuler': [0, 0, 0]
+                }
+            ]
+        }
+
+        # 2. Complete with invalid SUS responses (missing questions) -> HTTP 400
+        bad_complete_resp = self.client.post(
+            reverse('evaluation:session-complete', kwargs={'session_id': s_id}),
+            {
+                'finalSceneSnapshot': valid_scene,
+                'susResponses': {1: 5, 2: 2},  # Only 2 of 10 questions
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(bad_complete_resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue('susResponses' in bad_complete_resp.data)
+
+        # 3. Complete with valid SUS responses -> HTTP 200 with susScore populated
+        valid_sus = {1: 5, 2: 1, 3: 4, 4: 2, 5: 5, 6: 1, 7: 5, 8: 2, 9: 4, 10: 1}
+        good_complete_resp = self.client.post(
+            reverse('evaluation:session-complete', kwargs={'session_id': s_id}),
+            {
+                'finalSceneSnapshot': valid_scene,
+                'activeDurationSeconds': 0.5,
+                'susResponses': valid_sus,
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(good_complete_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(good_complete_resp.data['susScore'], 90.0)
+        self.assertIsNotNone(good_complete_resp.data['susResponses'])
+
+        # Verify database persistence
+        session = EvaluationSession.objects.get(id=s_id)
+        self.assertEqual(session.sus_score, 90.0)
+        self.assertEqual(len(session.sus_responses), 10)
+
+    def test_export_evaluation_dataset_includes_sus_score(self):
+        """
+        Verifies that export_evaluation_dataset management command exports
+        susScore in both CSV and JSON formats.
+        """
+        session = EvaluationSession.objects.create(
+            participant_id='P_EXPORT_SUS',
+            condition='manual',
+            sequence_order='G1',
+            trial_period=1,
+            task_name='living_room',
+            session_status='completed',
+            budget_total_paise=3000000,
+            budget_ceiling_paise=6000000,
+            is_budget_compliant=True,
+            is_task_successful=True,
+            total_edits=4,
+            undo_redo_count=1,
+            sus_score=85.0,
+            sus_responses={str(i): 4 for i in range(1, 11)}
+        )
+
+        # 1. Test CSV Export
+        out_csv = StringIO()
+        call_command('export_evaluation_dataset', format='csv', stdout=out_csv)
+        csv_content = out_csv.getvalue()
+        self.assertIn('susScore', csv_content)
+        self.assertIn('85.0', csv_content)
+        self.assertIn('P_EXPORT_SUS', csv_content)
+
+        # 2. Test JSON Export
+        out_json = StringIO()
+        call_command('export_evaluation_dataset', format='json', stdout=out_json)
+        json_data = json.loads(out_json.getvalue())
+        found = next((item for item in json_data if item.get('participantId') == 'P_EXPORT_SUS'), None)
+        self.assertIsNotNone(found)
+        self.assertEqual(found['susScore'], 85.0)
+        self.assertIsNotNone(found['susResponses'])
+
 

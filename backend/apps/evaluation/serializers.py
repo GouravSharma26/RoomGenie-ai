@@ -52,6 +52,9 @@ class ExperimentSessionRecordSerializer(serializers.ModelSerializer):
     checkpointSceneSnapshot = serializers.JSONField(source='checkpoint_scene_snapshot', allow_null=True)
     finalSceneSnapshot = serializers.JSONField(source='final_scene_snapshot', allow_null=True)
 
+    susScore = serializers.FloatField(source='sus_score', allow_null=True)
+    susResponses = serializers.JSONField(source='sus_responses', allow_null=True)
+
     class Meta:
         model = EvaluationSession
         fields = [
@@ -91,6 +94,8 @@ class ExperimentSessionRecordSerializer(serializers.ModelSerializer):
             'agentTier3DomainValidCount',
             'checkpointSceneSnapshot',
             'finalSceneSnapshot',
+            'susScore',
+            'susResponses',
         ]
 
     def get_schemaVersion(self, obj) -> int:
@@ -174,9 +179,19 @@ class CompleteSessionSerializer(serializers.Serializer):
     agentTier1SuccessCount = serializers.IntegerField(min_value=0, required=False)
     agentTier2SchemaValidCount = serializers.IntegerField(min_value=0, required=False)
     agentTier3DomainValidCount = serializers.IntegerField(min_value=0, required=False)
+    susResponses = serializers.DictField(required=False, allow_null=True)
 
     def validate_idleIntervals(self, value):
         return _validate_idle_intervals(value)
+
+    def validate_susResponses(self, value):
+        if value is None:
+            return None
+        from apps.evaluation.metrics import validate_sus_responses
+        is_valid, missing, err = validate_sus_responses(value)
+        if not is_valid:
+            raise serializers.ValidationError(err or "Invalid SUS responses.")
+        return {int(k): int(v) for k, v in value.items() if str(k).isdigit() and 1 <= int(k) <= 10}
 
 
 class AbortSessionSerializer(serializers.Serializer):
