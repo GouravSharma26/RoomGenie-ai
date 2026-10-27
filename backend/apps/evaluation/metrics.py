@@ -574,22 +574,53 @@ SUS_QUESTIONS = [
 ]
 
 
+def _validate_single_rating(val: Any, q: int) -> tuple[bool, int | None, str | None]:
+    """
+    Validates a single Likert rating value for question q.
+    Returns (is_valid, int_val, error_message).
+    """
+    # In Python, bool is a subclass of int (isinstance(True, int) is True),
+    # so explicitly reject booleans before any numeric checks.
+    if isinstance(val, bool):
+        return False, None, f"Question {q} response must be a whole integer between 1 and 5, received boolean '{val}'."
+
+    if not isinstance(val, (int, float)):
+        return False, None, f"Question {q} response must be a numeric integer between 1 and 5, received '{type(val).__name__}'."
+
+    if isinstance(val, float):
+        if not math.isfinite(val):
+            return False, None, f"Question {q} response must be a finite integer between 1 and 5, received '{val}'."
+        if not val.is_integer():
+            return False, None, f"Question {q} response must be a whole integer between 1 and 5, received fractional rating '{val}'."
+
+    int_val = int(val)
+    if int_val < 1 or int_val > 5:
+        return False, None, f"Question {q} rating '{int_val}' is out of range. Must be between 1 and 5."
+
+    return True, int_val, None
+
+
 def validate_sus_responses(responses: Any) -> tuple[bool, list[int], str | None]:
     """
     Validates that survey responses contain all 10 integer answers (1..10)
     with Likert values strictly within the range [1, 5].
-    Rejects booleans, non-numeric values, non-finite numbers (NaN, inf),
-    and fractional/non-integer numeric values.
+    Rejects boolean question keys, booleans, non-numeric values,
+    non-finite numbers (NaN, inf), and fractional/non-integer numeric values.
+    When both integer and string question keys are provided, validates both
+    independently before ensuring they represent the same integer rating.
     Supports both integer and string question keys (e.g. 1 or '1').
     Returns (is_valid, missing_questions, error_message).
     """
     if not isinstance(responses, dict):
         return False, list(range(1, 11)), "SUS responses must be a JSON dictionary mapping question numbers (1..10) to Likert ratings (1..5)."
 
-    # Reject unknown or invalid question keys
+    # Reject boolean question keys explicitly before checking integer or string type,
+    # because in Python isinstance(True, int) is True.
     valid_key_strings = {str(i) for i in range(1, 11)}
     for k in responses.keys():
-        if isinstance(k, int):
+        if isinstance(k, bool):
+            return False, [], f"Invalid question key '{k}'. Question keys cannot be booleans."
+        elif isinstance(k, int):
             if k < 1 or k > 10:
                 return False, [], f"Invalid question key '{k}'. Questions must be numbered 1 through 10."
         elif isinstance(k, str):
@@ -601,42 +632,51 @@ def validate_sus_responses(responses: Any) -> tuple[bool, list[int], str | None]
     missing: list[int] = []
 
     for q in range(1, 11):
-        # Support both integer and string keys e.g. 1 or "1"
         has_int_k = q in responses
         has_str_k = str(q) in responses
 
-        if has_int_k and has_str_k:
-            if responses[q] != responses[str(q)]:
-                return False, [], f"Conflicting responses provided for question {q}."
-            val = responses[q]
-        elif has_int_k:
-            val = responses[q]
-        elif has_str_k:
-            val = responses[str(q)]
-        else:
-            val = None
-
-        if val is None:
+        if not has_int_k and not has_str_k:
             missing.append(q)
             continue
 
-        # In Python, bool is a subclass of int (isinstance(True, int) is True),
-        # so explicitly reject booleans before any numeric checks.
-        if isinstance(val, bool):
-            return False, [], f"Question {q} response must be a whole integer between 1 and 5, received boolean '{val}'."
+        # If both integer and string forms of question key are present,
+        # validate EACH supplied value independently to prevent any boolean
+        # or invalid value from being hidden by an equal-comparing duplicate.
+        if has_int_k and has_str_k:
+            val_int = responses[q]
+            val_str = responses[str(q)]
 
-        if not isinstance(val, (int, float)):
-            return False, [], f"Question {q} response must be a numeric integer between 1 and 5, received '{type(val).__name__}'."
+            if val_int is None or val_str is None:
+                missing.append(q)
+                continue
 
-        if isinstance(val, float):
-            if not math.isfinite(val):
-                return False, [], f"Question {q} response must be a finite integer between 1 and 5, received '{val}'."
-            if not val.is_integer():
-                return False, [], f"Question {q} response must be a whole integer between 1 and 5, received fractional rating '{val}'."
+            valid_int, int_res_num, err_int = _validate_single_rating(val_int, q)
+            if not valid_int:
+                return False, [], err_int
 
-        int_val = int(val)
-        if int_val < 1 or int_val > 5:
-            return False, [], f"Question {q} rating '{int_val}' is out of range. Must be between 1 and 5."
+            valid_str, str_res_num, err_str = _validate_single_rating(val_str, q)
+            if not valid_str:
+                return False, [], err_str
+
+            if int_res_num != str_res_num:
+                return False, [], f"Conflicting responses provided for question {q}: {int_res_num} != {str_res_num}."
+
+        elif has_int_k:
+            val = responses[q]
+            if val is None:
+                missing.append(q)
+                continue
+            valid, _, err = _validate_single_rating(val, q)
+            if not valid:
+                return False, [], err
+        else:
+            val = responses[str(q)]
+            if val is None:
+                missing.append(q)
+                continue
+            valid, _, err = _validate_single_rating(val, q)
+            if not valid:
+                return False, [], err
 
     if missing:
         return False, missing, f"Missing responses for {len(missing)} question(s): {missing}."

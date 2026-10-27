@@ -164,6 +164,26 @@ class CheckpointSessionSerializer(serializers.Serializer):
         return _validate_idle_intervals(value)
 
 
+class SusResponsesField(serializers.Field):
+    """
+    Field for validating and normalizing SUS responses dictionary while preserving
+    exact raw key types (preventing DictField from silently stringifying or collapsing duplicate keys).
+    """
+    def to_internal_value(self, data):
+        if data is None:
+            return None
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("SUS responses must be a JSON dictionary mapping question numbers (1..10) to Likert ratings (1..5).")
+        from apps.evaluation.metrics import validate_sus_responses
+        is_valid, missing, err = validate_sus_responses(data)
+        if not is_valid:
+            raise serializers.ValidationError(err or "Invalid SUS responses.")
+        return {q: int(data[q] if q in data else data[str(q)]) for q in range(1, 11)}
+
+    def to_representation(self, value):
+        return value
+
+
 class CompleteSessionSerializer(serializers.Serializer):
     finalSceneSnapshot = serializers.DictField(required=True)
     activeDurationSeconds = serializers.FloatField(min_value=0.0, required=False)
@@ -179,19 +199,10 @@ class CompleteSessionSerializer(serializers.Serializer):
     agentTier1SuccessCount = serializers.IntegerField(min_value=0, required=False)
     agentTier2SchemaValidCount = serializers.IntegerField(min_value=0, required=False)
     agentTier3DomainValidCount = serializers.IntegerField(min_value=0, required=False)
-    susResponses = serializers.DictField(required=False, allow_null=True)
+    susResponses = SusResponsesField(required=False, allow_null=True)
 
     def validate_idleIntervals(self, value):
         return _validate_idle_intervals(value)
-
-    def validate_susResponses(self, value):
-        if value is None:
-            return None
-        from apps.evaluation.metrics import validate_sus_responses
-        is_valid, missing, err = validate_sus_responses(value)
-        if not is_valid:
-            raise serializers.ValidationError(err or "Invalid SUS responses.")
-        return {q: int(value[q] if q in value else value[str(q)]) for q in range(1, 11)}
 
 
 class AbortSessionSerializer(serializers.Serializer):

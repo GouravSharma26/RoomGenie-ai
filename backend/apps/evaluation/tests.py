@@ -1828,6 +1828,82 @@ class SusValidationAndScoringTests(TestCase):
         self.assertFalse(is_valid)
         self.assertIn("conflicting", err.lower())
 
+    def test_boolean_question_keys_rejected(self):
+        """Boolean question keys such as True or False must be rejected explicitly."""
+        valid_base = {q: 4 for q in range(2, 11)}
+        for bool_key in [True, False]:
+            responses = {bool_key: 4, **valid_base}
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"Boolean key {bool_key} should have been rejected")
+            self.assertIn("cannot be booleans", err.lower())
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+    def test_duplicate_integer_and_string_keys_validated_independently(self):
+        """
+        When both integer and string question keys are present:
+        - Booleans in either position must not be hidden by equal comparison.
+        - Invalid fractional values in either position must be rejected.
+        - Conflicting values must be rejected.
+        - Matching valid values must be accepted.
+        """
+        valid_base = {q: 4 for q in range(2, 11)}
+
+        # 1. Reject {1: 1, "1": True}
+        dupe_bool_str = {1: 1, "1": True, **valid_base}
+        is_valid, missing, err = validate_sus_responses(dupe_bool_str)
+        self.assertFalse(is_valid)
+        self.assertIn("boolean", err.lower())
+        with self.assertRaises(ValueError):
+            calculate_sus_score(dupe_bool_str)
+        from apps.evaluation.serializers import CompleteSessionSerializer
+        ser1 = CompleteSessionSerializer(data={'finalSceneSnapshot': self.valid_scene, 'susResponses': dupe_bool_str})
+        self.assertFalse(ser1.is_valid())
+        self.assertIn('susResponses', ser1.errors)
+
+        # 2. Reject reversed {1: True, "1": 1}
+        dupe_bool_int = {1: True, "1": 1, **valid_base}
+        is_valid, missing, err = validate_sus_responses(dupe_bool_int)
+        self.assertFalse(is_valid)
+        self.assertIn("boolean", err.lower())
+        with self.assertRaises(ValueError):
+            calculate_sus_score(dupe_bool_int)
+        ser2 = CompleteSessionSerializer(data={'finalSceneSnapshot': self.valid_scene, 'susResponses': dupe_bool_int})
+        self.assertFalse(ser2.is_valid())
+        self.assertIn('susResponses', ser2.errors)
+
+        # 3. Reject fractional in duplicate: {1: 2, "1": 2.5}
+        dupe_frac_str = {1: 2, "1": 2.5, **valid_base}
+        is_valid, missing, err = validate_sus_responses(dupe_frac_str)
+        self.assertFalse(is_valid)
+        self.assertIn("fractional", err.lower())
+
+        # 4. Reject reversed fractional in duplicate: {1: 2.5, "1": 2}
+        dupe_frac_int = {1: 2.5, "1": 2, **valid_base}
+        is_valid, missing, err = validate_sus_responses(dupe_frac_int)
+        self.assertFalse(is_valid)
+        self.assertIn("fractional", err.lower())
+
+        # 5. Reject conflicting values: {1: 2, "1": 4}
+        conflicting = {1: 2, "1": 4, **valid_base}
+        is_valid, missing, err = validate_sus_responses(conflicting)
+        self.assertFalse(is_valid)
+        self.assertIn("conflicting", err.lower())
+
+        # 6. Accept matching valid duplicates: {1: 4, "1": 4}
+        matching = {1: 4, "1": 4, **valid_base}
+        is_valid, missing, err = validate_sus_responses(matching)
+        self.assertTrue(is_valid, f"Matching duplicate keys should be accepted: {err}")
+        res = calculate_sus_score(matching)
+        self.assertEqual(res['normalized_responses'][1], 4)
+
+        # 7. Accept matching valid duplicates with integer-equivalent float: {1: 4, "1": 4.0}
+        matching_float = {1: 4, "1": 4.0, **valid_base}
+        is_valid, missing, err = validate_sus_responses(matching_float)
+        self.assertTrue(is_valid, f"Matching duplicate keys with float should be accepted: {err}")
+        res_float = calculate_sus_score(matching_float)
+        self.assertEqual(res_float['normalized_responses'][1], 4)
+
     def test_valid_responses_produce_expected_authoritative_score(self):
         """Valid responses produce the standard authoritative SUS composite scores."""
         # Case 1: Perfect usability (Odd items = 5 -> contrib 4; Even items = 1 -> contrib 4)
@@ -1904,6 +1980,8 @@ class SusValidationAndScoringTests(TestCase):
             {**valid_base, 7: 6},
             # Incomplete
             {1: 4, 2: 4},
+            # Boolean question keys
+            {True: 4, **{q: 4 for q in range(2, 11)}},
         ]
 
         for invalid_sus in invalid_payloads:
