@@ -509,11 +509,15 @@ export async function sendEvaluationCheckpoint(
     }
 
     const data: ExperimentSessionRecord = await response.json();
-    saveActiveSession(active);
+    if (getActiveSession()?.sessionId === active.sessionId) {
+      saveActiveSession(active);
+    }
     return data;
   } catch (err) {
     console.warn('Network error during checkpoint; state safely preserved for next retry:', err);
-    saveActiveSession(active);
+    if (getActiveSession()?.sessionId === active.sessionId) {
+      saveActiveSession(active);
+    }
     return null;
   }
 }

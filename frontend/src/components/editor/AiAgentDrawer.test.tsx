@@ -425,4 +425,223 @@ describe('AiAgentDrawer Telemetry Integration', () => {
     // Boundary counter: Schema violation is not a boundary clamp clash
     expect(session?.attemptedOutOfBoundsCount).toBe(0);
   });
+
+  it('marks Tier 2 valid but execution invalid on missing catalogue asset without incrementing boundary counter', async () => {
+    saveActiveSession(createMockSession());
+
+    // Proposal where tool call adheres to action signature & parameter types,
+    // but the referenced catalogue asset does not exist.
+    vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+      run: {
+        id: 'run-missing-asset',
+        session: 'mock-agent-session-id',
+        user_prompt: 'Add missing chair',
+        status: 'proposed',
+        ai_response_text: 'I attempted to add a missing chair.',
+        proposed_actions: [
+          { name: 'add_furniture', parameters: { asset_id: 'nonexistent-uuid', position: [0.0, 0.44, 0.0] } },
+        ],
+        validation_results: {
+          is_valid: false,
+          schema_valid: true,
+          reference_valid: false,
+          domain_valid: true,
+          budget_valid: true,
+          schema_errors: [],
+          reference_errors: ["Action [0]: Asset 'nonexistent-uuid' does not exist in catalogue or is inactive."],
+          domain_errors: [],
+          budget_errors: [],
+          errors: ["Action [0]: Asset 'nonexistent-uuid' does not exist in catalogue or is inactive."],
+          warnings: [],
+          budget_diff: {
+            diff_paise: 0,
+            room_containment_valid: true,
+            room_violations: [],
+          },
+        },
+        provider_metadata: { provider: 'mock', model: 'mock-model', latency_ms: 100 },
+        created_at: new Date().toISOString(),
+      },
+      candidate_scene: sampleScene,
+      budget_diff: {
+        diff_paise: 0,
+        room_containment_valid: true,
+        room_violations: [],
+      },
+      schema_valid: true,
+      reference_valid: false,
+      domain_valid: true,
+      budget_valid: true,
+      requires_approval: true,
+    });
+
+    render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(agentApi.createAgentSession).toHaveBeenCalled();
+    });
+
+    const input = screen.getByPlaceholderText(/Type design instruction/i);
+    fireEvent.change(input, { target: { value: 'Add missing chair' } });
+    fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+    await waitFor(() => {
+      expect(agentApi.sendAgentPrompt).toHaveBeenCalled();
+    });
+
+    const session = getActiveSession();
+    expect(session?.agentProposalsCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    // Tier 2: Valid schema (syntactic tool contract met)
+    expect(session?.agentTier2SchemaValidCount).toBe(1);
+    // Tier 3: Room containment valid
+    expect(session?.agentTier3DomainValidCount).toBe(1);
+    // Boundary counter must NEVER increment for reference resolution failure
+    expect(session?.attemptedOutOfBoundsCount).toBe(0);
+
+    // Proposal errors must be visible in UI
+    expect(screen.getByText(/Asset 'nonexistent-uuid' does not exist in catalogue/i)).toBeInTheDocument();
+  });
+
+  it('marks Tier 2 valid but execution invalid on nonexistent scene object without incrementing boundary counter', async () => {
+    saveActiveSession(createMockSession());
+
+    // Proposal where move_object has valid parameter types, but object_id does not exist in the scene.
+    vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+      run: {
+        id: 'run-missing-object',
+        session: 'mock-agent-session-id',
+        user_prompt: 'Move missing chair',
+        status: 'proposed',
+        ai_response_text: 'I attempted to move a chair that is not in the room.',
+        proposed_actions: [
+          { name: 'move_object', parameters: { object_id: 'ghost-item-1', position: [1.0, 0.44, 1.0] } },
+        ],
+        validation_results: {
+          is_valid: false,
+          schema_valid: true,
+          reference_valid: false,
+          domain_valid: true,
+          budget_valid: true,
+          schema_errors: [],
+          reference_errors: ["Action [0]: Object 'ghost-item-1' not found in scene."],
+          domain_errors: [],
+          budget_errors: [],
+          errors: ["Action [0]: Object 'ghost-item-1' not found in scene."],
+          warnings: [],
+          budget_diff: {
+            diff_paise: 0,
+            room_containment_valid: true,
+            room_violations: [],
+          },
+        },
+        provider_metadata: { provider: 'mock', model: 'mock-model', latency_ms: 100 },
+        created_at: new Date().toISOString(),
+      },
+      candidate_scene: sampleScene,
+      budget_diff: {
+        diff_paise: 0,
+        room_containment_valid: true,
+        room_violations: [],
+      },
+      schema_valid: true,
+      reference_valid: false,
+      domain_valid: true,
+      budget_valid: true,
+      requires_approval: true,
+    });
+
+    render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(agentApi.createAgentSession).toHaveBeenCalled();
+    });
+
+    const input = screen.getByPlaceholderText(/Type design instruction/i);
+    fireEvent.change(input, { target: { value: 'Move missing chair' } });
+    fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+    await waitFor(() => {
+      expect(agentApi.sendAgentPrompt).toHaveBeenCalled();
+    });
+
+    const session = getActiveSession();
+    expect(session?.agentProposalsCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    // Tier 2: Valid schema
+    expect(session?.agentTier2SchemaValidCount).toBe(1);
+    // Tier 3: Room containment valid
+    expect(session?.agentTier3DomainValidCount).toBe(1);
+    // Boundary counter must NEVER increment for nonexistent object failure
+    expect(session?.attemptedOutOfBoundsCount).toBe(0);
+
+    // Proposal errors must be visible in UI
+    expect(screen.getByText(/Object 'ghost-item-1' not found in scene/i)).toBeInTheDocument();
+  });
+
+  it('marks Tier 2 invalid on malformed vector parameter type without incrementing boundary counter', async () => {
+    saveActiveSession(createMockSession());
+
+    // Proposal with malformed position vector
+    vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+      run: {
+        id: 'run-malformed-vec',
+        session: 'mock-agent-session-id',
+        user_prompt: 'Add chair with bad vector',
+        status: 'proposed',
+        ai_response_text: 'Adding chair with bad vector.',
+        proposed_actions: [],
+        validation_results: {
+          is_valid: false,
+          schema_valid: false,
+          reference_valid: true,
+          domain_valid: true,
+          budget_valid: true,
+          schema_errors: ['Action [0]: Invalid position vector: expected 3-element numeric array.'],
+          reference_errors: [],
+          domain_errors: [],
+          budget_errors: [],
+          errors: ['Action [0]: Invalid position vector: expected 3-element numeric array.'],
+          warnings: [],
+          budget_diff: {
+            diff_paise: 0,
+            room_containment_valid: true,
+            room_violations: [],
+          },
+        },
+        provider_metadata: { provider: 'mock', model: 'mock-model', latency_ms: 100 },
+        created_at: new Date().toISOString(),
+      },
+      candidate_scene: sampleScene,
+      budget_diff: {
+        diff_paise: 0,
+        room_containment_valid: true,
+        room_violations: [],
+      },
+      schema_valid: false,
+      requires_approval: true,
+    });
+
+    render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(agentApi.createAgentSession).toHaveBeenCalled();
+    });
+
+    const input = screen.getByPlaceholderText(/Type design instruction/i);
+    fireEvent.change(input, { target: { value: 'Add chair with bad vector' } });
+    fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+    await waitFor(() => {
+      expect(agentApi.sendAgentPrompt).toHaveBeenCalled();
+    });
+
+    const session = getActiveSession();
+    expect(session?.agentProposalsCount).toBe(1);
+    expect(session?.agentTier1SuccessCount).toBe(1);
+    // Tier 2: Invalid due to malformed parameter vector
+    expect(session?.agentTier2SchemaValidCount).toBe(0);
+    // Boundary counter must NOT increment
+    expect(session?.attemptedOutOfBoundsCount).toBe(0);
+  });
 });

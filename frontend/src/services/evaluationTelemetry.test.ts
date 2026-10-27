@@ -600,6 +600,30 @@ describe('evaluationTelemetry service', () => {
     // Initialize telemetry so listeners and timestamps are bound at t=1000000 (0s relative)
     initEvaluationTelemetry();
 
+    // Mock fetch for both background checkpoint heartbeats and complete calls
+    let sentPayload: any = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/complete/')) {
+        sentPayload = JSON.parse(opts?.body as string);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...session,
+            sessionStatus: 'completed',
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...session,
+        }),
+      } as Response;
+    });
+
     // User is active for first 5 seconds
     await vi.advanceTimersByTimeAsync(5000);
     onUserActivity(); // active interaction at t=5s (5000ms)
@@ -608,19 +632,6 @@ describe('evaluationTelemetry service', () => {
     await vi.advanceTimersByTimeAsync(20000);
 
     // Complete evaluation session at t=25s
-    let sentPayload: any = null;
-    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_url, opts) => {
-      sentPayload = JSON.parse(opts?.body as string);
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ...session,
-          sessionStatus: 'completed',
-        }),
-      } as Response;
-    });
-
     await completeEvaluationSession(sampleScene);
 
     expect(sentPayload).not.toBeNull();
@@ -664,6 +675,30 @@ describe('evaluationTelemetry service', () => {
     saveActiveSession(session);
     initEvaluationTelemetry();
 
+    // Mock fetch for both background checkpoint heartbeats and complete calls
+    let sentPayload: any = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, opts) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/complete/')) {
+        sentPayload = JSON.parse(opts?.body as string);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...session,
+            sessionStatus: 'completed',
+          }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...session,
+        }),
+      } as Response;
+    });
+
     // 6s active (interact at t=3s and t=6s to stay below 10s inactivity threshold)
     await vi.advanceTimersByTimeAsync(3000);
     onUserActivity();
@@ -677,19 +712,6 @@ describe('evaluationTelemetry service', () => {
     onUserActivity();
 
     // Immediately calls completeEvaluationSession
-    let sentPayload: any = null;
-    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async (_url, opts) => {
-      sentPayload = JSON.parse(opts?.body as string);
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ...session,
-          sessionStatus: 'completed',
-        }),
-      } as Response;
-    });
-
     await completeEvaluationSession(sampleScene);
 
     expect(sentPayload).not.toBeNull();

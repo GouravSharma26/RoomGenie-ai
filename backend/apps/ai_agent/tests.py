@@ -71,29 +71,208 @@ class AgentAdapterAndToolsTests(APITestCase):
         for err in result['errors']:
             self.assertIn("not an allowlisted operation", err)
 
-    def test_tools_reject_nonexistent_asset_id(self):
+    def test_tools_unknown_non_allowlisted_action_tier2_invalid(self):
         scene = {
             'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
             'objects': [],
         }
         actions = [
-            {'type': 'add_furniture', 'asset_id': 'totally-fake-nonexistent-asset-id'}
+            {'type': 'unknown_unsupported_operation', 'data': 123}
         ]
         result = validate_and_simulate_actions(scene, actions)
         self.assertFalse(result['is_valid'])
-        self.assertIn("does not exist in catalogue", result['errors'][0])
+        self.assertFalse(result['schema_valid'])
+        self.assertTrue(result['reference_valid'])
+        self.assertTrue(result['domain_valid'])
+        self.assertTrue(result['budget_valid'])
+        self.assertTrue(result['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(result['budget_diff']['room_violations']), 0)
+        self.assertGreaterEqual(len(result['schema_errors']), 1)
+        self.assertEqual(len(result['reference_errors']), 0)
+        self.assertEqual(len(result['domain_errors']), 0)
+        self.assertEqual(len(result['budget_errors']), 0)
+        self.assertTrue(any("not an allowlisted operation" in err for err in result['schema_errors']))
 
-    def test_tools_reject_nonexistent_object_id_on_move(self):
+    def test_tools_malformed_vector_or_parameter_type_tier2_invalid(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        # Malformed position vector: string instead of 3-element list
+        actions_string_pos = [
+            {'type': 'add_furniture', 'asset_id': 'armchair-accent-nordic', 'position': 'invalid-vector'}
+        ]
+        res1 = validate_and_simulate_actions(scene, actions_string_pos)
+        self.assertFalse(res1['is_valid'])
+        self.assertFalse(res1['schema_valid'])
+        self.assertTrue(res1['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(res1['budget_diff']['room_violations']), 0)
+        self.assertTrue(any("Invalid position vector" in err for err in res1['schema_errors']))
+
+        # Malformed position vector: non-numeric element
+        actions_non_numeric = [
+            {'type': 'add_furniture', 'asset_id': 'armchair-accent-nordic', 'position': [1.0, 'two', 3.0]}
+        ]
+        res2 = validate_and_simulate_actions(scene, actions_non_numeric)
+        self.assertFalse(res2['is_valid'])
+        self.assertFalse(res2['schema_valid'])
+        self.assertTrue(res2['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(res2['budget_diff']['room_violations']), 0)
+
+        # Malformed scale vector: out of allowed bounds [0.1, 5.0]
+        actions_bad_scale = [
+            {'type': 'add_furniture', 'asset_id': 'armchair-accent-nordic', 'scale': [10.0, 1.0, 1.0]}
+        ]
+        res3 = validate_and_simulate_actions(scene, actions_bad_scale)
+        self.assertFalse(res3['is_valid'])
+        self.assertFalse(res3['schema_valid'])
+        self.assertTrue(res3['budget_diff']['room_containment_valid'])
+
+    def test_tools_missing_catalogue_asset_reference_resolution_failure_tier2_valid(self):
         scene = {
             'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
             'objects': [],
         }
         actions = [
-            {'type': 'move_object', 'object_id': 'nonexistent-obj', 'position': [1, 0, 1]}
+            {
+                'type': 'add_furniture',
+                'asset_id': 'totally-fake-nonexistent-asset-id',
+                'position': [0.0, 0.44, 0.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        # Unexecutable proposal must be rejected (is_valid = False)
+        self.assertFalse(result['is_valid'])
+        # Syntactic schema validity conforms strictly to contract (Tier 2 valid)
+        self.assertTrue(result['schema_valid'])
+        self.assertEqual(len(result['schema_errors']), 0)
+        # Semantic reference resolution failed
+        self.assertFalse(result['reference_valid'])
+        self.assertGreaterEqual(len(result['reference_errors']), 1)
+        self.assertIn("does not exist in catalogue or is inactive", result['reference_errors'][0])
+        # Domain room containment is completely valid (no boundary attempt triggered)
+        self.assertTrue(result['domain_valid'])
+        self.assertTrue(result['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(result['budget_diff']['room_violations']), 0)
+        self.assertEqual(len(result['domain_errors']), 0)
+        self.assertEqual(len(result['budget_errors']), 0)
+
+    def test_tools_nonexistent_scene_object_reference_resolution_failure_tier2_valid(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        actions = [
+            {
+                'type': 'move_object',
+                'object_id': 'nonexistent-obj-123',
+                'position': [1.0, 0.5, 1.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        # Unexecutable proposal rejected
+        self.assertFalse(result['is_valid'])
+        # Correctly typed parameters under tool contract (Tier 2 valid)
+        self.assertTrue(result['schema_valid'])
+        self.assertEqual(len(result['schema_errors']), 0)
+        # Reference resolution failed
+        self.assertFalse(result['reference_valid'])
+        self.assertGreaterEqual(len(result['reference_errors']), 1)
+        self.assertIn("not found in scene", result['reference_errors'][0])
+        # Domain containment and boundary metrics must not be affected
+        self.assertTrue(result['domain_valid'])
+        self.assertTrue(result['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(result['budget_diff']['room_violations']), 0)
+        self.assertEqual(len(result['domain_errors']), 0)
+        self.assertEqual(len(result['budget_errors']), 0)
+
+    def test_tools_valid_schema_with_room_containment_violation_tier2_valid_tier3_invalid(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        # Place armchair far outside room boundaries (e.g. X = 10.0m in a 5.0m wide room)
+        actions = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'armchair-accent-nordic',
+                'position': [10.0, 0.44, 0.0],
+            }
         ]
         result = validate_and_simulate_actions(scene, actions)
         self.assertFalse(result['is_valid'])
-        self.assertIn("not found in scene", result['errors'][0])
+        # Tool call adhered to allowlisted schema/parameters (Tier 2 valid)
+        self.assertTrue(result['schema_valid'])
+        self.assertEqual(len(result['schema_errors']), 0)
+        # Catalogue reference resolved
+        self.assertTrue(result['reference_valid'])
+        self.assertEqual(len(result['reference_errors']), 0)
+        # But room containment was violated (Tier 3 invalid)
+        self.assertFalse(result['domain_valid'])
+        self.assertFalse(result['budget_diff']['room_containment_valid'])
+        self.assertGreaterEqual(len(result['budget_diff']['room_violations']), 1)
+        self.assertGreaterEqual(len(result['domain_errors']), 1)
+        self.assertTrue(any("violates 3D room containment" in err for err in result['domain_errors']))
+
+    def test_tools_valid_schema_and_containment_with_budget_only_failure(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        # Add armchair costing ₹11,999 (1,199,900 paise) with budget ceiling of ₹5,000 (500,000 paise)
+        actions = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'armchair-accent-nordic',
+                'position': [0.0, 0.44, 0.0],
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions, max_budget_paise=500000)
+        # Budget violation marks proposal invalid
+        self.assertFalse(result['is_valid'])
+        # Tool call adhered to allowlisted schema/parameters (Tier 2 valid)
+        self.assertTrue(result['schema_valid'])
+        self.assertEqual(len(result['schema_errors']), 0)
+        # Reference resolved
+        self.assertTrue(result['reference_valid'])
+        self.assertEqual(len(result['reference_errors']), 0)
+        # Room containment is valid (Tier 3 valid)
+        self.assertTrue(result['domain_valid'])
+        self.assertTrue(result['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(result['budget_diff']['room_violations']), 0)
+        # Budget is invalid
+        self.assertFalse(result['budget_valid'])
+        self.assertFalse(result['budget_diff']['is_budget_compliant'])
+        self.assertGreaterEqual(len(result['budget_errors']), 1)
+        self.assertTrue(any("exceeds budget limit" in err for err in result['budget_errors']))
+
+    def test_tools_fully_valid_proposal_tier2_valid_tier3_valid(self):
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+        }
+        actions = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'armchair-accent-nordic',
+                'position': [0.0, 0.44, 0.0],
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions, max_budget_paise=5000000)
+        # Fully valid proposal
+        self.assertTrue(result['is_valid'])
+        self.assertTrue(result['schema_valid'])
+        self.assertTrue(result['reference_valid'])
+        self.assertTrue(result['domain_valid'])
+        self.assertTrue(result['budget_valid'])
+        self.assertTrue(result['budget_diff']['room_containment_valid'])
+        self.assertEqual(len(result['errors']), 0)
+        self.assertEqual(len(result['schema_errors']), 0)
+        self.assertEqual(len(result['reference_errors']), 0)
+        self.assertEqual(len(result['domain_errors']), 0)
+        self.assertEqual(len(result['budget_errors']), 0)
 
     def test_tools_calculate_deterministic_integer_paise_budget_diff(self):
         scene = {
@@ -129,43 +308,6 @@ class AgentAdapterAndToolsTests(APITestCase):
         self.assertEqual(diff['before_items_count'], 1)
         self.assertEqual(diff['after_items_count'], 2)
         self.assertTrue(diff['room_containment_valid'])
-
-    def test_tools_room_containment_violation_marks_invalid(self):
-        scene = {
-            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
-            'objects': [],
-        }
-        # Place armchair far outside room boundaries (e.g. X = 10.0m in a 5.0m wide room)
-        actions = [
-            {
-                'type': 'add_furniture',
-                'asset_id': 'armchair-accent-nordic',
-                'position': [10.0, 0.44, 0.0],
-            }
-        ]
-        result = validate_and_simulate_actions(scene, actions)
-        self.assertFalse(result['is_valid'])
-        # Tool call adhered to allowlisted schema/parameters, so schema_valid is True (Tier 2 valid)
-        self.assertTrue(result['schema_valid'])
-        self.assertEqual(len(result['schema_errors']), 0)
-        # But room containment was violated (Tier 3 invalid)
-        self.assertFalse(result['budget_diff']['room_containment_valid'])
-        self.assertGreaterEqual(len(result['errors']), 1)
-        self.assertTrue(any("violates 3D room containment" in err for err in result['errors']))
-
-    def test_tools_schema_invalid_marks_schema_valid_false(self):
-        scene = {
-            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
-            'objects': [],
-        }
-        actions = [
-            {'type': 'unknown_unsupported_action', 'data': 123}
-        ]
-        result = validate_and_simulate_actions(scene, actions)
-        self.assertFalse(result['is_valid'])
-        self.assertFalse(result['schema_valid'])
-        self.assertGreaterEqual(len(result['schema_errors']), 1)
-        self.assertTrue(any("not an allowlisted operation" in err for err in result['schema_errors']))
 
 
 class AgentApiSecurityAndApprovalTests(APITestCase):
@@ -421,6 +563,100 @@ class AgentApiSecurityAndApprovalTests(APITestCase):
         apply_url = reverse('agent-run-apply', kwargs={'run_id': str(run.id)})
         apply_res = self.client.post(apply_url, {}, format='json')
         self.assertEqual(apply_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.design_a.refresh_from_db()
+        self.assertEqual(len(self.design_a.scene_json['objects']), 0)
+
+    def test_prompt_endpoint_persists_and_returns_structured_validity_categories(self):
+        self.client.force_authenticate(user=self.user_a)
+        prompt_url = reverse('agent-prompt', kwargs={'session_id': str(self.session_a.id)})
+        res = self.client.post(prompt_url, {'prompt': 'Add an armchair'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # Verify returned flags
+        self.assertTrue(res.data['schema_valid'])
+        self.assertTrue(res.data['reference_valid'])
+        self.assertTrue(res.data['domain_valid'])
+        self.assertTrue(res.data['budget_valid'])
+
+        # Verify persisted fields in AgentRun.validation_results
+        run_id = res.data['run']['id']
+        run = AgentRun.objects.get(id=run_id)
+        vr = run.validation_results
+        self.assertIn('schema_valid', vr)
+        self.assertIn('reference_valid', vr)
+        self.assertIn('domain_valid', vr)
+        self.assertIn('budget_valid', vr)
+        self.assertIn('schema_errors', vr)
+        self.assertIn('reference_errors', vr)
+        self.assertIn('domain_errors', vr)
+        self.assertIn('budget_errors', vr)
+        self.assertTrue(vr['schema_valid'])
+        self.assertTrue(vr['reference_valid'])
+        self.assertTrue(vr['domain_valid'])
+        self.assertTrue(vr['budget_valid'])
+
+    def test_reference_resolution_failure_blocks_approval(self):
+        self.client.force_authenticate(user=self.user_a)
+        # Action references missing catalogue asset
+        missing_asset_action = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'totally-nonexistent-asset-uuid',
+                'position': [0.0, 0.44, 0.0],
+            }
+        ]
+        run = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Add missing furniture",
+            status=AgentRun.STATUS_PROPOSED,
+            ai_response_text="Adding missing furniture",
+            proposed_actions=missing_asset_action,
+            validation_results={'is_valid': False, 'errors': ['Asset not in catalogue']},
+            provider_metadata={'provider': 'mock', 'model': 'mock'},
+            base_scene_snapshot=self.design_a.scene_json,
+        )
+
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': str(run.id)})
+        apply_res = self.client.post(apply_url, {}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot apply invalid actions.", apply_res.data['detail'])
+
+        # Verify Alice's design scene was NOT modified
+        self.design_a.refresh_from_db()
+        self.assertEqual(len(self.design_a.scene_json['objects']), 0)
+        run.refresh_from_db()
+        self.assertEqual(run.status, AgentRun.STATUS_PROPOSED)
+
+    def test_budget_exceedance_blocks_approval(self):
+        self.client.force_authenticate(user=self.user_a)
+        # Set a strict budget of ₹50.00 (5000 paise) on Alice's design
+        self.design_a.budget = 5000
+        self.design_a.save(update_fields=['budget'])
+
+        # Armchair costs ₹11,999 (1,199,900 paise)
+        expensive_action = [
+            {
+                'type': 'add_furniture',
+                'asset_id': 'armchair-accent-nordic',
+                'position': [0.0, 0.44, 0.0],
+            }
+        ]
+        run = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Add expensive armchair",
+            status=AgentRun.STATUS_PROPOSED,
+            ai_response_text="Adding armchair",
+            proposed_actions=expensive_action,
+            validation_results={'is_valid': False, 'errors': ['Cost exceeds budget']},
+            provider_metadata={'provider': 'mock', 'model': 'mock'},
+            base_scene_snapshot=self.design_a.scene_json,
+        )
+
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': str(run.id)})
+        apply_res = self.client.post(apply_url, {}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot apply invalid actions.", apply_res.data['detail'])
+
+        # Verify Alice's design scene was NOT modified
         self.design_a.refresh_from_db()
         self.assertEqual(len(self.design_a.scene_json['objects']), 0)
 

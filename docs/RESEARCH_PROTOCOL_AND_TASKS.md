@@ -304,13 +304,32 @@ graph TD
 2. **Authoritative Integer Paise Budget (`budgetTotalPaise`, `isBudgetCompliant`):**  
    - Implemented in `backend/apps/furniture/budget.py`.  
    - Computes deterministic price sum in integer minor units (paise). Returns category subtotals, itemized pricing, unpriced asset flag, and compliance against target budget.
-3. **Multi-Tier Agent Proposal Validity:**  
-   - Implemented in `backend/apps/ai_agent/tools.py` and `views.py`.  
-   - Evaluated across four distinct tiers:
-     - **Tier 1 (Technical Request Success):** HTTP status code 200 vs 5xx/network timeout.
-     - **Tier 2 (Schema Validity):** LLM tool call adheres to allowlisted action signatures and valid parameter types.
-     - **Tier 3 (Domain Constraint Validity):** Proposed furniture layout passes 3D room boundary containment checks (`room_containment_valid = True`).
-     - **Tier 4 (User Approval Rate):** Number of proposed agent runs transitioned from `status='proposed'` to `status='applied'` via explicit `/apply/` user confirmation.
+3. **Multi-Tier Agent Proposal Validity & Error Categorization:**  
+   - Implemented authoritatively in `backend/apps/ai_agent/tools.py` and `views.py`, persisted via `AgentRun.validation_results`, and consumed in frontend telemetry (`evaluationTelemetry.ts`).  
+   - Evaluated across four distinct measurement tiers, strictly separating syntactic compliance from database resolution and spatial/financial constraints:
+     - **Tier 1 (Technical Request Success):** Network/transport level success (HTTP status code 200 OK vs 5xx server failure or network timeout).
+     - **Tier 2 (Schema Validity):** Syntactic adherence to the allowlisted tool-calling interface contract.
+       - *Allowlisted Action Types:* `add_furniture`, `move_object`, `replace_furniture`, `remove_object`, `set_material`, `clear_room`. Any unsupported or non-allowlisted action string is classified as a schema violation (`schema_valid = False`).
+       - *Required vs. Optional Fields:*
+         - `add_furniture`: Required `asset_id` (non-empty string). Optional `position` (3-vector of finite floats; defaults to floor center $[0, H/2, 0]$), `rotation_euler` (3-vector; defaults to $[0, 0, 0]$), `scale` (3-vector within $[0.1, 5.0]$; defaults to $[1, 1, 1]$), `color` (string; defaults to `'#4f46e5'`).
+         - `move_object`: Required `object_id` (non-empty string). Optional `position` (3-vector) and `rotation_euler` (3-vector).
+         - `replace_furniture`: Required `object_id` (non-empty string) and `new_asset_id` (non-empty string).
+         - `remove_object`: Required `object_id` (non-empty string).
+         - `set_material`: Required `object_id` (non-empty string). Optional `color` (string), `roughness` (float in $[0.0, 1.0]$), `metalness` (float in $[0.0, 1.0]$).
+         - `clear_room`: Optional `confirm` (boolean; defaults to `True`).
+       - *Parameter Types:* Malformed structures (non-dict action items, non-list root payload, non-vector coordinates, non-numeric floats, out-of-range scalars) immediately invalidate Tier 2 (`schema_valid = False`).
+       - *Distinction from Reference Resolution:* A structurally well-formed action referencing a catalogue asset or scene object that does not exist or is inactive passes Tier 2 Schema Validity (`schema_valid = True`), but fails semantic Reference Resolution (`reference_valid = False`).
+       - *Distinction from Domain & Budget Constraints:* Spatial boundary breaches, keep-out intrusions, and budget ceiling exceedances do not invalidate Tier 2.
+     - **Semantic Reference Resolution (`reference_valid`):**
+       - Evaluates whether validly shaped identifiers resolve to active records: catalogue assets in `FurnitureAsset.objects.filter(is_active=True)` or existing objects in the candidate scene.
+       - A reference-resolution failure sets `reference_valid = False` and blocks execution (`is_valid = False`), ensuring unexecutable proposals cannot be approved or applied, without falsely penalizing syntactic LLM schema adherence.
+     - **Tier 3 (Domain Constraint Validity):**
+       - Evaluates whether the proposed 3D layout satisfies physical room boundaries: transformed AABB extents must remain inside $[-W/2, +W/2]$ (X), $[-L/2, +L/2]$ (Z), and $[0, H]$ (Y) within a $1\text{ cm}$ numerical tolerance (`room_containment_valid = True`).
+       - Boundary breaches set `domain_valid = False`, `room_containment_valid = False`, and record exactly one boundary violation attempt under `attemptedOutOfBoundsCount`.
+       - *Distinction from Budget Constraints:* A layout that satisfies 3D room containment but exceeds a price or budget limit retains Tier 3 Validity (`domain_valid = True`, `room_containment_valid = True`), while failing budget compliance (`budget_valid = False`). Non-boundary failures (e.g. budget ceiling, schema-only, or reference-resolution errors) never increment `attemptedOutOfBoundsCount`.
+     - **Tier 4 (User Approval Rate):**
+       - Evaluates participant agreement by counting proposals transitioned from `status='proposed'` to `status='applied'` via explicit `/apply/` user confirmation.
+       - Execution guard: Only proposals with `is_valid = True` (satisfying schema, reference resolution, domain containment, and budget compliance) can be applied. Unexecutable proposals (`is_valid = False`) are rejected by the backend and cannot be applied in the UI.
 
 ### 6.2 Proposed Research Instrumentation (Step 8.2 Specifications)
 1. **AABB Overlap Pairs Count (`aabbOverlapPairsCount`):**  
