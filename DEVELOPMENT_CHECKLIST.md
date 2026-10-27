@@ -25,8 +25,8 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 - [x] All private resources enforce ownership (strictly isolated by request.user; cross-user queries return 404; demo auth gated behind `ALLOW_DEMO_AUTH = DEBUG and ...` configuration and rejected with 403 in production).
 - [x] Serializers validate input and return useful error messages (authoritative canonical schema validation for units, bounds, dimensions, transforms, and full 3D rotated footprint containment).
-- [x] Relevant Django tests pass (110/110 tests pass across accounts, rooms, furniture, designs, and ai_agent, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, room-photo upload validation, early HTTP 413 body size rejection, total pixel caps, Pillow decompression-bomb hardening, orphan-free rollback, safe management command cleanup, strict hex/catalogue validation, bounding boxes, fallback auditing, explicit provider mode configuration, and room-photo vision analysis with mock/gemini adapters).
-- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 36 Vitest tests pass across editor, persistence, budget, AI agent, and room-photo vision analysis modals, production bundle built).
+- [x] Relevant Django tests pass (241/241 tests pass across accounts, rooms, furniture, designs, ai_agent, and evaluation, including catalogue filtering, integer paise budget calculation, anonymous/owner/cross-user access controls, stale proposal rejection, containment enforcement, atomic select_for_update concurrency tests, room-photo upload validation, early HTTP 413 body size rejection, total pixel caps, Pillow decompression-bomb hardening, orphan-free rollback, safe management command cleanup, strict hex/catalogue validation, bounding boxes, fallback auditing, explicit provider mode configuration, room-photo vision analysis with mock/gemini adapters, photo-to-3D glTF 2.0 binary verification, capability session secrets, periodic revision checkpoints, inactivity interval tracking, strict Likert SUS validation rejecting booleans and fractional ratings, independent duplicate key validation, and dataset CSV/JSON export commands).
+- [x] Frontend TypeScript/build checks pass (0 type errors, 0 lint warnings, 143 Vitest tests pass across 14 test suites covering editor, persistence, budget, AI agent, room-photo vision analysis, photo-to-3D, WebXR AR session, AR service, evaluation telemetry, and SUS scoring, production bundle built).
 
 ## Catalogue and budget
 
@@ -59,8 +59,8 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 
 ## Release and research
 
-- [ ] No credentials, private photos, local database dumps, or private participant data are committed.
-- [ ] Research task, measures, consent procedure, and limitations are documented.
-- [ ] Results are based on actual collected data, not simulated claims.
-- [ ] Screenshots/demo match the implemented version.
-- [ ] README describes current features and known limitations accurately.
+- [x] No credentials, private photos, local database dumps, or private participant data are committed (Verified: `.env` is gitignored; ephemeral photos expire and clean up automatically; telemetry disabled by default).
+- [x] Research task, measures, consent procedure, and limitations are documented (Documented in `docs/RESEARCH_PROTOCOL_AND_TASKS.md`, `docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md`, and `docs/EVALUATION_DATASET_AND_EXPORT_GUIDE.md`).
+- [ ] Results are based on actual collected data, not simulated claims (Software engineering verification, strict SUS validation, and export command verified complete; human participant data collection strictly paused pending formal institutional ethics board approval).
+- [x] Screenshots/demo match the implemented version (Verified in `docs/SCREENSHOTS.md` and `docs/MANUAL_AR_TESTING_PROTOCOL.md`).
+- [x] README describes current features and known limitations accurately.

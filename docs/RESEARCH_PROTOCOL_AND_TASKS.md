@@ -272,23 +272,23 @@ Coordinate System Invariant (Three.js standard):
 
 ---
 
-## 6. Operational Definitions: Implemented Capabilities vs. Proposed Instrumentation
+## 6. Operational Definitions: Implemented Core Engine vs. Telemetry Instrumentation
 
-To maintain scientific integrity, the research metrics are split between **features currently operating in code** and **telemetry instrumentation to be implemented in Step 8.2**:
+To maintain scientific integrity, the research metrics are categorized between **core spatial/agent engine features** and **telemetry instrumentation implemented in Step 8.2 and hardened in Step 8.3**:
 
 ```mermaid
 graph TD
-    subgraph Currently Implemented
+    subgraph Core Engine Capabilities
         A[3D Room Boundary Containment] -->|Evaluates extents vs room limits| Val[validators.py / budget.py]
         B[Authoritative Budget Total] -->|Integer paise deterministic calculation| Bud[estimate_budget_summary]
         C[Multi-Tier Agent Validity] -->|Request, Schema, Bounds, Approval| Agent[tools.py / AgentRun]
         D[Boundary Clamping & Rejection] -->|Blocks out-of-bounds save in UI & API| Clamp[editorStore.ts / serializers.py]
     end
-    subgraph Proposed in Step 8.2 Telemetry
-        E[AABB Overlap Detector] -.->|AABB pair intersection proxy| Overlap[aabbOverlapPairsCount Metric]
-        F[Doorway Clearance Detector] -.->|Silent keep-out box intersection| Door[doorwayIntrusionsCount Metric]
-        G[Interaction Event Aggregator] -.->|Debounced pointerUp & undo log| Edits[totalEdits Metric]
-        H[Attempted Violation Tracker] -.->|Logs boundary clashes during editing| Attempt[attemptedOutOfBoundsCount]
+    subgraph Implemented in Step 8.2 / 8.3 Telemetry
+        E[AABB Overlap Detector] -->|AABB pair intersection proxy| Overlap[aabbOverlapPairsCount Metric]
+        F[Doorway Clearance Detector] -->|Silent keep-out box intersection| Door[doorwayIntrusionsCount Metric]
+        G[Interaction Event Aggregator] -->|Debounced pointerUp & undo log| Edits[totalEdits Metric]
+        H[Attempted Violation Tracker] -->|Logs boundary clashes during editing| Attempt[attemptedOutOfBoundsCount]
     end
 ```
 
@@ -331,7 +331,7 @@ graph TD
        - Evaluates participant agreement by counting proposals transitioned from `status='proposed'` to `status='applied'` via explicit `/apply/` user confirmation.
        - Execution guard: Only proposals with `is_valid = True` (satisfying schema, reference resolution, domain containment, and budget compliance) can be applied. Unexecutable proposals (`is_valid = False`) are rejected by the backend and cannot be applied in the UI.
 
-### 6.2 Proposed Research Instrumentation (Step 8.2 Specifications)
+### 6.2 Research Telemetry Instrumentation (Implemented in Step 8.2 / 8.3)
 1. **AABB Overlap Pairs Count (`aabbOverlapPairsCount`):**  
    - *Definition:* Axis-Aligned Bounding Box (AABB) overlap serves as a geometric proxy for object collision, not direct proof that furniture polygon meshes intersect. For every distinct pair of placed objects $(i, j)$ with $i < j$, the evaluation engine calculates the transformed AABB extents along all three axes $(X, Y, Z)$ using a $0.02\text{ m}$ (2 cm) numerical tolerance threshold. Pairs whose AABBs intersect across all three axes increment `aabbOverlapPairsCount`.
    - *Unit:* Integer count of overlapping AABB pairs in the final submitted scene.
