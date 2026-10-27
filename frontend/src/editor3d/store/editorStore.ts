@@ -15,6 +15,7 @@ import {
 } from '../validation/sceneValidation';
 import { SAMPLE_CATALOG } from '../data/catalog';
 import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
+import { recordEdit, recordOutOfBoundsAttempt, recordUndoRedo } from '../../services/evaluationTelemetry';
 
 interface EditorState {
   scene: CanonicalScene;
@@ -24,9 +25,14 @@ interface EditorState {
   viewMode: 'perspective' | 'top';
   gridSnap: boolean;
   history: CanonicalScene[];
+  future: CanonicalScene[];
+  activeGestureSnapshot: CanonicalScene | null;
+  gestureHadOutOfBoundsAttempt: boolean;
   currentDesignId: string | null;
 
   // Actions
+  startInteraction: () => void;
+  endInteraction: () => void;
   setCurrentDesignId: (id: string | null) => void;
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
   addFurniture: (item: FurnitureCatalogItem) => void;
@@ -54,6 +60,10 @@ interface EditorState {
   setViewMode: (mode: 'perspective' | 'top') => void;
   toggleGridSnap: () => void;
   loadScene: (newScene: CanonicalScene) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 const initialScene: CanonicalScene = {
@@ -75,6 +85,32 @@ const initialScene: CanonicalScene = {
   ],
 };
 
+const MAX_HISTORY = 50;
+
+function cloneCanonicalScene(scene: CanonicalScene): CanonicalScene {
+  return {
+    schemaVersion: scene.schemaVersion,
+    unit: scene.unit,
+    room: { ...scene.room },
+    objects: scene.objects.map((obj) => ({
+      ...obj,
+      dimensions: [...obj.dimensions] as Vector3Tuple,
+      position: [...obj.position] as Vector3Tuple,
+      rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+      scale: [...obj.scale] as Vector3Tuple,
+      materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+    })),
+  };
+}
+
+function pushSnapshot(state: EditorState): { history: CanonicalScene[]; future: CanonicalScene[] } {
+  const snapshot = cloneCanonicalScene(state.scene);
+  return {
+    history: [...state.history, snapshot].slice(-MAX_HISTORY),
+    future: [],
+  };
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   scene: initialScene,
   selectedId: 'initial-sofa',
@@ -83,12 +119,56 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   viewMode: 'perspective',
   gridSnap: true,
   history: [],
+  future: [],
+  activeGestureSnapshot: null,
+  gestureHadOutOfBoundsAttempt: false,
   currentDesignId: null,
+
+  startInteraction: () => {
+    set((state) => {
+      if (state.activeGestureSnapshot !== null) return state;
+      return {
+        activeGestureSnapshot: cloneCanonicalScene(state.scene),
+        gestureHadOutOfBoundsAttempt: false,
+      };
+    });
+  },
+
+  endInteraction: () => {
+    set((state) => {
+      if (!state.activeGestureSnapshot) return state;
+      const initial = state.activeGestureSnapshot;
+      const current = state.scene;
+      const hasChanged = JSON.stringify(initial) !== JSON.stringify(current);
+
+      // Boundary clamp attempt unit of counting:
+      // A continuous gesture (e.g. dragging a slider against boundary clamps) constitutes
+      // at most ONE boundary violation attempt, committed upon gesture completion.
+      if (state.gestureHadOutOfBoundsAttempt) {
+        recordOutOfBoundsAttempt();
+      }
+
+      if (hasChanged) {
+        recordEdit();
+        return {
+          activeGestureSnapshot: null,
+          gestureHadOutOfBoundsAttempt: false,
+          history: [...state.history, initial].slice(-MAX_HISTORY),
+          future: [],
+        };
+      }
+      return {
+        activeGestureSnapshot: null,
+        gestureHadOutOfBoundsAttempt: false,
+      };
+    });
+  },
 
   setCurrentDesignId: (id) => set({ currentDesignId: id }),
 
   setRoomDimensions: (dims) => {
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       const validatedRoom = validateRoomDimensions({ ...state.scene.room, ...dims });
       
       // Re-clamp all existing objects to the new room dimensions
@@ -98,6 +178,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }));
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           room: validatedRoom,
@@ -105,11 +186,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       };
     });
+    recordEdit();
   },
 
   addFurniture: (item) => {
     const id = `furniture-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       // Find a non-overlapping or offset position
       const offsetMultiplier = state.scene.objects.length * 0.3;
       const initialPos: Vector3Tuple = [
@@ -139,6 +222,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: [...state.scene.objects, newObject],
@@ -146,6 +230,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedId: id,
       };
     });
+    recordEdit();
   },
 
   addCustomPlacement: (params) => {
@@ -157,6 +242,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     set((state) => {
+      const historyUpdate = pushSnapshot(state);
       const offsetMultiplier = state.scene.objects.length * 0.3;
       const initialPos: Vector3Tuple = [
         (offsetMultiplier % (state.scene.room.width / 3)) - (state.scene.room.width / 6),
@@ -187,6 +273,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: [...state.scene.objects, newObject],
@@ -194,6 +281,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedId: id,
       };
     });
+    recordEdit();
     return id;
   },
 
@@ -228,6 +316,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const obj = state.scene.objects[objIndex];
       const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
+      const isClamped = Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001;
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
@@ -235,7 +324,29 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampedPos,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture:
+        // Do NOT increment attemptedOutOfBoundsCount on intermediate ticks.
+        // Instead, track that a boundary clamp attempt occurred during this gesture.
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+          gestureHadOutOfBoundsAttempt: state.gestureHadOutOfBoundsAttempt || isClamped,
+        };
+      }
+
+      // Discrete standalone edit (not part of an active gesture):
+      if (isClamped) {
+        recordOutOfBoundsAttempt();
+      }
+
+      // Discrete standalone edit: push snapshot & record edit
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -261,7 +372,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         rotationEuler: validatedRot,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture: update scene only
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+        };
+      }
+
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -287,7 +411,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampedPos,
       };
 
+      if (state.activeGestureSnapshot !== null) {
+        // Continuous intermediate update during active gesture: update scene only
+        return {
+          scene: {
+            ...state.scene,
+            objects: updatedObjects,
+          },
+        };
+      }
+
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -297,11 +434,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updatePlacementColor: (id, color) => {
+    recordEdit();
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
 
       const obj = state.scene.objects[objIndex];
+      const historyUpdate = pushSnapshot(state);
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
         ...obj,
@@ -312,6 +451,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       return {
+        ...historyUpdate,
         scene: {
           ...state.scene,
           objects: updatedObjects,
@@ -352,29 +492,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       );
     }
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: {
-        ...scene,
-        objects: [...scene.objects, clone],
+        ...state.scene,
+        objects: [...state.scene.objects, clone],
       },
       selectedId: newId,
-    });
+    }));
+    recordEdit();
   },
 
   deleteSelected: () => {
-    const { scene, selectedId } = get();
+    const { selectedId } = get();
     if (!selectedId) return;
 
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(selectedId);
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: {
-        ...scene,
-        objects: scene.objects.filter((o) => o.id !== selectedId),
+        ...state.scene,
+        objects: state.scene.objects.filter((o) => o.id !== selectedId),
       },
       selectedId: null,
-    });
+    }));
+    recordEdit();
   },
 
   deleteObject: (id) => {
@@ -382,12 +526,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     reconstructedAssetManager.releasePlacement(id);
 
     set((state) => ({
+      ...pushSnapshot(state),
       scene: {
         ...state.scene,
         objects: state.scene.objects.filter((o) => o.id !== id),
       },
       selectedId: state.selectedId === id ? null : state.selectedId,
     }));
+    recordEdit();
   },
 
   clearScene: () => {
@@ -396,6 +542,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     reconstructedAssetManager.releasePlacements(scene.objects.map((o) => o.id));
 
     set((state) => ({
+      ...pushSnapshot(state),
       scene: {
         ...state.scene,
         objects: [],
@@ -403,6 +550,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: null,
       currentDesignId: null,
     }));
+    recordEdit();
   },
 
   triggerCameraReset: () => {
@@ -424,9 +572,73 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
-    set({
+    set((state) => ({
+      ...pushSnapshot(state),
       scene: newScene,
       selectedId: newScene.objects.length > 0 ? newScene.objects[0].id : null,
-    });
+    }));
   },
+
+  undo: () => {
+    const { history, future, scene } = get();
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+    const currentSnapshot: CanonicalScene = {
+      schemaVersion: scene.schemaVersion,
+      unit: scene.unit,
+      room: { ...scene.room },
+      objects: scene.objects.map((obj) => ({
+        ...obj,
+        dimensions: [...obj.dimensions] as Vector3Tuple,
+        position: [...obj.position] as Vector3Tuple,
+        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+        scale: [...obj.scale] as Vector3Tuple,
+        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+      })),
+    };
+
+    set({
+      scene: previous,
+      history: newHistory,
+      future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
+      selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
+      activeGestureSnapshot: null,
+      gestureHadOutOfBoundsAttempt: false,
+    });
+    recordUndoRedo();
+  },
+
+  redo: () => {
+    const { history, future, scene } = get();
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+    const currentSnapshot: CanonicalScene = {
+      schemaVersion: scene.schemaVersion,
+      unit: scene.unit,
+      room: { ...scene.room },
+      objects: scene.objects.map((obj) => ({
+        ...obj,
+        dimensions: [...obj.dimensions] as Vector3Tuple,
+        position: [...obj.position] as Vector3Tuple,
+        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
+        scale: [...obj.scale] as Vector3Tuple,
+        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
+      })),
+    };
+
+    set({
+      scene: next,
+      history: [...history, currentSnapshot].slice(-MAX_HISTORY),
+      future: newFuture,
+      selectedId: next.objects.length > 0 ? next.objects[0].id : null,
+      activeGestureSnapshot: null,
+      gestureHadOutOfBoundsAttempt: false,
+    });
+    recordUndoRedo();
+  },
+
+  canUndo: () => get().history.length > 0,
+  canRedo: () => get().future.length > 0,
 }));

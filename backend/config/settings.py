@@ -34,6 +34,8 @@ ALLOWED_HOSTS = [
     for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') 
     if host.strip()
 ]
+if DEBUG:
+    ALLOWED_HOSTS = list(set(ALLOWED_HOSTS + ['*']))
 
 # Application definition
 INSTALLED_APPS = [
@@ -53,6 +55,7 @@ INSTALLED_APPS = [
     'apps.furniture',
     'apps.designs',
     'apps.ai_agent',
+    'apps.evaluation',
 ]
 
 MIDDLEWARE = [
@@ -160,6 +163,8 @@ CORS_ALLOWED_ORIGINS = [
     ).split(',')
     if origin.strip()
 ]
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 # AI and Model Provider Baseline Settings
 AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', 'mock').lower()
@@ -198,3 +203,8 @@ ROOM_PHOTO_EXPIRY_SECONDS = int(os.getenv('ROOM_PHOTO_EXPIRY_SECONDS', '3600')) 
 # Request body and upload memory limits before consuming excessive resources
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', str(12 * 1024 * 1024)))  # 12 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('FILE_UPLOAD_MAX_MEMORY_SIZE', str(10 * 1024 * 1024)))  # 10 MB
+
+# Evaluation Telemetry Persistence Settings (Phase 8)
+# Evaluation logging is strictly disabled by default and enabled explicitly in study environment.
+ENABLE_EVALUATION_TELEMETRY = os.getenv('ENABLE_EVALUATION_TELEMETRY', 'False').lower() in ('true', '1', 'yes')
+

@@ -91,8 +91,11 @@ class AgentPromptView(APIView):
             catalogue_context=catalogue_items,
         )
 
+        # Determine budget limit if session attached to design with budget
+        max_budget = session.design.budget if (session.design and session.design.budget) else None
+
         # Deterministically simulate and validate proposed actions
-        sim_result = validate_and_simulate_actions(current_scene, proposal.proposed_actions)
+        sim_result = validate_and_simulate_actions(current_scene, proposal.proposed_actions, max_budget_paise=max_budget)
 
         # Persist AgentRun with base and candidate snapshots
         run = AgentRun.objects.create(  # pyrefly: ignore[missing-attribute]
@@ -103,6 +106,14 @@ class AgentPromptView(APIView):
             proposed_actions=proposal.proposed_actions,
             validation_results={
                 'is_valid': sim_result['is_valid'],
+                'schema_valid': sim_result['schema_valid'],
+                'reference_valid': sim_result['reference_valid'],
+                'domain_valid': sim_result['domain_valid'],
+                'budget_valid': sim_result['budget_valid'],
+                'schema_errors': sim_result.get('schema_errors', []),
+                'reference_errors': sim_result.get('reference_errors', []),
+                'domain_errors': sim_result.get('domain_errors', []),
+                'budget_errors': sim_result.get('budget_errors', []),
                 'errors': sim_result['errors'],
                 'warnings': sim_result['warnings'],
                 'budget_diff': sim_result['budget_diff'],
@@ -121,6 +132,10 @@ class AgentPromptView(APIView):
             'run': AgentRunSerializer(run).data,
             'candidate_scene': sim_result['candidate_scene'],
             'budget_diff': sim_result['budget_diff'],
+            'schema_valid': sim_result['schema_valid'],
+            'reference_valid': sim_result['reference_valid'],
+            'domain_valid': sim_result['domain_valid'],
+            'budget_valid': sim_result['budget_valid'],
             'requires_approval': True,
         }, status=status.HTTP_200_OK)
 
@@ -189,7 +204,8 @@ class AgentApplyRunView(APIView):
                     'objects': [],
                 }
 
-            sim_result = validate_and_simulate_actions(base_scene, run.proposed_actions)
+            max_budget = design.budget if (design and design.budget) else None
+            sim_result = validate_and_simulate_actions(base_scene, run.proposed_actions, max_budget_paise=max_budget)
             if not sim_result['is_valid']:
                 return Response(
                     {"detail": "Cannot apply invalid actions.", "errors": sim_result['errors']},

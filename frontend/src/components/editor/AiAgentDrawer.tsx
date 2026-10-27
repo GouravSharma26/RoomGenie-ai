@@ -26,6 +26,19 @@ import {
   type BudgetDiff 
 } from '../../services/agentApi';
 import type { CanonicalScene } from '../../types/scene';
+import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
+import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
+
+function checkSceneHasOutOfBounds(scene?: CanonicalScene | null): boolean {
+  if (!scene || !scene.room || !Array.isArray(scene.objects)) return false;
+  for (const obj of scene.objects) {
+    const clamped = clampPositionToRoom(obj.position, obj.dimensions, scene.room, obj.scale, obj.rotationEuler);
+    if (Math.abs(clamped[0] - obj.position[0]) > 0.001 || Math.abs(clamped[2] - obj.position[2]) > 0.001) {
+      return true;
+    }
+  }
+  return false;
+}
 
 interface AiAgentDrawerProps {
   isOpen: boolean;
@@ -145,8 +158,83 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         budgetDiff: response.budget_diff,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Telemetry: record AI proposal multi-tier validity & explicit room-containment violations
+      const budgetDiff = response.budget_diff || response.run?.validation_results?.budget_diff;
+
+      // Tier 2: Schema / allowlisted tool-call validity
+      // Evaluates whether the LLM tool call adheres to allowlisted action signatures and valid parameter types.
+      const dedicatedSchemaValid = typeof response.schema_valid === 'boolean'
+        ? response.schema_valid
+        : typeof response.run?.validation_results?.schema_valid === 'boolean'
+        ? response.run.validation_results.schema_valid
+        : undefined;
+
+      const schemaErrors = response.run?.validation_results?.schema_errors;
+      let isSchemaValid: boolean;
+      if (dedicatedSchemaValid !== undefined) {
+        isSchemaValid = Boolean(response.candidate_scene && dedicatedSchemaValid);
+      } else if (Array.isArray(schemaErrors)) {
+        isSchemaValid = Boolean(response.candidate_scene && schemaErrors.length === 0);
+      } else {
+        // Fallback: exclude domain-specific errors (room containment violations and budget ceiling errors)
+        // and reference-resolution errors (missing assets in catalogue or objects not in scene)
+        const rawErrors = response.run?.validation_results?.errors || [];
+        const actionErrors = rawErrors.filter((err) => {
+          const lower = err.toLowerCase();
+          return !lower.includes('room containment') &&
+                 !lower.includes('extend beyond room') &&
+                 !lower.includes('budget') &&
+                 !lower.includes('cost exceeds') &&
+                 !lower.includes('not in catalogue') &&
+                 !lower.includes('does not exist in catalogue') &&
+                 !lower.includes('not found in scene');
+        });
+        isSchemaValid = Boolean(response.candidate_scene && actionErrors.length === 0);
+      }
+
+      // Explicit room containment check from AI evaluation
+      const hasExplicitViolations = Array.isArray(budgetDiff?.room_violations) && budgetDiff.room_violations.length > 0;
+      const isExplicitContainmentInvalid = budgetDiff?.room_containment_valid === false;
+      const hasOutOfBoundsInCandidate = Boolean(response.candidate_scene && checkSceneHasOutOfBounds(response.candidate_scene));
+
+      // Unit of counting: exactly one boundary violation attempt is counted if the proposal violates room containment
+      const hasOutOfBoundsViolation = Boolean(
+        response.candidate_scene && (isExplicitContainmentInvalid || hasExplicitViolations || hasOutOfBoundsInCandidate)
+      );
+
+      // Tier 3: Domain Constraint Validity
+      // Evaluates whether the proposed furniture layout satisfies 3D room boundary containment checks (room_containment_valid = True)
+      // Unrelated budget ceiling failures or generic error lists do not invalidate Tier 3.
+      const dedicatedDomainValid = typeof response.domain_valid === 'boolean'
+        ? response.domain_valid
+        : typeof response.run?.validation_results?.domain_valid === 'boolean'
+        ? response.run.validation_results.domain_valid
+        : undefined;
+
+      const isDomainValid = Boolean(
+        response.candidate_scene &&
+        !hasOutOfBoundsViolation &&
+        budgetDiff?.room_containment_valid !== false &&
+        (dedicatedDomainValid === undefined || dedicatedDomainValid)
+      );
+
+      recordAgentProposal({
+        accepted: false,
+        tier1Success: true,
+        tier2Valid: isSchemaValid,
+        tier3Valid: isDomainValid,
+        hasOutOfBoundsViolation,
+      });
     } catch (err: any) {
       setErrorMsg(err.message || 'Error communicating with AI assistant.');
+      recordAgentProposal({
+        accepted: false,
+        tier1Success: false,
+        tier2Valid: false,
+        tier3Valid: false,
+        hasOutOfBoundsViolation: false,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -167,6 +255,9 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       if (onSceneApplied) {
         onSceneApplied(appliedResult.applied_scene);
       }
+
+      // Telemetry: record accepted proposal
+      recordAgentAcceptance();
 
       // Update message run status
       setMessages((prev) =>
@@ -364,6 +455,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                 })()}
 
                 {/* Validation Warnings/Errors */}
+                {msg.run.validation_results?.errors?.length > 0 && (
+                  <div className="text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/50 rounded p-1.5 space-y-0.5">
+                    {msg.run.validation_results.errors.map((e, idx) => (
+                      <div key={idx}>{e}</div>
+                    ))}
+                  </div>
+                )}
                 {msg.run.validation_results?.warnings?.length > 0 && (
                   <div className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded p-1.5">
                     {msg.run.validation_results.warnings.join('; ')}
@@ -375,7 +473,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={() => handleApplyProposal(msg)}
-                      disabled={actionInProgressId === msg.run.id}
+                      disabled={actionInProgressId === msg.run.id || msg.run.validation_results?.is_valid === false}
                       className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-600/20 disabled:opacity-50"
                     >
                       {actionInProgressId === msg.run.id ? (

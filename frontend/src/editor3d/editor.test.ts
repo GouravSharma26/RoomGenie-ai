@@ -428,6 +428,167 @@ describe('Phase 1: 3D Room Editor Scene State & Validation', () => {
       expect(totalRupees).toBe(38498);
     });
   });
+
+  describe('Gesture Interaction Grouping & Undo/Redo', () => {
+    it('groups continuous slider dragging into a single edit and undoes in one step', () => {
+      const store = useEditorStore.getState();
+      store.clearScene();
+      store.addFurniture(SAMPLE_CATALOG[0]);
+      const item = useEditorStore.getState().scene.objects[0];
+      const initialPos = [...item.position] as Vector3Tuple;
+
+      // Clear history from setup
+      useEditorStore.setState({ history: [], future: [] });
+
+      // Mock an active session to verify telemetry recordEdit
+      const mockSession = {
+        sessionId: 'test-session',
+        sessionSecret: 'secret',
+        participantId: 'P01',
+        condition: 'manual' as const,
+        sequenceOrder: 'G1' as const,
+        taskName: 'living_room' as const,
+        trialPeriod: 1 as const,
+        startTime: new Date().toISOString(),
+        checkpointSequence: 0,
+        totalEdits: 0,
+        undoRedoCount: 0,
+        attemptedOutOfBoundsCount: 0,
+        agentProposalsCount: 0,
+        agentAcceptedCount: 0,
+        agentTier1SuccessCount: 0,
+        agentTier2SchemaValidCount: 0,
+        agentTier3DomainValidCount: 0,
+        idleIntervals: [],
+      };
+      sessionStorage.setItem('roomgenie_evaluation_session', JSON.stringify(mockSession));
+
+      // 1. User starts dragging range slider (onPointerDown)
+      useEditorStore.getState().startInteraction();
+
+      // 2. Slider emits 20 intermediate onChange events during drag
+      for (let i = 1; i <= 20; i++) {
+        const newX = initialPos[0] + i * 0.05;
+        useEditorStore.getState().updatePlacementPosition(item.id, [newX, initialPos[1], initialPos[2]]);
+      }
+
+      // Mid-gesture: scene is updated visually at 20th step
+      const midScene = useEditorStore.getState().scene.objects[0];
+      expect(midScene.position[0]).toBeCloseTo(initialPos[0] + 1.0, 2);
+
+      // Mid-gesture: history has NOT accumulated 20 separate snapshots
+      expect(useEditorStore.getState().history.length).toBe(0);
+
+      // Mid-gesture: telemetry totalEdits has NOT incremented 20 times
+      const midSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(midSession.totalEdits).toBe(0);
+
+      // 3. User releases slider (onPointerUp)
+      useEditorStore.getState().endInteraction();
+
+      // Post-gesture: exactly 1 history snapshot pushed and 1 edit counted
+      expect(useEditorStore.getState().history.length).toBe(1);
+      const postSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(postSession.totalEdits).toBe(1);
+
+      // 4. Single undo operation reverts the entire 20-step drag back to initial position
+      useEditorStore.getState().undo();
+      const revertedScene = useEditorStore.getState().scene.objects[0];
+      expect(revertedScene.position[0]).toBeCloseTo(initialPos[0], 2);
+      expect(useEditorStore.getState().history.length).toBe(0);
+
+      // Redo restores final dragged position
+      useEditorStore.getState().redo();
+      const redoneScene = useEditorStore.getState().scene.objects[0];
+      expect(redoneScene.position[0]).toBeCloseTo(initialPos[0] + 1.0, 2);
+
+      sessionStorage.clear();
+    });
+
+    it('does not record an edit if slider is returned to original value before release', () => {
+      const store = useEditorStore.getState();
+      store.clearScene();
+      store.addFurniture(SAMPLE_CATALOG[0]);
+      const item = useEditorStore.getState().scene.objects[0];
+      const initialPos = [...item.position] as Vector3Tuple;
+
+      useEditorStore.setState({ history: [], future: [] });
+
+      useEditorStore.getState().startInteraction();
+      // Drag slider right, then drag all the way back to initial
+      useEditorStore.getState().updatePlacementPosition(item.id, [initialPos[0] + 0.5, initialPos[1], initialPos[2]]);
+      useEditorStore.getState().updatePlacementPosition(item.id, initialPos);
+      useEditorStore.getState().endInteraction();
+
+      // No net change occurred -> no history snapshot pushed
+      expect(useEditorStore.getState().history.length).toBe(0);
+    });
+
+    it('groups continuous boundary violations into a single attempt across a gesture', () => {
+      const store = useEditorStore.getState();
+      store.clearScene();
+      store.addFurniture(SAMPLE_CATALOG[0]);
+      const item = useEditorStore.getState().scene.objects[0];
+      const initialPos = [...item.position] as Vector3Tuple;
+
+      useEditorStore.setState({ history: [], future: [] });
+
+      // Active evaluation session in sessionStorage with 0 attempted boundary clashes
+      const mockSession = {
+        sessionId: 'test-boundary-session',
+        sessionSecret: 'secret',
+        participantId: 'P01',
+        condition: 'manual' as const,
+        sequenceOrder: 'G1' as const,
+        taskName: 'living_room' as const,
+        trialPeriod: 1 as const,
+        startTime: new Date().toISOString(),
+        checkpointSequence: 0,
+        totalEdits: 0,
+        undoRedoCount: 0,
+        attemptedOutOfBoundsCount: 0,
+        agentProposalsCount: 0,
+        agentAcceptedCount: 0,
+        agentTier1SuccessCount: 0,
+        agentTier2SchemaValidCount: 0,
+        agentTier3DomainValidCount: 0,
+        idleIntervals: [],
+      };
+      sessionStorage.setItem('roomgenie_evaluation_session', JSON.stringify(mockSession));
+
+      // 1. User starts continuous dragging interaction (onPointerDown)
+      useEditorStore.getState().startInteraction();
+
+      // 2. Drag slider forcefully beyond room boundary 25 times
+      // Room half-width is 2.5m, object half-width is ~1.0m. X=10.0m is clamped to boundary.
+      for (let i = 1; i <= 25; i++) {
+        useEditorStore.getState().updatePlacementPosition(item.id, [10.0 + i * 0.5, initialPos[1], initialPos[2]]);
+      }
+
+      // Mid-gesture: attemptedOutOfBoundsCount has NOT been inflated on intermediate ticks
+      const midSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(midSession.attemptedOutOfBoundsCount).toBe(0);
+
+      // 3. User finishes gesture (onPointerUp)
+      useEditorStore.getState().endInteraction();
+
+      // Post-gesture: exactly 1 boundary attempt is recorded for the entire continuous gesture
+      const postSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(postSession.attemptedOutOfBoundsCount).toBe(1);
+
+      // 4. Standalone discrete position update outside a gesture increments immediately if clamped
+      useEditorStore.getState().updatePlacementPosition(item.id, [20.0, initialPos[1], initialPos[2]]);
+      const standaloneSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(standaloneSession.attemptedOutOfBoundsCount).toBe(2);
+
+      // 5. Standalone valid update within bounds does NOT increment boundary clashes
+      useEditorStore.getState().updatePlacementPosition(item.id, [0.0, initialPos[1], initialPos[2]]);
+      const withinBoundsSession = JSON.parse(sessionStorage.getItem('roomgenie_evaluation_session') || '{}');
+      expect(withinBoundsSession.attemptedOutOfBoundsCount).toBe(2);
+
+      sessionStorage.clear();
+    });
+  });
 });
 
 
