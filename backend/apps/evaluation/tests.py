@@ -3,9 +3,11 @@ import hashlib
 import json
 import math
 import uuid
+import unittest
 from io import StringIO
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -179,6 +181,10 @@ class EvaluationTelemetryTestCase(TestCase):
         self.assertEqual(resp_c.status_code, status.HTTP_409_CONFLICT)
 
     @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    @unittest.skipIf(
+        connection.vendor != 'postgresql',
+        "Multithreaded API race conditions require PostgreSQL atomic locking"
+    )
     def test_start_session_concurrency_race_handling(self):
         """Simultaneous start requests with the same UUID and secret are handled concurrency-safely without crashes."""
         import concurrent.futures

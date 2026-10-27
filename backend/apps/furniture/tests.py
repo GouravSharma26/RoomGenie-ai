@@ -5,9 +5,11 @@ import struct
 import threading
 import time
 import urllib.request
+import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase
@@ -1824,6 +1826,10 @@ class ReconstructionAPISecurityAndStreamingTests(APITestCase):
         self.assertIsNotNone(data['model_download_url'])
 
 
+@unittest.skipIf(
+    connection.vendor != 'postgresql',
+    "Row-level multithreaded concurrency tests require PostgreSQL select_for_update"
+)
 class ReconstructionJobConcurrencyTests(APITransactionTestCase):
     """
     Concurrency and atomic claiming tests.

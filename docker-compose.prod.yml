@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: roomgenie_postgres_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-roomgenie_db}
+      POSTGRES_USER: ${DB_USER:-roomgenie_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-roomgenie_secure_pass}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-roomgenie_user} -d ${DB_NAME:-roomgenie_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - roomgenie_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: roomgenie_backend_prod
+    restart: unless-stopped
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-roomgenie-production-secret-key-change-me}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend}
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: ${DB_NAME:-roomgenie_db}
+      DB_USER: ${DB_USER:-roomgenie_user}
+      DB_PASSWORD: ${DB_PASSWORD:-roomgenie_secure_pass}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:80}
+      AI_PROVIDER_MODE: ${AI_PROVIDER_MODE:-mock}
+      ROOM_VISION_PROVIDER_MODE: ${ROOM_VISION_PROVIDER_MODE:-mock}
+      IMAGE_TO_3D_PROVIDER_MODE: ${IMAGE_TO_3D_PROVIDER_MODE:-mock}
+      ENABLE_EVALUATION_TELEMETRY: "False"
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_media:/app/media
+      - backend_static:/app/staticfiles
+    networks:
+      - roomgenie_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: roomgenie_frontend_prod
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    depends_on:
+      - backend
+    volumes:
+      - backend_media:/usr/share/nginx/html/media:ro
+    networks:
+      - roomgenie_network
+
+volumes:
+  postgres_prod_data:
+  backend_media:
+  backend_static:
+
+networks:
+  roomgenie_network:
+    driver: bridge

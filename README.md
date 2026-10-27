@@ -3,7 +3,8 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and WebXR AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)<br>
-> **Status:** Phase 8.4 Verified & Closed; Phase 8.5 (Research Readiness Gate & Analysis Plan Lock) Complete & Ready for Review<br>
+> **Status:** Phase 9 (Product Completion, Integration Testing, and Deployment) Completed & Verified<br>
+> **Operations & Deployment:** See [docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md](docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md) for full production deployment, Docker Compose orchestration, and live demonstration runbook.<br>
 > **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots and [docs/MANUAL_AR_TESTING_PROTOCOL.md](docs/MANUAL_AR_TESTING_PROTOCOL.md) for physical AR device test logs.
 
 ---
@@ -43,7 +44,8 @@ roomgenie-ai/
 │   └── rules/                  # Frontend, backend, and AI/media rules
 ├── .env.example                # Template for local environment variables
 ├── .gitignore                  # Git ignore rules (secrets, virtualenv, node_modules, media)
-├── docker-compose.yml          # Containerized PostgreSQL service (port 5433 on loopback)
+├── docker-compose.yml          # Local containerized PostgreSQL service (port 5433 on loopback)
+├── docker-compose.prod.yml     # Production multi-container stack (Nginx, Gunicorn, PostgreSQL 17)
 ├── AGENTS.md                   # Autonomous agent behavior guidelines
 ├── plan.md                     # Comprehensive 14-week implementation plan
 ├── ARCHITECTURE.md             # Canonical scene schema & architectural contracts
@@ -53,6 +55,7 @@ roomgenie-ai/
 ├── RESEARCH_PLAN.md            # Empirical research study protocol & metrics
 ├── DEVELOPMENT_CHECKLIST.md    # Milestone definition of done & verification checklist
 ├── docs/                       # Research documentation, guides, and screenshot gallery
+│   ├── DEPLOYMENT_AND_OPERATIONS_GUIDE.md     # Production deployment, Docker, and live demo runbook
 │   ├── RESEARCH_DECISION_REGISTER.md          # 21 cataloged design, statistical, and ethical decisions
 │   ├── STATISTICAL_ANALYSIS_PLAN.md           # Pre-registered SAP: models, diagnostics, FWER control
 │   ├── RESEARCH_DATA_QUALITY_CHECKLIST.md     # 11-dimensional pre-/post-collection data audit checklist
@@ -75,11 +78,13 @@ roomgenie-ai/
 │   │   ├── editor3d/           # Three.js Canvas, Zustand store, scene validation, WebXR runtime
 │   │   ├── App.tsx             # System dashboard & 3D Editor
 │   │   └── App.test.tsx        # Vitest & React Testing Library test suite (143 tests)
+│   ├── Dockerfile              # Multi-stage Node build & Nginx alpine production image
+│   ├── nginx.conf              # SPA routing, 3D model caching & API reverse proxy configuration
 │   ├── package.json
 │   └── vite.config.ts
 └── backend/                    # Django REST Framework backend
     ├── config/                 # Project configuration (settings, urls, views, tests)
-    │   ├── settings.py         # Environment-based PostgreSQL settings & telemetry flags
+    │   ├── settings.py         # Environment-based PostgreSQL settings, WhiteNoise & telemetry flags
     │   ├── urls.py             # API routing (/api/v1/health/, /auth/, /rooms/, /furniture/, /designs/, /agent/, /evaluation/)
     │   ├── views.py            # Health check endpoint
     │   └── tests.py            # DRF APIClient health tests
@@ -90,8 +95,10 @@ roomgenie-ai/
     │   ├── designs/            # Scene JSON persistence, canonical schema validation, CRUD, cloning
     │   ├── ai_agent/           # Two-phase LLM agent, tool-calling simulation, Gemini Flash adapter
     │   └── evaluation/         # Research telemetry, SUS scoring, session persistence, dataset exporter
+    ├── Dockerfile              # Python 3.12 slim production image with Gunicorn
+    ├── entrypoint.sh           # Migration, collectstatic, seed & Gunicorn runner
     ├── manage.py
-    └── requirements.txt        # Pinned Python dependencies
+    └── requirements.txt        # Pinned Python dependencies (including gunicorn & whitenoise)
 ```
 
 ---
@@ -174,7 +181,22 @@ docker compose up -d postgres
 ```
 Ensure `.env` matches with `DB_PORT=5433` (configured as default in `.env.example`).
 
-### 5. Research Evaluation Dataset Export
+### 5. Production Multi-Container Deployment (Docker Compose)
+
+For production deployment or zero-dependency demonstration, build and launch the complete multi-container stack (Nginx SPA reverse proxy, Django Gunicorn backend, and PostgreSQL 17):
+```powershell
+# Copy and configure production environment
+Copy-Item .env.example .env.production
+
+# Build and start all services
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+
+# Verify health status
+curl http://localhost/api/v1/health/
+```
+The stack automatically applies migrations, collects static assets, and seeds the furniture catalogue. Detailed operational commands, backup/restore procedures, and cloud deployment guides are in [docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md](docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md).
+
+### 6. Research Evaluation Dataset Export
 
 To export anonymized evaluation sessions for statistical analysis:
 ```powershell
@@ -287,6 +309,12 @@ python manage.py export_evaluation_dataset --format=csv --output=data/evaluation
   - Complete 21-decision research register, 11-dimensional data quality checklist, and export guide
   - Draft Participant Information Sheet (PIS) and Informed Consent Form (ICF) with 14-day withdrawal right
   - Explicit checklist of outstanding institutional ethics approvals and pre-study requirements
+- [x] **Phase 9 — Product Completion, Integration Testing, and Deployment**
+  - Production multi-container Docker architecture (`docker-compose.prod.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`)
+  - Gunicorn WSGI server and WhiteNoise static asset integration
+  - SQLite zero-barrier fallback for offline tests alongside authoritative PostgreSQL in CI/production
+  - Comprehensive operations, backup, and 12-step live demonstration runbook ([`docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md`](docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md))
+  - Full automated verification (241 Django backend tests and 143 frontend Vitest tests passing, 0 TypeScript errors, 0 lint warnings, clean production build)
 - [ ] **Empirical Phase — Participant Study & Final Thesis Defense**
   - Institutional ethics committee review and clearance (Prerequisite)
   - Target-hardware end-to-end dry run (Post-ethics, Pre-collection)

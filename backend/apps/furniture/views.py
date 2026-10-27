@@ -70,10 +70,14 @@ class FurnitureAssetViewSet(viewsets.ReadOnlyModelViewSet):
         style = self.request.query_params.get('style') or self.request.query_params.get('style_tag')
         if style:
             # Matches case-insensitively inside the JSON list or string
-            queryset = queryset.filter(
-                Q(style_tags__contains=[style.lower()]) |
-                Q(style_tags__icontains=style.lower())
-            )
+            from django.db import connection
+            if connection.vendor == 'postgresql':
+                queryset = queryset.filter(
+                    Q(style_tags__contains=[style.lower()]) |
+                    Q(style_tags__icontains=style.lower())
+                )
+            else:
+                queryset = queryset.filter(style_tags__icontains=style.lower())
 
         # 3. Text search
         search = self.request.query_params.get('search') or self.request.query_params.get('q')
