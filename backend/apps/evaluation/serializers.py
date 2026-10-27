@@ -191,7 +191,7 @@ class CompleteSessionSerializer(serializers.Serializer):
         is_valid, missing, err = validate_sus_responses(value)
         if not is_valid:
             raise serializers.ValidationError(err or "Invalid SUS responses.")
-        return {int(k): int(v) for k, v in value.items() if str(k).isdigit() and 1 <= int(k) <= 10}
+        return {q: int(value[q] if q in value else value[str(q)]) for q in range(1, 11)}
 
 
 class AbortSessionSerializer(serializers.Serializer):

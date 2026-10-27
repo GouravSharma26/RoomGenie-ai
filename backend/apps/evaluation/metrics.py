@@ -578,26 +578,65 @@ def validate_sus_responses(responses: Any) -> tuple[bool, list[int], str | None]
     """
     Validates that survey responses contain all 10 integer answers (1..10)
     with Likert values strictly within the range [1, 5].
+    Rejects booleans, non-numeric values, non-finite numbers (NaN, inf),
+    and fractional/non-integer numeric values.
+    Supports both integer and string question keys (e.g. 1 or '1').
     Returns (is_valid, missing_questions, error_message).
     """
     if not isinstance(responses, dict):
         return False, list(range(1, 11)), "SUS responses must be a JSON dictionary mapping question numbers (1..10) to Likert ratings (1..5)."
 
-    normalized: dict[int, int] = {}
+    # Reject unknown or invalid question keys
+    valid_key_strings = {str(i) for i in range(1, 11)}
+    for k in responses.keys():
+        if isinstance(k, int):
+            if k < 1 or k > 10:
+                return False, [], f"Invalid question key '{k}'. Questions must be numbered 1 through 10."
+        elif isinstance(k, str):
+            if k not in valid_key_strings:
+                return False, [], f"Invalid question key '{k}'. Questions must be numbered 1 through 10."
+        else:
+            return False, [], f"Invalid question key '{k}'. Question keys must be integers or strings from 1 to 10."
+
     missing: list[int] = []
 
     for q in range(1, 11):
         # Support both integer and string keys e.g. 1 or "1"
-        val = responses.get(q) if q in responses else responses.get(str(q))
+        has_int_k = q in responses
+        has_str_k = str(q) in responses
+
+        if has_int_k and has_str_k:
+            if responses[q] != responses[str(q)]:
+                return False, [], f"Conflicting responses provided for question {q}."
+            val = responses[q]
+        elif has_int_k:
+            val = responses[q]
+        elif has_str_k:
+            val = responses[str(q)]
+        else:
+            val = None
+
         if val is None:
             missing.append(q)
             continue
-        if isinstance(val, bool) or not isinstance(val, (int, float)):
-            return False, [], f"Question {q} response must be an integer between 1 and 5."
+
+        # In Python, bool is a subclass of int (isinstance(True, int) is True),
+        # so explicitly reject booleans before any numeric checks.
+        if isinstance(val, bool):
+            return False, [], f"Question {q} response must be a whole integer between 1 and 5, received boolean '{val}'."
+
+        if not isinstance(val, (int, float)):
+            return False, [], f"Question {q} response must be a numeric integer between 1 and 5, received '{type(val).__name__}'."
+
+        if isinstance(val, float):
+            if not math.isfinite(val):
+                return False, [], f"Question {q} response must be a finite integer between 1 and 5, received '{val}'."
+            if not val.is_integer():
+                return False, [], f"Question {q} response must be a whole integer between 1 and 5, received fractional rating '{val}'."
+
         int_val = int(val)
         if int_val < 1 or int_val > 5:
             return False, [], f"Question {q} rating '{int_val}' is out of range. Must be between 1 and 5."
-        normalized[q] = int_val
 
     if missing:
         return False, missing, f"Missing responses for {len(missing)} question(s): {missing}."
@@ -631,8 +670,8 @@ def calculate_sus_score(responses: dict[Any, Any] | list[int]) -> dict[str, Any]
     if not is_valid:
         raise ValueError(err or "Invalid SUS responses.")
 
-    # Normalize keys to ints
-    norm = {int(k): int(v) for k, v in resp_dict.items() if str(k).isdigit() and 1 <= int(k) <= 10}
+    # Normalization occurs strictly after successful validation
+    norm = {i: int(resp_dict[i] if i in resp_dict else resp_dict[str(i)]) for i in range(1, 11)}
 
     total_contribution = 0.0
     item_contributions: dict[int, float] = {}

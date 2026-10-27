@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import json
+import math
 import uuid
 from io import StringIO
 from django.contrib.auth.models import User
@@ -1640,5 +1641,311 @@ class EvaluationTelemetryTestCase(TestCase):
         self.assertIsNotNone(found)
         self.assertEqual(found['susScore'], 85.0)
         self.assertIsNotNone(found['susResponses'])
+
+
+class SusValidationAndScoringTests(TestCase):
+    """
+    Phase 8.3 — Strict Backend SUS Validation and Scoring Regression Tests.
+    Verifies that:
+    1. All integer ratings from 1 through 5 are accepted.
+    2. Fractional ratings such as 1.5, 2.5, and 4.9 are rejected.
+    3. Booleans, NaN, infinity, strings, and out-of-range ratings are rejected.
+    4. Missing responses are rejected.
+    5. Both integer and string question keys work correctly.
+    6. Invalid survey submissions are not persisted and do not produce a SUS score.
+    7. Valid responses produce the expected authoritative score.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.test_secret = 'sus_validation_test_secret_token_123'
+        self.valid_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Sofa',
+                    'position': [0.0, 0.425, -1.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'scale': [1, 1, 1],
+                    'rotationEuler': [0, 0, 0]
+                }
+            ]
+        }
+
+    def test_all_integer_ratings_1_through_5_accepted(self):
+        """All integer ratings from 1 through 5 must be accepted."""
+        for rating in range(1, 6):
+            responses = {q: rating for q in range(1, 11)}
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertTrue(is_valid, f"Failed for rating {rating}: {err}")
+            self.assertEqual(missing, [])
+            self.assertIsNone(err)
+
+        # Varied ratings 1 through 5
+        varied = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 1, 7: 2, 8: 3, 9: 4, 10: 5}
+        is_valid, missing, err = validate_sus_responses(varied)
+        self.assertTrue(is_valid, f"Failed for varied ratings: {err}")
+        self.assertEqual(missing, [])
+
+        # Whole number floats (e.g., 1.0, 5.0) are integer-equivalent
+        whole_floats = {q: float(q % 5 + 1) for q in range(1, 11)}
+        is_valid, missing, err = validate_sus_responses(whole_floats)
+        self.assertTrue(is_valid, f"Whole floats should be accepted: {err}")
+
+    def test_fractional_ratings_rejected(self):
+        """Ratings such as 1.5, 2.5, and 4.9 must be strictly rejected."""
+        base_responses = {q: 3 for q in range(1, 11)}
+
+        for fractional_val in [1.5, 2.5, 4.9, 3.14159, 0.99, 4.0001]:
+            responses = dict(base_responses)
+            responses[1] = fractional_val
+
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"Fractional rating {fractional_val} should have been rejected")
+            self.assertEqual(missing, [])
+            self.assertIn("fractional", err.lower())
+
+            # Verify calculate_sus_score also raises ValueError
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+    def test_booleans_nan_infinity_strings_and_out_of_range_rejected(self):
+        """Booleans, NaN, infinity, strings, and out-of-range ratings must be rejected."""
+        base_responses = {q: 3 for q in range(1, 11)}
+
+        # 1. Booleans
+        for bool_val in [True, False]:
+            responses = dict(base_responses)
+            responses[2] = bool_val
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"Boolean {bool_val} should be rejected")
+            self.assertIn("boolean", err.lower())
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+        # 2. NaN and Infinities
+        for non_finite in [float('nan'), float('inf'), float('-inf')]:
+            responses = dict(base_responses)
+            responses[3] = non_finite
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"Non-finite value {non_finite} should be rejected")
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+        # 3. Strings
+        for str_val in ["3", "5", "1.5", "invalid", ""]:
+            responses = dict(base_responses)
+            responses[4] = str_val
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"String value {str_val} should be rejected")
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+        # 4. Out-of-range values
+        for out_val in [0, 6, -1, 10, -100]:
+            responses = dict(base_responses)
+            responses[5] = out_val
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid, f"Out of range value {out_val} should be rejected")
+            self.assertIn("out of range", err.lower())
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+        # 5. Non-numeric types (None, list, dict)
+        for obj_val in [[1], {"val": 1}]:
+            responses = dict(base_responses)
+            responses[6] = obj_val
+            is_valid, missing, err = validate_sus_responses(responses)
+            self.assertFalse(is_valid)
+            with self.assertRaises(ValueError):
+                calculate_sus_score(responses)
+
+    def test_missing_responses_rejected(self):
+        """Missing responses must be identified and rejected."""
+        # Empty dict
+        is_valid, missing, err = validate_sus_responses({})
+        self.assertFalse(is_valid)
+        self.assertEqual(missing, list(range(1, 11)))
+
+        # 9 responses provided, question 10 missing
+        partial = {q: 3 for q in range(1, 10)}
+        is_valid, missing, err = validate_sus_responses(partial)
+        self.assertFalse(is_valid)
+        self.assertEqual(missing, [10])
+
+        # None value treated as missing
+        responses_with_none = {q: 3 for q in range(1, 10)}
+        responses_with_none[10] = None
+        is_valid, missing, err = validate_sus_responses(responses_with_none)
+        self.assertFalse(is_valid)
+        self.assertEqual(missing, [10])
+
+        # Non-dict inputs
+        for non_dict in [None, [1, 2, 3], "string"]:
+            is_valid, missing, err = validate_sus_responses(non_dict)
+            self.assertFalse(is_valid)
+            self.assertEqual(missing, list(range(1, 11)))
+
+    def test_both_integer_and_string_question_keys_work_correctly(self):
+        """Both integer and string question keys must be supported and validated identically."""
+        # String keys "1" through "10"
+        str_keys_valid = {str(q): 4 for q in range(1, 11)}
+        is_valid, missing, err = validate_sus_responses(str_keys_valid)
+        self.assertTrue(is_valid, f"String keys failed: {err}")
+        res_str = calculate_sus_score(str_keys_valid)
+
+        # Integer keys 1 through 10
+        int_keys_valid = {q: 4 for q in range(1, 11)}
+        is_valid, missing, err = validate_sus_responses(int_keys_valid)
+        self.assertTrue(is_valid, f"Integer keys failed: {err}")
+        res_int = calculate_sus_score(int_keys_valid)
+
+        self.assertEqual(res_str['score'], res_int['score'])
+        self.assertEqual(res_str['normalized_responses'], res_int['normalized_responses'])
+
+        # Fractional rating with string key must also be rejected
+        str_keys_fractional = dict(str_keys_valid)
+        str_keys_fractional["5"] = 2.5
+        is_valid, missing, err = validate_sus_responses(str_keys_fractional)
+        self.assertFalse(is_valid)
+        self.assertIn("fractional", err.lower())
+
+        # Invalid question keys must be rejected
+        invalid_keys = {str(q): 4 for q in range(1, 11)}
+        invalid_keys["11"] = 4
+        is_valid, missing, err = validate_sus_responses(invalid_keys)
+        self.assertFalse(is_valid)
+        self.assertIn("invalid question key", err.lower())
+
+        # Conflicting integer and string keys must be rejected
+        conflicting = {q: 4 for q in range(1, 11)}
+        conflicting["1"] = 2  # Disagrees with conflicting[1] == 4
+        is_valid, missing, err = validate_sus_responses(conflicting)
+        self.assertFalse(is_valid)
+        self.assertIn("conflicting", err.lower())
+
+    def test_valid_responses_produce_expected_authoritative_score(self):
+        """Valid responses produce the standard authoritative SUS composite scores."""
+        # Case 1: Perfect usability (Odd items = 5 -> contrib 4; Even items = 1 -> contrib 4)
+        # Total contribution = 10 * 4 = 40; SUS score = 40 * 2.5 = 100.0
+        perfect = {1: 5, 2: 1, 3: 5, 4: 1, 5: 5, 6: 1, 7: 5, 8: 1, 9: 5, 10: 1}
+        result = calculate_sus_score(perfect)
+        self.assertEqual(result['score'], 100.0)
+        self.assertEqual(result['grade'], 'A')
+        self.assertEqual(result['description'], 'Excellent Usability')
+
+        # Case 2: Worst usability (Odd items = 1 -> contrib 0; Even items = 5 -> contrib 0)
+        # Total contribution = 0; SUS score = 0.0
+        worst = {1: 1, 2: 5, 3: 1, 4: 5, 5: 1, 6: 5, 7: 1, 8: 5, 9: 1, 10: 5}
+        result = calculate_sus_score(worst)
+        self.assertEqual(result['score'], 0.0)
+        self.assertEqual(result['grade'], 'F')
+        self.assertEqual(result['description'], 'Poor / Not Acceptable')
+
+        # Case 3: Neutral responses (All 3s)
+        # Odd contribution = 3 - 1 = 2; Even contribution = 5 - 3 = 2
+        # Total contribution = 10 * 2 = 20; SUS score = 20 * 2.5 = 50.0
+        neutral = {q: 3 for q in range(1, 11)}
+        result = calculate_sus_score(neutral)
+        self.assertEqual(result['score'], 50.0)
+        self.assertEqual(result['grade'], 'D')
+        self.assertEqual(result['description'], 'Marginal / Below Average')
+
+        # Case 4: Benchmark case
+        # Odd: 1:5 (4), 3:4 (3), 5:5 (4), 7:5 (4), 9:4 (3) -> sum = 18
+        # Even: 2:1 (4), 4:2 (3), 6:1 (4), 8:2 (3), 10:1 (4) -> sum = 18
+        # Total = 36 * 2.5 = 90.0
+        benchmark = {1: 5, 2: 1, 3: 4, 4: 2, 5: 5, 6: 1, 7: 5, 8: 2, 9: 4, 10: 1}
+        result = calculate_sus_score(benchmark)
+        self.assertEqual(result['score'], 90.0)
+        self.assertEqual(result['grade'], 'A')
+
+    @override_settings(ENABLE_EVALUATION_TELEMETRY=True)
+    def test_invalid_survey_submissions_not_persisted_and_no_sus_score(self):
+        """
+        Submitting invalid SUS ratings to the complete endpoint must return HTTP 400 Bad Request,
+        must not transition session status to 'completed', and must not persist susScore or susResponses.
+        """
+        s_id = str(uuid.uuid4())
+        start_resp = self.client.post(
+            reverse('evaluation:session-start'),
+            {
+                'sessionId': s_id,
+                'sessionSecret': self.test_secret,
+                'participantId': 'P_STRICT_SUS',
+                'condition': 'manual',
+                'sequenceOrder': 'G1',
+                'taskName': 'living_room',
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(start_resp.status_code, status.HTTP_201_CREATED)
+
+        complete_url = reverse('evaluation:session-complete', kwargs={'session_id': s_id})
+        valid_base = {q: 3 for q in range(1, 11)}
+
+        invalid_payloads = [
+            # Fractional ratings
+            {**valid_base, 1: 1.5},
+            {**valid_base, 2: 2.5},
+            {**valid_base, 5: 4.9},
+            # Booleans
+            {**valid_base, 3: True},
+            {**valid_base, 4: False},
+            # Strings
+            {**valid_base, 1: "5"},
+            # Out of range
+            {**valid_base, 6: 0},
+            {**valid_base, 7: 6},
+            # Incomplete
+            {1: 4, 2: 4},
+        ]
+
+        for invalid_sus in invalid_payloads:
+            resp = self.client.post(
+                complete_url,
+                {
+                    'finalSceneSnapshot': self.valid_scene,
+                    'activeDurationSeconds': 0.5,
+                    'susResponses': invalid_sus,
+                },
+                format='json',
+                HTTP_X_SESSION_SECRET=self.test_secret
+            )
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, f"Expected 400 for {invalid_sus}")
+            self.assertIn('susResponses', resp.data)
+
+            # Verify session was NOT transitioned or updated in database
+            session = EvaluationSession.objects.get(id=s_id)
+            self.assertEqual(session.session_status, 'in_progress')
+            self.assertIsNone(session.sus_score)
+            self.assertIsNone(session.sus_responses)
+
+        # Finally, complete with valid responses with string keys
+        valid_string_sus = {str(q): (5 if q % 2 == 1 else 1) for q in range(1, 11)}
+        valid_resp = self.client.post(
+            complete_url,
+            {
+                'finalSceneSnapshot': self.valid_scene,
+                'activeDurationSeconds': 0.5,
+                'susResponses': valid_string_sus,
+            },
+            format='json',
+            HTTP_X_SESSION_SECRET=self.test_secret
+        )
+        self.assertEqual(valid_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(valid_resp.data['susScore'], 100.0)
+
+        # Verify database state after valid submission
+        session = EvaluationSession.objects.get(id=s_id)
+        self.assertEqual(session.session_status, 'completed')
+        self.assertEqual(session.sus_score, 100.0)
+        self.assertEqual(len(session.sus_responses), 10)
+
 
 
