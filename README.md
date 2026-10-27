@@ -3,7 +3,7 @@
 An AI-Agent-Assisted Interior Design System combining interactive 3D furniture placement, room-photo analysis, budget-aware recommendations, optional photo-to-3D reconstruction, and WebXR AR visualization.
 
 > **Project Type:** Solo B.Tech CSE Project (Gourav Sharma)<br>
-> **Status:** Phase 8.3 Verified & Closed; Phase 8.4 (Research Documentation, Thesis Synthesis & Report Preparation) In Progress<br>
+> **Status:** Phase 8.4 Verified & Closed; Phase 8.5 (Research Readiness Gate & Analysis Plan Lock) Complete & Ready for Review<br>
 > **Visual Verification:** See [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for live browser screenshots and [docs/MANUAL_AR_TESTING_PROTOCOL.md](docs/MANUAL_AR_TESTING_PROTOCOL.md) for physical AR device test logs.
 
 ---
@@ -53,8 +53,13 @@ roomgenie-ai/
 ├── RESEARCH_PLAN.md            # Empirical research study protocol & metrics
 ├── DEVELOPMENT_CHECKLIST.md    # Milestone definition of done & verification checklist
 ├── docs/                       # Research documentation, guides, and screenshot gallery
+│   ├── RESEARCH_DECISION_REGISTER.md          # 21 cataloged design, statistical, and ethical decisions
+│   ├── STATISTICAL_ANALYSIS_PLAN.md           # Pre-registered SAP: models, diagnostics, FWER control
+│   ├── RESEARCH_DATA_QUALITY_CHECKLIST.md     # 11-dimensional pre-/post-collection data audit checklist
+│   ├── ETHICS_AND_DATA_GOVERNANCE_GATE.md     # Institutional pre-clearance gate, consent, data minimization
+│   ├── PHASE_8_5_RESEARCH_READINESS_REPORT.md # Executive readiness synthesis & supervisor review package
 │   ├── THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md # 12-chapter B.Tech thesis outline & LMM/GLMM models
-│   ├── EVALUATION_DATASET_AND_EXPORT_GUIDE.md  # CLI export workflow, CSV/JSON schema specification
+│   ├── EVALUATION_DATASET_AND_EXPORT_GUIDE.md # CLI export workflow, CSV/JSON schema specification
 │   ├── RESEARCH_PROTOCOL_AND_TASKS.md         # Within-subject crossover protocol, Latin square, rubrics
 │   ├── AR_DEVICE_SPECIFICATION.md             # Mobile WebXR hardware target & physical verification log
 │   ├── MANUAL_AR_TESTING_PROTOCOL.md          # Step-by-step physical AR test procedure & checklist
@@ -263,12 +268,18 @@ python manage.py export_evaluation_dataset --format=csv --output=data/evaluation
     - Fractional ratings rejected; normalization occurs strictly after validation
     - Duplicate key detection preventing shadowed invalid ratings across string/integer representation
   - Verified by 42 evaluation unit tests, 241 full backend tests, and 143 frontend Vitest tests
-- [ ] **Phase 8.4 — Research Documentation, Thesis Synthesis & Report Preparation (Active)**
+- [x] **Phase 8.4 — Research Documentation, Thesis Synthesis & Report Preparation**
   - System-wide documentation audit and alignment with implementation reality
   - 12-chapter B.Tech CSE thesis structure ([`docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md`](docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md))
   - Research methodology, LMM and GLMM statistical modeling specifications, and Holm-Bonferroni correction
   - Dataset export guide and reproducibility appendix ([`docs/EVALUATION_DATASET_AND_EXPORT_GUIDE.md`](docs/EVALUATION_DATASET_AND_EXPORT_GUIDE.md))
-- [ ] **Phase 8.5 — Empirical Participant Study & Final Thesis Defense**
+- [x] **Phase 8.5 — Research Readiness Gate & Analysis Plan Lock (Ready for Supervisor Review)**
+  - Research decision register cataloging 21 protocol, design, statistical, and ethical decisions ([`docs/RESEARCH_DECISION_REGISTER.md`](docs/RESEARCH_DECISION_REGISTER.md))
+  - Formal Statistical Analysis Plan (SAP) locking $H_{01}..H_{04}$, LMM/GLMM models, diagnostics, and Holm-Bonferroni correction ([`docs/STATISTICAL_ANALYSIS_PLAN.md`](docs/STATISTICAL_ANALYSIS_PLAN.md))
+  - 11-dimensional research data quality and integrity checklist ([`docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`](docs/RESEARCH_DATA_QUALITY_CHECKLIST.md))
+  - Pre-clearance ethics and data governance gate with paused participant recruitment ([`docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`](docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md))
+  - Executive research readiness report and supervisor review package ([`docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md`](docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md))
+- [ ] **Empirical Phase — Participant Study & Final Thesis Defense**
   - Institutional ethics committee review and clearance (Prerequisite)
   - Target-hardware end-to-end dry run (Post-ethics, Pre-collection)
   - Counterbalanced participant study ($N=30$, 60 completed sessions)
