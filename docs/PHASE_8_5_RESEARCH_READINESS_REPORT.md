@@ -5,6 +5,7 @@
 **Branch:** `main`  
 **Starting Baseline Commit:** `39a34a1`  
 **Phase 8.4 Closure Commit:** `33581f2` (Verified and pushed to `origin/main`)  
+**Phase 8.5 Commit:** `aded08e` (Verified in GitHub Actions CI Run 40547878994)
 **Phase:** 8.5 — Research Readiness Gate & Analysis Plan Lock  
 **Final Verdict:** **`READY FOR SUPERVISOR REVIEW`** *(Governance Gate Closed Pending Institutional Ethics Approval)*  
 
@@ -14,16 +15,16 @@
 
 Phase 8.5 establishes a comprehensive, reviewable research-readiness package for the RoomGenie AI empirical evaluation. This phase formally locks pre-registered methodological and architectural parameters, isolates and documents the three remaining statistical decisions for supervisor review, specifies an 11-dimensional data quality and integrity checklist, and erects an unyielding ethics and governance gate that maintains a strict pause on human-subject participant recruitment until formal institutional ethics committee clearance is granted.
 
-No application code was altered. Software correctness remains anchored by **241 passing Django backend tests** and **143 passing frontend Vitest tests**. Telemetry remains disabled by default (`ENABLE_EVALUATION_TELEMETRY=False`).
+No application code was altered. Software correctness remains anchored by **241 passing Django backend tests** and **143 passing frontend Vitest tests** in remote GitHub Actions CI, and verified static checks locally. Telemetry remains disabled by default (`ENABLE_EVALUATION_TELEMETRY=False`).
 
 ---
 
 ## 2. Phase 8.4 Closure Verification
 
 Prior to commencing Phase 8.5, the state of Phase 8.4 was verified and cleanly finalized:
-1. **README Export Flag Correction:** The unsupported `--include-aborted` flag identified during the audit at `README.md:182` was removed and replaced with standard `--status=completed`, `--status=json`, and full-dataset export syntax matching `backend/apps/evaluation/management/commands/export_evaluation_dataset.py`.
+1. **README Export Flag Correction:** The unsupported `--include-aborted` flag identified during the audit at `README.md:182` was removed and replaced with standard `--status=completed`, `--format=json`, and full-dataset export syntax matching `backend/apps/evaluation/management/commands/export_evaluation_dataset.py`.
 2. **Terminology & State Differentiation:** Brooke's System Usability Scale (SUS) terminology was confirmed across all documentation. The three distinct project states (Engineering verified, Protocol documented, Empirical evaluation pending ethics) were affirmed across `README.md`, `DEVELOPMENT_CHECKLIST.md`, and `docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md`.
-3. **Commit & Push Evidence:** Phase 8.4 changes were committed as `33581f2` (`docs(research): complete Phase 8.4 thesis synthesis and research documentation alignment`) and pushed to `origin/main` (5 files changed, 728 insertions, 57 deletions).
+3. **Commit & Push Evidence:** Phase 8.4 changes were committed as `33581f2` (`docs(research): complete Phase 8.4 thesis synthesis and research documentation alignment`) and pushed to `origin/main` (5 files changed, 728 insertions, 57 deletions). GitHub Actions CI Run 40545952497 completed with **Conclusion: Success**.
 
 ---
 
@@ -33,7 +34,7 @@ Prior to commencing Phase 8.5, the state of Phase 8.4 was verified and cleanly f
 | :--- | :--- |
 | [`docs/RESEARCH_DECISION_REGISTER.md`](RESEARCH_DECISION_REGISTER.md) | Formal catalog of 21 methodological, architectural, statistical, and ethical decisions categorized under authoritative statuses: `LOCKED`, `PROPOSED`, `PENDING SUPERVISOR`, `PENDING ETHICS`, `NOT APPLICABLE`. Details the rationale, authority required, and resolution timing for all unresolved choices. |
 | [`docs/STATISTICAL_ANALYSIS_PLAN.md`](STATISTICAL_ANALYSIS_PLAN.md) | Comprehensive pre-registered Statistical Analysis Plan (SAP) defining the $2 \times 2$ crossover analysis, LMM for $H_{01}$ (with diagnostic log-normal and Gamma GLMM fallback pipeline), LMM for $H_{02}$ (Brooke SUS), GLMM Mixed Logistic Regression for $H_{03}$ and $H_{04}$, Holm–Bonferroni FWER step-down correction ($\alpha = 0.05$), interaction testing ($\text{Condition} \times \text{Period}$ and $\text{Condition} \times \text{Task}$), and zero-suppression commitment for null results. |
-| [`docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`](RESEARCH_DATA_QUALITY_CHECKLIST.md) | 11-dimensional pre-/post-collection data audit checklist covering schema consistency (33 columns), ID uniqueness, missingness by condition, chronological monotonicity, lifecycle consistency, Latin square balance, Brooke SUS scoring invariants, telemetry field non-negativity, outlier detection, capability hash security, and export reproducibility. Categorizes every check into `AUTOMATED (VERIFIED)`, `MANUAL AUDIT`, or `FUTURE SCRIPT`. |
+| [`docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`](RESEARCH_DATA_QUALITY_CHECKLIST.md) | 11-dimensional pre-/post-collection data audit checklist covering schema consistency (33 columns), ID uniqueness, missingness by condition, chronological monotonicity, lifecycle consistency, Latin square balance, Brooke SUS scoring invariants, telemetry field non-negativity, outlier detection, capability hash security, and export reproducibility. Strictly distinguishes single-session model/API validation (`AUTOMATED (MODEL/API VERIFIED)`) from cross-record dataset audits (`MANUAL AUDIT`) and pre-flight validation scripts (`FUTURE SCRIPT`). |
 | [`docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`](ETHICS_AND_DATA_GOVERNANCE_GATE.md) | Ethics and governance charter defining the 10 mandatory preconditions for human-subject research. Explicitly locks `ENABLE_EVALUATION_TELEMETRY=False` as default, pauses participant recruitment, details data minimization (no audio/video/biometrics), outlines participant consent and 14-day withdrawal rights, specifies post-approval target hardware dry run on `realme Narzo 70 Turbo 5G`, and provides a formal sign-off template. |
 | [`docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md`](PHASE_8_5_RESEARCH_READINESS_REPORT.md) | This synthesis report and readiness assessment. |
 
@@ -66,17 +67,27 @@ Prior to commencing Phase 8.5, the state of Phase 8.4 was verified and cleanly f
 
 ## 5. Technical Readiness & Verification Summary
 
-All non-participant technical verification checks executed with 100% pass rates:
+To maintain empirical truthfulness, verification evidence is explicitly reconciled across local execution and remote GitHub Actions CI:
 
-| Verification Scope | Command Executed | Actual Result | Status |
-| :--- | :--- | :--- | :---: |
-| **Django System Checks** | `manage.py check` | `System check identified no issues (0 silenced).` | **PASSED** |
-| **Backend Unit Tests** | `manage.py test` | `Ran 241 tests in 137.841s. OK.` (0 failures, 0 errors) | **PASSED** |
-| **Frontend Unit Tests** | `npm test -- --run` | `14 passed (14), 143 passed (143)` in 9.09s | **PASSED** |
-| **TypeScript Typecheck** | `npm run typecheck` | `tsc --noEmit` exited code 0 (0 errors) | **PASSED** |
-| **Frontend Linter** | `npm run lint` | Oxlint on 50 files: 0 warnings, 0 errors | **PASSED** |
-| **Git Whitespace & Formatting** | `git diff --check` | Exited code 0 (clean formatting, no trailing whitespace) | **PASSED** |
-| **Telemetry Guard** | Inspection of `settings.py:209` | `ENABLE_EVALUATION_TELEMETRY = False` by default | **VERIFIED** |
+### 5.1 Local Verification During Phase 8.5
+The following non-database static checks were executed locally during Phase 8.5:
+- **Django Configuration Check (`python manage.py check`):** Exited code 0 (`System check identified no issues (0 silenced)`).
+- **TypeScript Typecheck (`npm run typecheck`):** Exited code 0 (`tsc --noEmit`, 0 errors).
+- **Frontend Linter (`npm run lint`):** Exited code 0 (Oxlint across 50 files: 0 warnings, 0 errors).
+- **Git Formatting Check (`git diff --check`):** Exited code 0 (clean formatting, no trailing whitespace).
+
+*Local Database Blocker Notice:* Following a local system restart prior to Phase 8.5, Docker Desktop was not active, making the containerized PostgreSQL database on port 5433 unavailable locally. Local execution of database-dependent commands (`python manage.py test` and direct invocation of `export_evaluation_dataset`) blocked on connecting to 127.0.0.1:5433 and were cancelled. Rather than altering local database configurations or weakening test suites, remote CI was relied upon for containerized database execution.
+
+### 5.2 Remote GitHub Actions CI Verification (Commit `aded08e`)
+The definitive test verification for Phase 8.5 commit `aded08ec6f54a0e08f0715fbe4ba9a1a229fc992` was executed in the official GitHub Actions Ubuntu environment with active PostgreSQL services ([Run 40547878994](https://github.com/GouravSharma26/RoomGenie-ai/actions/runs/40547878994)):
+- **Backend Verification Job:** Ran migrations, system checks, and `python manage.py test`. **Status: Completed | Conclusion: Success** (All 241 backend tests passed).
+- **Frontend Verification Job:** Ran `npm run lint`, `npm run typecheck`, and `npm test -- --run`. **Status: Completed | Conclusion: Success** (All 143 frontend tests passed).
+- **Overall CI Run Status:** **Completed | Conclusion: Success**.
+
+### 5.3 Earlier Local Baseline (Commit `39a34a1`)
+Prior to the system restart, the full test suite had also been verified locally:
+- Full Django backend test suite: 241 passed in 137.841s (`OK`, 0 errors).
+- Full Vitest frontend test suite: 143 passed in 9.09s (`14 passed, 143 passed`).
 
 ---
 
