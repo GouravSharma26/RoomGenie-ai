@@ -1,14 +1,14 @@
 # RoomGenie AI — Ethics & Data Governance Gate
 
-**Document Status:** Institutional Pre-Clearance Audit & Governance Lock  
-**Project:** RoomGenie AI (Solo B.Tech CSE Project — Gourav Sharma)  
-**Related Documents:** [`docs/RESEARCH_PROTOCOL_AND_TASKS.md`](RESEARCH_PROTOCOL_AND_TASKS.md), [`docs/STATISTICAL_ANALYSIS_PLAN.md`](STATISTICAL_ANALYSIS_PLAN.md), [`docs/RESEARCH_DECISION_REGISTER.md`](RESEARCH_DECISION_REGISTER.md)  
-**Last Updated:** October 2026  
+**Document Status:** Institutional Pre-Clearance Audit & Governance Lock
+**Project:** RoomGenie AI (Solo B.Tech CSE Project — Gourav Sharma)
+**Related Documents:** [`docs/RESEARCH_PROTOCOL_AND_TASKS.md`](RESEARCH_PROTOCOL_AND_TASKS.md), [`docs/STATISTICAL_ANALYSIS_PLAN.md`](STATISTICAL_ANALYSIS_PLAN.md), [`docs/RESEARCH_DECISION_REGISTER.md`](RESEARCH_DECISION_REGISTER.md)
+**Last Updated:** October 2026
 
 ---
 
 > [!CAUTION]
-> **GOVERNANCE GATE STATUS: CLOSED — RECRUITMENT PAUSED**  
+> **GOVERNANCE GATE STATUS: CLOSED — RECRUITMENT PAUSED**
 > - **Human-subject participant recruitment and empirical data collection are strictly PAUSED.**
 > - `ENABLE_EVALUATION_TELEMETRY=False` remains the default across all development, test, and production environments.
 > - Software engineering verification (241 Django backend tests and 143 frontend Vitest tests) establishes technical correctness, but does **not** constitute ethical approval, IRB clearance, or empirical research findings.
@@ -65,12 +65,13 @@ In accordance with ethical principles for research involving human participants 
 3. **Irreversible Anonymization Lock:** Upon completion of the 14-day window and dataset aggregation lock, the key linking participant identities to codes is permanently destroyed, rendering all data irreversibly anonymized.
 
 ### 3.2 Participant Information Sheet (Summary of Disclosures)
-- **Study Purpose:** Evaluating user experience and spatial design accuracy in manual vs. AI-assisted 3D interior design.
-- **Activities Involved:** Designing two room layouts in an interactive 3D web tool and completing a 10-item usability questionnaire after each session.
-- **Estimated Duration:** Approximately 30 to 40 minutes in a single session.
-- **Risks & Discomforts:** Negligible risk beyond ordinary computer use and screen viewing.
-- **Benefits:** Opportunity to interact with next-generation spatial computing and generative AI interfaces.
-- **Compensation:** Voluntary student participation; academic extra credit or token compensation as approved by the ethics committee.
+- **Study Purpose:** Evaluating user experience and spatial design efficiency in manual vs. AI-assisted 3D interior design.
+- **Activities Involved:** 4-question pre-study background survey (CAD/AI experience, academic year, input device), two 10–12 minute 3D room design tasks, and two 10-item System Usability Scale (SUS) surveys.
+- **Estimated Duration:** Approximately 30 to 40 minutes in a single laboratory session.
+- **Foreseeable Risks & Discomforts:** Mild visual/screen fatigue from 3D WebGL viewing, mild hand/wrist fatigue from mouse usage, and task pressure meeting budget limits. Mitigated by explicit rights to pause or stop the session at any time without penalty.
+- **Benefits:** Experience interacting with next-generation spatial computing and generative AI interfaces.
+- **Compensation:** Voluntary participation; zero financial remuneration. Optional course participation credit / extra credit subject to departmental and ethics committee approval; zero academic penalty for non-participation or withdrawal.
+- **Confidentiality & Server Logging:** All metrics indexed by anonymous code (`P01`–`P30`); zero PII or IP addresses in evaluation DB; routine server proxy connection logs are network-isolated and never cross-linked to evaluation records.
 
 ---
 
@@ -140,9 +141,9 @@ Academic Project Supervisor:              [PENDING FORMAL SIGN-OFF]
 Supervisor Endorsement Date:              [PENDING]
 
 Author / Lead Researcher Declaration:
-"I confirm that no human participants have been recruited, contacted, or tested 
-for empirical research purposes, and that evaluation telemetry remains disabled 
-by default. Empirical data collection will commence strictly upon receiving 
+"I confirm that no human participants have been recruited, contacted, or tested
+for empirical research purposes, and that evaluation telemetry remains disabled
+by default. Empirical data collection will commence strictly upon receiving
 written institutional ethics approval and supervisor clearance."
 
 Lead Researcher: Gourav Sharma                        Date: October 27, 2026

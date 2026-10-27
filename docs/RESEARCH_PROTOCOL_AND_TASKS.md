@@ -1,7 +1,7 @@
 # RoomGenie AI — Research Protocol, Experimental Tasks & Evaluation Instruments
 
-**Milestone:** Phase 8 — Research, Evaluation, and Delivery  
-**Document Status:** Complete Experimental Protocol (Pre-Pilot Baseline)  
+**Milestone:** Phase 8 — Research, Evaluation, and Delivery
+**Document Status:** Complete Experimental Protocol (Pre-Pilot Baseline)
 **Related Documents:** [RESEARCH_PLAN.md](file:///c:/Gourav%20Sharma/VR%20Project/roomgenie-ai/RESEARCH_PLAN.md), [ARCHITECTURE.md](file:///c:/Gourav%20Sharma/VR%20Project/roomgenie-ai/ARCHITECTURE.md), [ASSET_LICENSES.md](file:///c:/Gourav%20Sharma/VR%20Project/roomgenie-ai/ASSET_LICENSES.md)
 
 ---
@@ -12,7 +12,7 @@
 RoomGenie AI combines interactive 3D WebGL room editing, deterministic budget tracking, multi-tier AI tool calling with a two-phase proposal/approval workflow, and optional photo-to-3D asset approximation. This protocol defines the experimental methodology to evaluate whether AI-assisted 3D room design meaningfully changes task completion time, constraint compliance, perceived usability, and user agency compared to manual design.
 
 ### 1.2 Research Questions & Hypotheses
-- **Primary Research Question (RQ1):**  
+- **Primary Research Question (RQ1):**
   *Does an AI-assisted interactive 3D interior design workflow change completion time, task success, budget compliance, and perceived usability compared with manual use of the same 3D editor?*
 
 #### Primary Confirmatory Hypotheses & Model-Adjusted Statistical Decision Rules
@@ -68,19 +68,19 @@ All secondary and exploratory outcomes ($E_1$ through $E_7$) are strictly design
 ## 2. Ethics, Privacy & Governance Requirements
 
 > [!IMPORTANT]
-> **Institutional Governance Note & Mandatory Approval Gate:**  
+> **Institutional Governance Note & Mandatory Approval Gate:**
 > This protocol specifies the research procedure, consent wording, and data handling safeguards. In accordance with university research standards, **formal supervisor or institutional ethics approval must be recorded in writing before recruiting human participants**. This protocol document alone does not replace formal ethics clearance.
-> - **Approval Body:** Departmental Undergraduate Research Review Committee / Project Evaluation Board (Must be confirmed with actual committee / evaluating body prior to recruitment)  
+> - **Approval Body:** Departmental Undergraduate Research Review Committee / Project Evaluation Board (Must be confirmed with actual committee / evaluating body prior to recruitment)
 > - **Protocol Status:** Gated — Formal written supervisor approval and verified contact details required prior to enrolling Participant P01.
 
 ### 2.1 Contact Information & Pre-Recruitment Verification Gate
 > [!WARNING]
-> **Pre-Recruitment Contact Verification Gate:**  
+> **Pre-Recruitment Contact Verification Gate:**
 > The researcher and supervisor email addresses below currently use example/placeholder domain formats. Prior to initiating participant recruitment or conducting pilot trials, the investigator must verify and substitute active, monitored institutional email addresses, and confirm the specific faculty project supervisor responsible for ethical oversight.
 
-- **Principal Investigator:** Gourav Sharma (Undergraduate Researcher, Dept. of Computer Science & Engineering)  
+- **Principal Investigator:** Gourav Sharma (Undergraduate Researcher, Dept. of Computer Science & Engineering)
   *Email:* `gourav.sharma.cse@example.ac.in` *(Placeholder — verify active institutional contact prior to recruitment)*
-- **Faculty Project Supervisor:** Project Supervisor / Course Coordinator (Dept. of Computer Science & Engineering)  
+- **Faculty Project Supervisor:** Project Supervisor / Course Coordinator (Dept. of Computer Science & Engineering)
   *Email:* `supervisor.cse@example.ac.in` *(Placeholder — verify active institutional contact prior to recruitment)*
 
 ### 2.2 Privacy, Data Protection & Scientific Terminology
@@ -99,39 +99,60 @@ All secondary and exploratory outcomes ($E_1$ through $E_7$) are strictly design
 
 ### Participant Information Sheet
 
-**Study Title:** Evaluating an AI-Assisted 3D Interior Design Workflow with Budget and Spatial Constraints  
-**Investigator:** Gourav Sharma (`gourav.sharma.cse@example.ac.in` — placeholder, institutional address verified prior to recruitment)  
-**Supervisor:** Departmental Project Supervisor (`supervisor.cse@example.ac.in` — placeholder, institutional address verified prior to recruitment)  
-**Institution:** Department of Computer Science & Engineering  
+**Study Title:** Evaluating User Experience and Spatial Design Efficiency in Manual vs. AI-Assisted Interactive 3D Interior Design
+**Investigator:** Gourav Sharma (B.Tech Candidate, CSE; Email: `[gourav.sharma.cse@institution.ac.in — Placeholder to be verified]`, Lab: Room `[Lab No.]`)
+**Supervisor:** Departmental Project Supervisor (Email: `[supervisor.cse@institution.ac.in — Placeholder to be verified]`, Office: Room `[Office No.]`)
+**Institutional Ethics Contact:** Institutional Ethics Review Board / Research Ethics Office (Email: `[ethics.committee@institution.ac.in — Placeholder to be verified]`)
+**Institution:** Department of Computer Science & Engineering
 
-**Purpose of the Study:**  
+**Purpose of the Study:**
 You are invited to participate in a research evaluation comparing two workflows for designing a 3D room layout: (1) manual placement using a 3D web editor, and (2) AI-assisted placement using natural language prompts with interactive approval. The goal is to evaluate usability, task efficiency, and constraint adherence.
 
-**What Will You Be Asked to Do?**  
-1. Complete a brief pre-questionnaire regarding your background with 3D/CAD tools and generative AI.
-2. Perform two short interior design tasks on a desktop computer using a 3D web application. In one task, you will place furniture manually; in the other, an AI assistant will propose initial layouts which you can review, approve, and adjust.
-3. Complete a 10-item usability questionnaire (System Usability Scale) after each condition.
-4. Answer three brief concluding questions about your experience. Total estimated duration is 30–40 minutes.
+**What Will You Be Asked to Do?**
+1. **Pre-Study Demographic & Background Questionnaire (Approx. 3 min):** Complete a 4-question non-identifying survey on:
+   - Prior experience with 3D modeling / CAD software (5-point ordinal scale: None to Expert).
+   - Prior experience with generative AI / conversational agents (5-point ordinal scale: Never to Daily).
+   - Academic program and year of study (e.g., B.Tech CSE 3rd Year; no names or student IDs collected).
+   - Primary input device preference (Mouse & Keyboard vs. Laptop Trackpad).
+   *(Purpose: Control covariates for exploratory subgroup analysis; indexed solely by anonymous Participant Code `P01`–`P30`).*
+2. **Interface Orientation (Approx. 5 min):** Brief demonstration of 3D room viewport controls (orbit, pan, zoom, translate, rotate).
+3. **Experimental Tasks (Approx. 10–12 min each):** Perform two interior design tasks using a web browser on a laboratory workstation (one manual task, one AI-assisted task). In both tasks, arrange furniture satisfying spatial containment, doorway keep-out clearance, and budget limits.
+4. **Post-Task Usability Evaluations (Approx. 4 min each):** Complete a standardized 10-item System Usability Scale (SUS) questionnaire following each task. Total estimated duration is 30–40 minutes.
 
-**Risks and Discomforts:**  
-There are no physical or psychological risks beyond normal desktop computer usage.
+**Compensation & Academic Credit:**
+Participation is voluntary. No financial remuneration is provided. Subject to departmental guidelines and ethics committee approval, undergraduate participants may receive optional course participation credit / extra credit [or specify: No compensation or course credit]. Declining or withdrawing carries zero academic penalty.
 
-**Confidentiality & Data Protection:**  
-All responses and design interactions are recorded under a coded pseudonym (e.g., `P04`). No names or private contact information will be collected, stored, or published. You may withdraw your data using your Participant Code within 14 days of participation (or prior to the irreversible anonymization aggregation lock on November 15, 2026).
+**Foreseeable Risks, Discomforts & Mitigations:**
+Risks are comparable to ordinary computer work:
+- *Visual / Screen Fatigue:* Viewing a 3D canvas for 30–40 minutes may cause mild eye strain.
+- *Physical Discomfort:* Mouse manipulation and typing may cause mild hand or wrist fatigue.
+- *Task Frustration:* Attempting to meet budget and spatial limits may cause mild task pressure.
+- *Confidentiality Risks:* Minimized via pseudonymized coding (`P01`–`P30`), capability token hashing with SHA-256, network isolation, and post-study irreversible anonymization.
+*Mitigation:* Participants may pause, take breaks, or stop the session at any time without penalty.
+
+**Confidentiality, Data Protection & Server Logging Disclosures:**
+All responses and design interactions are recorded under an assigned anonymous Participant Code (e.g., `P04`). No personally identifiable information (names, student IDs, phone numbers, email addresses) is stored in the evaluation database or published. The research evaluation database does not store IP addresses. Routine network server logs (Nginx / proxy connection daemons) that temporarily record network sockets for security are isolated and never cross-linked to evaluation records. You may request data deletion within 14 days of participation citing your Participant Code (or prior to the irreversible anonymization aggregation lock on November 15, 2026).
 
 ---
 
 ### Informed Consent Declaration Form
 
 ```markdown
-[ ] I confirm that I have read and understood the Participant Information Sheet for this study.
-[ ] I have had the opportunity to ask questions, and any questions have been answered satisfactorily.
-[ ] I understand that my participation is voluntary and that I am free to withdraw at any time without penalty.
-[ ] I understand that to withdraw my data, I can email the researcher or supervisor citing my Participant Code within 14 days of participation (or prior to November 15, 2026).
-[ ] I understand that my data will be stored as coded/pseudonymized research records and will become irreversibly anonymized after the study aggregation lock on November 15, 2026.
-[ ] I agree to take part in the study.
+[ ] 1. I confirm that I have read and understood the Participant Information Sheet dated October 2026 for this study.
+[ ] 2. I have had the opportunity to ask questions, and any questions have been answered satisfactorily.
+[ ] 3. I understand that my participation is voluntary and that I am free to pause or withdraw at any time without penalty.
+[ ] 4. I understand the foreseeable risks (such as mild screen fatigue or hand discomfort) and understand that I may take breaks as needed.
+[ ] 5. I understand that my participation involves no financial remuneration, and any optional course credit is subject to ethics approval.
+[ ] 6. I understand that my data will be pseudonymized using a Participant Code and that I may request deletion within 14 days of participation by citing my Participant Code.
+[ ] 7. I understand that after the 14-day withdrawal period, code linkage records will be destroyed, rendering all research data irreversibly anonymized for thesis reporting.
+[ ] 8. I understand that no audio, video, facial imagery, or biometric data will be captured, and that web server access logs are not linked to evaluation records.
+[ ] 9. I agree to take part in the study.
 
-Participant Code: ______________          Date: ____________________
+Participant Name (Printed):  ___________________________________________________
+Participant Signature:       _________________________   Date: _________________
+Assigned Participant Code:   [ P ____ ] (To be completed by Researcher)
+
+Researcher Signature:        _________________________   Date: _________________
 ```
 
 ---
@@ -181,16 +202,16 @@ If interaction terms are non-significant ($p \ge 0.05$), the parsimonious main-e
 
 ### 4.5 Covariate Logging (Participant Demographics)
 Recorded prior to Task 1:
-1. **3D / CAD Experience:**  
-   - [ ] None (0 years)  
-   - [ ] Casual / Gaming (e.g. The Sims, Minecraft, level editors)  
-   - [ ] Intermediate (e.g. SketchUp, basic CAD, college coursework)  
-   - [ ] Advanced / Professional (e.g. Blender, AutoCAD, 3ds Max, Rhino)  
-2. **Generative AI Tool Usage:**  
-   - [ ] Never used  
-   - [ ] Rarely (once or twice a month)  
-   - [ ] Weekly (regular conversational prompting)  
-   - [ ] Daily (integrated into daily workflow/studies)  
+1. **3D / CAD Experience:**
+   - [ ] None (0 years)
+   - [ ] Casual / Gaming (e.g. The Sims, Minecraft, level editors)
+   - [ ] Intermediate (e.g. SketchUp, basic CAD, college coursework)
+   - [ ] Advanced / Professional (e.g. Blender, AutoCAD, 3ds Max, Rhino)
+2. **Generative AI Tool Usage:**
+   - [ ] Never used
+   - [ ] Rarely (once or twice a month)
+   - [ ] Weekly (regular conversational prompting)
+   - [ ] Daily (integrated into daily workflow/studies)
 
 ---
 
@@ -220,14 +241,14 @@ Coordinate System Invariant (Three.js standard):
   1. *Primary Seating:* Modern 3-Seater Sofa (`sofa-modern-3seater`, ₹29,999; $2.1\text{m} \times 0.85\text{m} \times 0.9\text{m}$)
   2. *Central Surface:* Minimalist Coffee Table (`table-oak-coffee`, ₹8,499; $1.2\text{m} \times 0.45\text{m} \times 0.6\text{m}$)
   3. *Secondary Seating:* Lounge Accent Armchair (`chair-accent-armchair`, ₹11,999; $0.85\text{m} \times 0.88\text{m} \times 0.85\text{m}$)
-  4. *Fourth Item (Participant Choice):*  
-     - Option A: Botanical Ceramic Floor Planter (`decor-plant-floor-vase`, ₹2,499) $\rightarrow$ **Total: ₹52,996** *(Compliant, Headroom ₹7,004)*  
-     - Option B (Budget Trap): 4-Tier Architectural Bookshelf (`storage-bookshelf-tall`, ₹16,499) $\rightarrow$ **Total: ₹66,996** *(Exceeds budget by ₹6,996)*  
+  4. *Fourth Item (Participant Choice):*
+     - Option A: Botanical Ceramic Floor Planter (`decor-plant-floor-vase`, ₹2,499) $\rightarrow$ **Total: ₹52,996** *(Compliant, Headroom ₹7,004)*
+     - Option B (Budget Trap): 4-Tier Architectural Bookshelf (`storage-bookshelf-tall`, ₹16,499) $\rightarrow$ **Total: ₹66,996** *(Exceeds budget by ₹6,996)*
 - **Doorway Specification & Keep-Out Clearance Box:**
   - **Wall Location:** South Wall ($Z = +2.00\text{ m}$)
   - **Door Opening:** Centered at $X = 0.00\text{ m}$, opening width $0.90\text{ m}$ ($X \in [-0.45\text{ m}, +0.45\text{ m}]$)
   - **Inward Clearance Depth:** $1.20\text{ m}$ inward along negative Z ($Z \in [+0.80\text{ m}, +2.00\text{ m}]$)
-  - **Mathematical Keep-Out Box Extents:**  
+  - **Mathematical Keep-Out Box Extents:**
     $$X \in [-0.60\text{ m}, +0.60\text{ m}], \quad Z \in [+0.80\text{ m}, +2.00\text{ m}], \quad Y \in [0.00\text{ m}, 2.10\text{ m}]$$
   - *Rule:* Any furniture bounding box overlapping this zone constitutes a **Doorway Clearance Intrusion**.
 
@@ -241,14 +262,14 @@ Coordinate System Invariant (Three.js standard):
   1. *Primary Worksurface:* Ergonomic Study Desk (`desk-workspace-study`, ₹14,999; $1.4\text{m} \times 0.75\text{m} \times 0.7\text{m}$)
   2. *Desk Seating:* Lounge Accent Armchair (`chair-accent-armchair`, ₹11,999; $0.85\text{m} \times 0.88\text{m} \times 0.85\text{m}$)
   3. *Reference Storage:* 4-Tier Architectural Bookshelf (`storage-bookshelf-tall`, ₹16,499; $1.0\text{m} \times 1.8\text{m} \times 0.35\text{m}$)
-  4. *Fourth Item (Participant Choice):*  
-     - Option A: Botanical Ceramic Floor Planter (`decor-plant-floor-vase`, ₹2,499) $\rightarrow$ **Total: ₹45,996** *(Compliant, Headroom ₹4,004)*  
-     - Option B (Budget Trap): Minimalist Coffee/Side Table (`table-oak-coffee`, ₹8,499) $\rightarrow$ **Total: ₹51,996** *(Exceeds budget by ₹1,996)*  
+  4. *Fourth Item (Participant Choice):*
+     - Option A: Botanical Ceramic Floor Planter (`decor-plant-floor-vase`, ₹2,499) $\rightarrow$ **Total: ₹45,996** *(Compliant, Headroom ₹4,004)*
+     - Option B (Budget Trap): Minimalist Coffee/Side Table (`table-oak-coffee`, ₹8,499) $\rightarrow$ **Total: ₹51,996** *(Exceeds budget by ₹1,996)*
 - **Doorway Specification & Keep-Out Clearance Box:**
   - **Wall Location:** East Wall ($X = +2.25\text{ m}$)
   - **Door Opening:** Centered at $Z = 0.00\text{ m}$, opening width $0.90\text{ m}$ ($Z \in [-0.45\text{ m}, +0.45\text{ m}]$)
   - **Inward Clearance Depth:** $1.20\text{ m}$ inward along negative X ($X \in [+1.05\text{ m}, +2.25\text{ m}]$)
-  - **Mathematical Keep-Out Box Extents:**  
+  - **Mathematical Keep-Out Box Extents:**
     $$X \in [+1.05\text{ m}, +2.25\text{ m}], \quad Z \in [-0.60\text{ m}, +0.60\text{ m}], \quad Y \in [0.00\text{ m}, 2.10\text{ m}]$$
   - *Rule:* Any furniture bounding box overlapping this zone constitutes a **Doorway Clearance Intrusion**.
 
@@ -267,7 +288,7 @@ Coordinate System Invariant (Three.js standard):
 | **Wall Boundary Constraints** | 4 walls ($5.0\text{m} \times 4.0\text{m}$) | 4 walls ($4.5\text{m} \times 3.5\text{m}$) | Identical boundary topology |
 
 > [!NOTE]
-> **Budget-Trap Severity Asymmetry & Pilot Investigation:**  
+> **Budget-Trap Severity Asymmetry & Pilot Investigation:**
 > Discrete pricing across the curated 10-item architectural catalogue creates an asymmetry in trap severity: Task 1's alternative exceeds the ceiling by 11.66% (+₹6,996), whereas Task 2's alternative exceeds the ceiling by 3.99% (+₹1,996). Rather than assuming identical trade-off tension, this disparity (prominent 11.66% vs subtle 3.99% overrun) is explicitly treated as a task factor to be calibrated during the Phase 8.4 pilot study. Sensitivity analyses in the statistical evaluation will test whether participant detection of overruns differs by task or condition.
 
 ---
@@ -293,19 +314,19 @@ graph TD
 ```
 
 ### 6.1 Currently Implemented in Codebase
-1. **Room Boundary Containment & Enforcement:**  
-   - Implemented in `backend/apps/designs/validators.py`, `backend/apps/furniture/budget.py`, and `frontend/src/editor3d/store/editorStore.ts`.  
-   - Calculates transformed Axis-Aligned Bounding Box (AABB) half-extents $(e_x, e_y, e_z)$ for each placed object considering dimensions, scale, and Euler rotation.  
-   - **Enforcement Mechanics:**  
+1. **Room Boundary Containment & Enforcement:**
+   - Implemented in `backend/apps/designs/validators.py`, `backend/apps/furniture/budget.py`, and `frontend/src/editor3d/store/editorStore.ts`.
+   - Calculates transformed Axis-Aligned Bounding Box (AABB) half-extents $(e_x, e_y, e_z)$ for each placed object considering dimensions, scale, and Euler rotation.
+   - **Enforcement Mechanics:**
      - In the 3D editor (`editorStore.ts`), drag movements are actively clamped to room boundaries.
      - In backend serialization (`validators.py`), scenes with items extending beyond $[-W/2, +W/2]$ (X), $[-L/2, +L/2]$ (Z), or $[0, H]$ (Y) by more than 1 cm trigger a `ValidationError` (HTTP 400), strictly blocking the design save.
      - In the AI agent runner (`tools.py`), proposed layouts with boundary breaches have `room_containment_valid = False`, blocking user approval (`/apply/`).
    - *Measurement Implication:* Because invalid scenes cannot be successfully saved under standard application rules, a submitted final scene is expected to exhibit `finalSceneOutOfBoundsCount = 0`.
-2. **Authoritative Integer Paise Budget (`budgetTotalPaise`, `isBudgetCompliant`):**  
-   - Implemented in `backend/apps/furniture/budget.py`.  
+2. **Authoritative Integer Paise Budget (`budgetTotalPaise`, `isBudgetCompliant`):**
+   - Implemented in `backend/apps/furniture/budget.py`.
    - Computes deterministic price sum in integer minor units (paise). Returns category subtotals, itemized pricing, unpriced asset flag, and compliance against target budget.
-3. **Multi-Tier Agent Proposal Validity & Error Categorization:**  
-   - Implemented authoritatively in `backend/apps/ai_agent/tools.py` and `views.py`, persisted via `AgentRun.validation_results`, and consumed in frontend telemetry (`evaluationTelemetry.ts`).  
+3. **Multi-Tier Agent Proposal Validity & Error Categorization:**
+   - Implemented authoritatively in `backend/apps/ai_agent/tools.py` and `views.py`, persisted via `AgentRun.validation_results`, and consumed in frontend telemetry (`evaluationTelemetry.ts`).
    - Evaluated across four distinct measurement tiers, strictly separating syntactic compliance from database resolution and spatial/financial constraints:
      - **Tier 1 (Technical Request Success):** Network/transport level success (HTTP status code 200 OK vs 5xx server failure or network timeout).
      - **Tier 2 (Schema Validity):** Syntactic adherence to the allowlisted tool-calling interface contract.
@@ -332,17 +353,17 @@ graph TD
        - Execution guard: Only proposals with `is_valid = True` (satisfying schema, reference resolution, domain containment, and budget compliance) can be applied. Unexecutable proposals (`is_valid = False`) are rejected by the backend and cannot be applied in the UI.
 
 ### 6.2 Research Telemetry Instrumentation (Implemented in Step 8.2 / 8.3)
-1. **AABB Overlap Pairs Count (`aabbOverlapPairsCount`):**  
+1. **AABB Overlap Pairs Count (`aabbOverlapPairsCount`):**
    - *Definition:* Axis-Aligned Bounding Box (AABB) overlap serves as a geometric proxy for object collision, not direct proof that furniture polygon meshes intersect. For every distinct pair of placed objects $(i, j)$ with $i < j$, the evaluation engine calculates the transformed AABB extents along all three axes $(X, Y, Z)$ using a $0.02\text{ m}$ (2 cm) numerical tolerance threshold. Pairs whose AABBs intersect across all three axes increment `aabbOverlapPairsCount`.
    - *Unit:* Integer count of overlapping AABB pairs in the final submitted scene.
-2. **Doorway Keep-Out Violation Count (`doorwayIntrusionsCount`):**  
-   - *Definition:* Evaluates whether any furniture 3D bounding box overlaps with the task's defined doorway keep-out box. Evaluated **silently** on the final submitted scene without rendering an in-editor visual hint during participant trials.  
+2. **Doorway Keep-Out Violation Count (`doorwayIntrusionsCount`):**
+   - *Definition:* Evaluates whether any furniture 3D bounding box overlaps with the task's defined doorway keep-out box. Evaluated **silently** on the final submitted scene without rendering an in-editor visual hint during participant trials.
    - *Unit:* Integer count of intruding objects in the final submitted scene.
-3. **Attempted vs. Final Boundary Violations:**  
+3. **Attempted vs. Final Boundary Violations:**
    - `attemptedOutOfBoundsCount`: Runtime count of instances where a participant attempted to place or move furniture beyond boundary clamps, or where an AI proposal contained out-of-bounds placements.
      - *Unit of Counting:* Exactly one boundary violation attempt is counted per discrete user action, continuous manual gesture, or AI proposal containing out-of-bounds placements. Continuous slider dragging against boundary clamps records at most one boundary violation attempt upon gesture completion / pointer release (intermediate clamped updates are grouped and do not inflate the metric). An AI proposal with an explicit room-containment violation records at most one boundary violation attempt upon evaluation, preventing inflation from multiple out-of-bounds placements within a single proposal. Non-boundary failures (e.g. budget ceiling or schema errors) do not increment the counter. Standalone discrete updates outside gestures increment immediately if clamped.
    - `finalSceneOutOfBoundsCount`: Post-submission verification of the final scene snapshot against canonical room bounds (expected to be 0 for validly saved designs).
-4. **Manual Adjustments Count (`totalEdits`):**  
+4. **Manual Adjustments Count (`totalEdits`):**
    - *Definition:* Total discrete manual interactions performed in the editor:
      - Furniture added from palette: $+1$
      - Furniture removed/deleted: $+1$
@@ -350,7 +371,7 @@ graph TD
      - Material override / color change: $+1$
      - Translation / Rotation / Scale: Recorded strictly on pointer release (`onPointerUp` / drag termination). Continuous intermediate mousemove events are **grouped/debounced** and do not increment the counter.
      - Undo / Redo: Logged separately under `undoRedoCount` to allow analyzing gross vs. net adjustments.
-5. **Task Duration (`durationSeconds`):**  
+5. **Task Duration (`durationSeconds`):**
    - *Definition:* High-resolution wall-clock duration from participant opening the task view to clicking the final "Submit Design" button.
 
 ---
@@ -382,7 +403,7 @@ Each response $Q_i$ is mapped to an integer score from 1 to 5.
 $$SUS = 2.5 \times \left[ \sum_{i \in \{1, 3, 5, 7, 9\}} (Q_i - 1) + \sum_{i \in \{2, 4, 6, 8, 10\}} (5 - Q_i) \right]$$
 
 > [!NOTE]
-> **Interpretation Rules (Bangor, Kortum & Miller, 2008, 2009; Brooke, 1996):**  
+> **Interpretation Rules (Bangor, Kortum & Miller, 2008, 2009; Brooke, 1996):**
 > The resulting score ranges from $0$ to $100$. It is a standardized composite usability score, **not** a percentage of users who found the system usable. Standard empirical grading bands:
 > - $< 50.0$: Not Acceptable / Poor (Grade F)
 > - $50.0 - 64.9$: Marginal / Below Average (Grade D)
@@ -394,15 +415,15 @@ $$SUS = 2.5 \times \left[ \sum_{i \in \{1, 3, 5, 7, 9\}} (Q_i - 1) + \sum_{i \in
 
 ### 7.2 Post-Experiment Exit Survey (Administered after both conditions)
 
-1. **Overall Preference:**  
-   - *Question:* Which design workflow did you prefer overall?  
+1. **Overall Preference:**
+   - *Question:* Which design workflow did you prefer overall?
    - *Options:* [ ] Strongly prefer Manual Editor | [ ] Slightly prefer Manual Editor | [ ] Neutral / No preference | [ ] Slightly prefer AI-Assisted | [ ] Strongly prefer AI-Assisted
-2. **Subjective Workload (Mental Demand):**  
+2. **Subjective Workload (Mental Demand):**
    - *Question:* Which workflow felt more mentally demanding? (Manual / AI-Assisted / Equal)
-3. **Agency & Control:**  
+3. **Agency & Control:**
    - *Question:* Did you feel in control of the final design when using the AI assistant? (1 = Lost Control, 5 = Complete Control)
-4. **Qualitative Feedback:**  
-   - *Prompt:* What was the most frustrating aspect of each workflow?  
+4. **Qualitative Feedback:**
+   - *Prompt:* What was the most frustrating aspect of each workflow?
    - *Prompt:* In what scenarios would you choose the manual editor over the AI assistant, or vice-versa?
 
 ---
@@ -427,19 +448,19 @@ For the exploratory evaluation of single/multi-view furniture reconstruction (us
 
 ### 8.3 Error Formulas
 For each axis $A \in \{W, H, D\}$:
-- **Absolute Error ($\Delta A$):**  
+- **Absolute Error ($\Delta A$):**
   $$\Delta A = |A_{\text{recon}} - A_{\text{phys}}| \quad (\text{metres})$$
-- **Relative Error ($\% A$):**  
+- **Relative Error ($\% A$):**
   $$\% A = \left( \frac{|A_{\text{recon}} - A_{\text{phys}}|}{A_{\text{phys}}} \right) \times 100\%$$
-- **Mean Absolute Error (MAE):**  
+- **Mean Absolute Error (MAE):**
   $$\text{MAE} = \frac{1}{K} \sum_{k=1}^K \Delta A_k$$
-- **Mean Absolute Percentage Error (MAPE):**  
+- **Mean Absolute Percentage Error (MAPE):**
   $$\text{MAPE} = \frac{1}{K} \sum_{k=1}^K (\% A_k)$$
 
 ### 8.4 Data Logging Table Template
 
 > [!NOTE]
-> **Synthetic Formatting Illustration Only — No Observed Data:**  
+> **Synthetic Formatting Illustration Only — No Observed Data:**
 > The first row below is purely a synthetic mathematical example to illustrate column calculation formatting. No physical trials or participant experiments have yet taken place.
 
 | Item ID | Physical Dimensions ($W \times D \times H$, m) | Reconstructed ($W \times D \times H$, m) | Absolute Error ($\Delta W, \Delta D, \Delta H$, cm) | Relative Error ($\%W, \%D, \%H$) | Processing Duration (s) | Visual Rating (1–5) |
@@ -505,14 +526,14 @@ To guarantee that `in_progress` trials survive accidental browser reloads, that 
 - **Silent Evaluation:** The evaluator engine applies the coordinate-based keep-out rule uniformly to both final layouts post-submission. A visual debugging overlay may exist in development mode (`DEBUG=True`), but must be strictly disabled during study trials.
 
 #### Decision 3: Dual Scene Snapshots, Independent Auditability & Inactivity Granularity
-1. **Separation of Checkpoint and Final Scene Snapshots:**  
+1. **Separation of Checkpoint and Final Scene Snapshots:**
    - `checkpointSceneSnapshot`: Continually captures intermediate scene states for recovery and dropout/attrition audit. Preserved upon session abort; remains in the record post-completion as an audit trail of pre-submission state.
    - `finalSceneSnapshot`: Immutable authoritative scene state captured at the exact moment of formal submission (`POST .../complete/`). Used for official calculation of budget math, room containment, AABB overlap pairs, and doorway clearance. Remains strictly `null` for aborted or in-progress sessions.
-2. **Reconciliation with `frontend/src/types/scene.ts` (`CanonicalScene` and `FurniturePlacement`):**  
+2. **Reconciliation with `frontend/src/types/scene.ts` (`CanonicalScene` and `FurniturePlacement`):**
    Both snapshots use standard SI metric dimensions and Three.js coordinate conventions. All physical geometry (`dimensions`, `position`, `rotationEuler`, `scale`) and catalogue references (`assetId`, `name`, `materialOverrides`, `reconstructionJobId`) are fully preserved.
-3. **CRITICAL SECURITY & PRIVACY INVARIANT — NO SIGNED / CREDENTIALED ASSET URLS:**  
+3. **CRITICAL SECURITY & PRIVACY INVARIANT — NO SIGNED / CREDENTIALED ASSET URLS:**
    `modelUrl`, blob URLs (`blob:...`), signed cloud storage URLs with credentials, bearer tokens, or session-scoped query parameters must **NEVER** be persisted in research snapshots (`checkpointSceneSnapshot` or `finalSceneSnapshot`). Assets are referenced purely by immutable catalog `assetId` or stable backend `reconstructionJobId`. This prevents credential leakage in exported datasets and guarantees that snapshots remain readable even after temporary URLs expire.
-4. **Discrete Inactivity Intervals (`idleIntervals`):**  
+4. **Discrete Inactivity Intervals (`idleIntervals`):**
    Rather than storing only a single opaque cumulative number, telemetry records each discrete pause exceeding 60 seconds (`{ startOffsetSeconds, durationSeconds }`). This distinguishes five 2-minute pauses from a single 10-minute external distraction, directly enabling the pre-registered sensitivity analysis ($> 15\text{ min}$ interruptions).
 
 #### Decision 4: Step 8.2 Automated Verification & Concurrency Test Matrix
@@ -584,7 +605,7 @@ interface ExperimentSessionRecord {
   sequenceOrder: 'G1' | 'G2' | 'G3' | 'G4';
   taskName: 'living_room' | 'home_study';
   sessionStatus: 'in_progress' | 'completed' | 'aborted';
-  
+
   // Checkpoint Revision Tracking (monotonically increasing sequence; 0 on start)
   checkpointSequence: number;         // Incremented by client on each checkpoint; guards against stale out-of-order retries
 
@@ -593,7 +614,7 @@ interface ExperimentSessionRecord {
   endTime: string | null;             // ISO 8601 (null if in_progress or aborted)
   durationSeconds: number | null;     // Total elapsed seconds (null until completed/aborted)
   activeDurationSeconds: number;      // Elapsed seconds excluding totalIdleDurationSeconds
-  
+
   // Abort / Dropout Tracking
   abortedAt: string | null;           // ISO 8601 (null if completed)
   abortReason: 'user_cancelled' | 'inactivity_timeout' | 'browser_closed' | null;
@@ -612,7 +633,7 @@ interface ExperimentSessionRecord {
   finalSceneOutOfBoundsCount: number | null; // Post-submission check (expected 0)
   aabbOverlapPairsCount: number | null;      // AABB overlap proxy count (2cm tolerance)
   doorwayIntrusionsCount: number | null;     // Intrusion into silent keep-out box
-  
+
   // Task Success Metric (nullable while in_progress)
   isTaskSuccessful: boolean | null;   // True if all 4 items present, budget compliant, 0 doorway intrusions
 

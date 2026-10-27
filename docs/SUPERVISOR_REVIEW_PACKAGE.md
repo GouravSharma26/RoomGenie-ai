@@ -1,17 +1,17 @@
 # RoomGenie AI — Academic Supervisor Review Package & Ethics Submission Dossier
 
-**Document Status:** Formal Academic & Institutional Review Submission  
-**Project Title:** *RoomGenie AI: An AI-Agent-Assisted Interior Design System with Interactive 3D Furniture Placement, Photo-to-3D Reconstruction, and Augmented Reality Visualization*  
-**Candidate / Principal Investigator:** Gourav Sharma (B.Tech Computer Science & Engineering)  
-**Repository:** [`https://github.com/GouravSharma26/RoomGenie-ai`](https://github.com/GouravSharma26/RoomGenie-ai)  
-**Academic Supervisor:** Project Supervisor, Department of Computer Science & Engineering  
-**Review Target:** Academic Supervisor Endorsement & Institutional Ethics Committee (IRB) Clearance  
-**Date of Compilation:** October 2026  
+**Document Status:** Formal Academic & Institutional Review Submission
+**Project Title:** *RoomGenie AI: An AI-Agent-Assisted Interior Design System with Interactive 3D Furniture Placement, Photo-to-3D Reconstruction, and Augmented Reality Visualization*
+**Candidate / Principal Investigator:** Gourav Sharma (B.Tech Computer Science & Engineering)
+**Repository:** [`https://github.com/GouravSharma26/RoomGenie-ai`](https://github.com/GouravSharma26/RoomGenie-ai)
+**Academic Supervisor:** Project Supervisor, Department of Computer Science & Engineering
+**Review Target:** Academic Supervisor Endorsement & Institutional Ethics Committee (IRB) Clearance
+**Date of Compilation:** October 2026
 
 ---
 
 > [!CAUTION]
-> **PRE-STUDY GOVERNANCE STATUS: RECRUITMENT STRICTLY PAUSED**  
+> **PRE-STUDY GOVERNANCE STATUS: RECRUITMENT STRICTLY PAUSED**
 > In compliance with institutional research governance and international research ethics standards (Declaration of Helsinki):
 > - **Human-subject participant recruitment and empirical data collection remain strictly PAUSED.**
 > - `ENABLE_EVALUATION_TELEMETRY=False` is locked as the server default across all code paths.
@@ -111,19 +111,19 @@ SUPERVISOR DECISION MEMORANDUM — STATISTICAL MODELING CHOICES
 #### Decision 1: LMM Denominator Degrees-of-Freedom Approximation (`DEC-13`)
 - **Current Dilemma:** Standard asymptotic Wald tests underestimate Type I error in small-to-moderate crossover designs ($N=30$). Satterthwaite approximation estimates effective degrees of freedom via variance component estimation. The Kenward–Roger adjustment incorporates a higher-order small-sample covariance adjustment.
 - **Candidate Recommendation:** **Adopt Kenward–Roger adjustment** as primary for $H_{01}$ and $H_{02}$. It provides conservative Type I error protection in $2 \times 2$ repeated-measures models.
-- **Status:** **`PENDING SUPERVISOR DECISION`**  
+- **Status:** **`PENDING SUPERVISOR DECISION`**
   *Supervisor Option:* [ ] Approve Kenward–Roger  |  [ ] Retain Satterthwaite  |  [ ] Specify Alternative
 
 #### Decision 2: Exploratory Individual SUS Item Analysis (`DEC-14`)
 - **Current Dilemma:** The pre-registered confirmatory usability hypothesis ($H_{02}$) utilizes Brooke's continuous composite score ($0.0–100.0$). Treating individual 5-point Likert survey items ($Q_1 \dots Q_{10}$) as continuous variables in the primary model violates ordinal boundaries, while running 10 separate confirmatory models induces severe multiplicity penalties.
 - **Candidate Recommendation:** **Maintain Brooke composite score as the sole confirmatory hypothesis** in the main thesis text. Analyze individual items $Q_1 \dots Q_{10}$ strictly as exploratory items in Thesis Appendix C using Cumulative Link Mixed Models (CLMM, `ordinal::clmm` in R with logit link).
-- **Status:** **`PENDING SUPERVISOR DECISION`**  
+- **Status:** **`PENDING SUPERVISOR DECISION`**
   *Supervisor Option:* [ ] Approve Appendix CLMM  |  [ ] Omit Individual Item Models  |  [ ] Specify Alternative
 
 #### Decision 3: Model Complexity & Random Slope Structure (`DEC-15`)
 - **Current Dilemma:** The pre-registered primary model specifies a random intercept ($u_i$). Adding a condition random slope ($(\text{Condition} \mid \text{Participant})$) allows participant-specific treatment effects, but with only two observations per participant, random-slope variance estimation frequently yields singular fits (`boundary (singular) fit`) in R `lme4`.
 - **Candidate Recommendation:** **Retain random intercept model as primary**. Evaluate the random slope specification strictly as a sensitivity analysis; if singular fit occurs, report the singular diagnostic and report the parsimonious random intercept model.
-- **Status:** **`PENDING SUPERVISOR DECISION`**  
+- **Status:** **`PENDING SUPERVISOR DECISION`**
   *Supervisor Option:* [ ] Approve Random Intercept Primary  |  [ ] Mandate Random Slope  |  [ ] Specify Alternative
 
 ```text
@@ -190,63 +190,107 @@ The following materials are prepared for submission to the Institutional Ethics 
 PARTICIPANT INFORMATION SHEET (PIS)
 Department of Computer Science & Engineering
 ================================================================================
-Study Title: 
-Evaluating User Experience and Spatial Design Efficiency in Manual vs. AI-Assisted 
+Study Title:
+Evaluating User Experience and Spatial Design Efficiency in Manual vs. AI-Assisted
 Interactive 3D Interior Design
 
 Principal Investigator: Gourav Sharma (B.Tech Candidate, Computer Science & Engineering)
-Academic Supervisor:    Project Supervisor, Department of Computer Science & Engineering
-Study Location:         Department of Computer Science & Engineering Laboratories
-Estimated Time:         Approximately 30 to 40 minutes (Single Session)
+                        Institutional Email: [gourav.sharma.cse@institution.ac.in — Placeholder to be verified]
+                        Laboratory: Department of Computer Science & Engineering, Room [Lab No.]
+Academic Supervisor:    [Supervisor Name & Academic Title], Department of CSE
+                        Institutional Email: [supervisor.cse@institution.ac.in — Placeholder to be verified]
+                        Office: Room [Office No.], Department of CSE
+Institutional Ethics:   Institutional Ethics Review Board / Research Ethics Office
+                        Email: [ethics.committee@institution.ac.in — Placeholder to be verified]
+                        Office: Secretariat of Research & Development / Ethics Committee
+
+Study Location:         Department of Computer Science & Engineering Computing Laboratories
+Estimated Time:         Approximately 30 to 40 minutes (Single Laboratory Session)
 
 1. Invitation and Study Purpose
-You are invited to participate in a research study evaluating software interfaces 
-for 3D interior design. The purpose of this study is to compare how users interact 
-with an interactive 3D room editor when working manually versus working with the 
-assistance of an AI design agent that suggests candidate furniture layouts based on 
+You are invited to take part in an academic research study evaluating software interfaces
+for 3D interior design. The purpose of this study is to compare how users interact
+with an interactive 3D room editor when working manually versus working with the
+assistance of an AI design agent that suggests candidate furniture layouts based on
 natural-language design prompts.
 
 2. What Will Happen During the Session?
-If you agree to take part, you will be asked to:
-  a. Complete a brief pre-study demographic questionnaire regarding your general 
-     familiarity with 3D applications, computer-aided design, and AI tools.
-  b. Perform two interior design tasks using a web browser on a laboratory computer:
+If you decide to participate, you will complete the following sequence in a single session:
+  a. Pre-Study Demographic & Background Questionnaire (Approx. 3 minutes):
+     You will answer four non-identifying background questions:
+     1. Prior experience with 3D modeling / CAD software (5-point ordinal scale: None,
+        Novice, Intermediate, Advanced, Expert).
+     2. Prior experience with generative AI / conversational agents (5-point ordinal scale:
+        Never, Rarely, Occasionally, Frequently, Daily).
+     3. Academic program and year of study (e.g., B.Tech CSE 3rd Year; no names or student IDs).
+     4. Primary input device preference for CAD work (Mouse & Keyboard vs. Laptop Trackpad).
+     (Purpose: These responses serve as control covariates for exploratory subgroup analysis
+     to determine if prior CAD proficiency moderates AI assistance effectiveness. Responses
+     are indexed solely by your anonymous Participant Code; zero sensitive demographics are collected).
+  b. Brief Interface Orientation (Approx. 5 minutes):
+     A standard demonstration of the 3D room viewport controls (orbit, pan, zoom, translate, rotate).
+  c. Experimental Design Tasks (Two Tasks, Approx. 10–12 minutes each):
      - In one task, you will search a digital furniture catalogue and arrange items manually.
-     - In the other task, an AI design assistant will generate initial layout proposals 
-       that you can visually inspect, approve, or adjust.
-  c. Follow specific realistic design criteria (e.g., arrange a living room within a 
-     ₹60,000 budget while keeping the entry doorway clear).
-  d. Complete a standard 10-item usability survey (System Usability Scale) after each task.
+     - In the other task, an AI design assistant will generate initial layout proposals
+       that you can visually inspect in a 3D preview, approve, and fine-tune.
+     - Both tasks require meeting realistic design constraints (e.g. placing required furniture,
+       maintaining an explicit budget ceiling, and keeping doorway clearance keep-out zones clear).
+  d. Post-Task Usability Evaluations (Approx. 4 minutes each):
+     You will complete a standardized 10-item System Usability Scale (SUS) questionnaire
+     following each task.
 
 3. Voluntary Participation & Right to Withdraw
-Your participation in this study is entirely voluntary. You may choose not to take 
-part, or you may stop participating at any time during the session without giving a 
-reason and without any negative consequences for your academic standing or relationship 
+Your participation in this study is entirely voluntary. You may choose not to take part,
+or you may stop participating at any time during the session without giving a reason and
+without any negative consequences for your academic standing, course grades, or relationship
 with the university.
 
-4. Confidentiality & Data Protection
-- All recorded data is indexed strictly by an assigned anonymous Participant Code (e.g., P01).
-- No personally identifiable information (such as your full name, student ID, email address, 
-  phone number, or IP address) will be stored in the research database or published.
-- The recorded data consists strictly of software interaction counts (additions, moves, edits), 
-  elapsed duration, placed furniture 3D coordinates, and survey responses.
-- ZERO audio recordings, webcam video, eye-tracking, or biometric data are collected.
+4. Participant Compensation & Academic Credit
+Participation in this research study is voluntary. No direct financial remuneration or
+cash payment is provided. Subject to departmental approval and ethics committee clearance,
+undergraduate students enrolled in eligible CSE department courses may receive optional
+course participation credit / extra credit [or specify: No compensation or course credit].
+Choosing not to participate, or withdrawing at any point, carries zero penalty and will
+not disadvantage your academic standing or course assessment.
 
-5. 14-Day Post-Trial Data Withdrawal Window
-You have the right to request the deletion of your recorded data at any time within 
-fourteen (14) days following your session. To request data deletion, simply contact 
-the researcher or supervisor citing your assigned Participant Code. Following this 
-14-day period, the code linkage sheet is permanently destroyed, rendering the research 
-dataset irreversibly anonymized.
+5. Confidentiality, Data Protection & Technical Server Logging Disclosures
+- All evaluation metrics are indexed strictly by an assigned anonymous Participant Code (e.g., P01).
+- No personally identifiable information (such as your full name, student ID, email address,
+  phone number, or contact details) will be stored in the research evaluation database or published.
+- The recorded data consists strictly of software interaction counts (additions, moves, edits),
+  elapsed active duration, placed furniture 3D coordinates, and survey responses.
+- ZERO audio recordings, webcam video, eye-tracking, facial imagery, or biometric data are collected.
+- Technical Server Logging Disclosure: The application evaluation database does not store IP addresses.
+  However, like standard network infrastructure, web server or reverse proxy connection daemons
+  may temporarily log network IP addresses for security diagnostics prior to routine log recycling.
+  To safeguard participant privacy, laboratory trials will be conducted on designated departmental
+  workstations on a monitored lab subnet, and server network logs will never be linked to participant
+  evaluation records.
 
-6. Risks and Benefits
-There are no known risks or discomforts associated with this study beyond those of ordinary 
-computer and keyboard use. You will gain experience interacting with next-generation spatial 
-computing and generative AI tools.
+6. 14-Day Post-Trial Data Withdrawal Window
+You have the right to request the deletion of your recorded data at any time within
+fourteen (14) days following your session. To request data deletion, contact the researcher
+or supervisor citing your assigned Participant Code. Following this 14-day window, the code
+linkage key is permanently destroyed, rendering all research data irreversibly anonymized.
 
-7. Contact for Questions or Concerns
-If you have questions regarding this research study or your rights as a participant, please 
-contact the Principal Investigator or Academic Supervisor through the CSE Department office.
+7. Foreseeable Risks, Discomforts & Mitigations
+The foreseeable physical and psychological risks of this study are comparable to ordinary computer work:
+- Visual / Screen Fatigue: Viewing a 3D WebGL canvas continuously for 30–40 minutes may cause
+  mild eye strain.
+- Physical Discomfort: Repetitive mouse clicking, dragging, or typing may cause mild hand or wrist fatigue.
+- Cognitive Frustration: Attempting to satisfy tight budget ceilings and spatial keep-out zones within
+  the software may induce mild task pressure.
+- Confidentiality Risks: Minimized by pseudonymized coding (P01–P30), capability bearer token hashing
+  via SHA-256, network isolation, and post-study irreversible anonymization.
+Mitigation: You are encouraged to take short pauses between tasks. You may pause, rest, or stop
+the session at any time without penalty.
+
+8. Contact for Questions or Concerns
+If you have questions regarding this research study or your rights as a participant, please
+contact:
+- Principal Investigator: Gourav Sharma [Student Institutional Email — To be populated prior to study]
+- Academic Supervisor: [Supervisor Name, Department of CSE — To be populated prior to study]
+- Ethics Committee Contact: [Institutional Ethics Review Board — To be populated prior to study]
 ================================================================================
 ```
 
@@ -257,26 +301,31 @@ contact the Principal Investigator or Academic Supervisor through the CSE Depart
 PARTICIPANT INFORMED CONSENT FORM (ICF)
 Department of Computer Science & Engineering
 ================================================================================
-Study Title: Evaluating User Experience and Spatial Design Efficiency in Manual vs. 
+Study Title: Evaluating User Experience and Spatial Design Efficiency in Manual vs.
              AI-Assisted Interactive 3D Interior Design
 Principal Investigator: Gourav Sharma (B.Tech Candidate, Computer Science & Engineering)
 
 Please initial each box to confirm your agreement:
 
-[ ] 1. I confirm that I have read and understood the Participant Information Sheet 
+[ ] 1. I confirm that I have read and understood the Participant Information Sheet
        dated October 2026 for the above research study.
-[ ] 2. I have had the opportunity to consider the information, ask questions, and 
+[ ] 2. I have had the opportunity to consider the information, ask questions, and
        any questions asked have been answered satisfactorily.
-[ ] 3. I understand that my participation is voluntary and that I am free to withdraw 
-       at any time during the session without giving any reason and without penalty.
-[ ] 4. I understand that my data will be pseudonymized using a Participant Code and 
-       that I may request deletion of my data within 14 days of participation by citing 
+[ ] 3. I understand that my participation is voluntary and that I am free to pause or
+       withdraw at any time during the session without giving a reason and without penalty.
+[ ] 4. I understand the foreseeable risks (such as mild screen fatigue or hand discomfort)
+       and understand that I may take breaks as needed.
+[ ] 5. I understand that my participation involves no financial remuneration, and any
+       optional course participation credit is subject to departmental ethics approval.
+[ ] 6. I understand that my data will be pseudonymized using an anonymous Participant Code
+       and that I may request deletion of my data within 14 days of participation by citing
        my Participant Code.
-[ ] 5. I understand that after the 14-day withdrawal period, code linkage records will 
-       be destroyed, rendering all research data irreversibly anonymized for thesis 
+[ ] 7. I understand that after the 14-day withdrawal period, code linkage records will
+       be destroyed, rendering all research data irreversibly anonymized for thesis
        reporting and scientific dissemination.
-[ ] 6. I understand that no audio, video, facial imagery, or biometric data will be captured.
-[ ] 7. I agree to participate in the above research study.
+[ ] 8. I understand that no audio, video, facial imagery, or biometric data will be captured,
+       and that web server access logs are not linked to evaluation records.
+[ ] 9. I agree to participate in the above research study.
 
 Participant Name (Printed):  ___________________________________________________
 Participant Signature:       _________________________   Date: _________________
@@ -294,19 +343,19 @@ Before participant recruitment or data collection can commence, every item on th
 
 ```markdown
 - [ ] 1. Academic Supervisor Written Endorsement:
-      Supervisor reviews this package, signs the review memorandum, and records 
-      authoritative decisions for DEC-13 (Degrees of freedom), DEC-14 (SUS item modeling), 
+      Supervisor reviews this package, signs the review memorandum, and records
+      authoritative decisions for DEC-13 (Degrees of freedom), DEC-14 (SUS item modeling),
       and DEC-15 (Random slope structure).
 - [ ] 2. Institutional Ethics Committee / IRB Submission & Protocol Reference Number:
-      Submit formal ethics application containing PIS, ICF, and study protocol; 
-      obtain written clearance reference number (DEC-20). Reference number must be 
+      Submit formal ethics application containing PIS, ICF, and study protocol;
+      obtain written clearance reference number (DEC-20). Reference number must be
       recorded in ETHICS_AND_DATA_GOVERNANCE_GATE.md.
 - [ ] 3. Non-Participant Target-Hardware Dry Run (Post-Ethics Precondition):
-      Following ethics clearance, execute single synthetic trial (ID: DRYRUN_TEST_01) 
-      on the physical realme Narzo 70 Turbo 5G device to verify database write latency, 
+      Following ethics clearance, execute single synthetic trial (ID: DRYRUN_TEST_01)
+      on the physical realme Narzo 70 Turbo 5G device to verify database write latency,
       mobile rendering stability, and export integrity under physical lab Wi-Fi.
 - [ ] 4. Telemetry Safeguard Verification:
-      Confirm ENABLE_EVALUATION_TELEMETRY=False remains the production default, to be 
+      Confirm ENABLE_EVALUATION_TELEMETRY=False remains the production default, to be
       enabled solely on isolated lab server during authorized testing hours.
 - [ ] 5. Recruitment Authorization:
       Participant recruitment begins strictly after Steps 1–4 are fully signed off.
@@ -338,9 +387,9 @@ ROOMGENIE AI — ACADEMIC SUPERVISOR REVIEW & ETHICS SUBMISSION SIGN-OFF
      [ ] Other: ________________________________________________________________
 
 2. Endorsement for Institutional Ethics Committee Submission:
-   "I have reviewed the study protocol, Statistical Analysis Plan, Participant 
-   Information Sheet, and Informed Consent Form for the RoomGenie AI research project. 
-   I endorse this dossier for formal submission to the Institutional Ethics Review 
+   "I have reviewed the study protocol, Statistical Analysis Plan, Participant
+   Information Sheet, and Informed Consent Form for the RoomGenie AI research project.
+   I endorse this dossier for formal submission to the Institutional Ethics Review
    Committee / Institutional Review Board."
 
 Academic Supervisor Signature:  ________________________________________________
