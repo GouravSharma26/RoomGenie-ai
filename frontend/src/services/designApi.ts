@@ -14,7 +14,8 @@ export interface DesignRecord {
   updated_at: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './apiConfig';
+
 const TOKEN_KEY = 'roomgenie_auth_token';
 
 export function getAuthToken(): string | null {

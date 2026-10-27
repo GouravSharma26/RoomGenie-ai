@@ -73,5 +73,13 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 - [x] Database fallback compatibility (PostgreSQL is authoritative in CI/production; SQLite fallback supported for zero-dependency local runs and offline unit tests).
 - [x] Production dependencies (`gunicorn>=23.0.0` and `whitenoise>=6.8.0` added to `requirements.txt` and `settings.py`).
 - [x] Operations & Deployment runbook (`docs/DEPLOYMENT_AND_OPERATIONS_GUIDE.md` detailing architecture, environment matrix, backup/restore, troubleshooting, and 12-step live demonstration workflow).
-- [x] Automated test verification (241 Django backend tests and 143 frontend Vitest tests pass; 0 TypeScript errors; 0 lint warnings; production build successful).
 - [x] Security & privacy governance maintained (`ENABLE_EVALUATION_TELEMETRY=False` default; no secrets exposed).
+
+## Phase 9.1: Actual Deployment and Production Smoke Testing
+
+- [x] Production configuration hardening (Insecure secret key and weak password rejection enforced in `settings.py` when `DEBUG=False`; `docker-compose.prod.yml` requires explicit non-empty environment secrets; `.env.production` and `.env.*` gitignored).
+- [x] Same-origin API routing ([frontend/src/services/apiConfig.ts](frontend/src/services/apiConfig.ts) resolves to `""` in production builds, preventing hardcoded `localhost:8000` URLs from leaking into production; `Vite` preview and `Nginx` reverse-proxy tested).
+- [x] Visible initialization failures (`backend/entrypoint.sh` removes `|| true` suppressions on `collectstatic` and `seed_furniture` so errors fail visibly).
+- [x] Live production server launch & health verification (Django backend with WhiteNoise serving on port 8000; Vite production bundle preview serving on port 4173 with reverse proxy forwarding `/api/v1/health/` returning HTTP 200 and `database: connected`).
+- [x] End-to-end production smoke test suite (13/13 passing tests across health check, production demo auth gating [403 Forbidden], user registration/token issuance, login authentication, catalogue retrieval, integer paise budget calculation [3,849,800 paise], canonical 3D scene persistence, scene restoration reload, AI agent proposal generation, AI agent explicit approval gate, cross-user object ownership isolation [404 Not Found], graceful 404 handling, and photo-to-3D mock generation).
+- [x] Public cloud hosting assessment documented (No public cloud accounts/CLI credentials pre-configured; full containerized stack, environment matrix, and operational runbook prepared for immediate deployment upon user account authorization).

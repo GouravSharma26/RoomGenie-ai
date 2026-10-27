@@ -18,11 +18,11 @@ python manage.py migrate --noinput
 
 # Collect static files
 echo "Collecting static assets..."
-python manage.py collectstatic --noinput --clear || true
+python manage.py collectstatic --noinput --clear
 
 # Seed architectural furniture catalogue if not already populated
 echo "Seeding architectural furniture catalogue..."
-python manage.py seed_furniture || true
+python manage.py seed_furniture
 
 # Start Gunicorn production WSGI server
 echo "Starting Gunicorn server on 0.0.0.0:8000..."

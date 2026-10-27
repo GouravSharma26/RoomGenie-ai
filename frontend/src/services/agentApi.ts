@@ -1,7 +1,6 @@
 import type { CanonicalScene } from '../types/scene';
 import { ensureAuthenticated } from './designApi';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './apiConfig';
 
 export interface ProposedAction {
   name: 'add_furniture' | 'move_object' | 'replace_furniture' | 'remove_object' | 'set_material' | 'clear_room';

@@ -157,10 +157,19 @@ REST_FRAMEWORK = {
 
 # Production safety validations (ensure dev defaults cannot silently run in production)
 if not DEBUG:
-    if SECRET_KEY == 'django-insecure-default-roomgenie-dev-key-change-in-production':
-        raise ValueError("DJANGO_SECRET_KEY must be securely configured when DJANGO_DEBUG=False.")
-    if DB_PASSWORD in ('postgres', ''):
-        raise ValueError("DB_PASSWORD must be explicitly configured with a secure password when DJANGO_DEBUG=False.")
+    INSECURE_KEYS = {
+        'django-insecure-default-roomgenie-dev-key-change-in-production',
+        'django-insecure-change-me-in-production-roomgenie-local-dev-key',
+        'roomgenie-production-secret-key-change-me',
+        'change-this-to-a-very-long-and-secure-random-string-in-prod',
+        '',
+    }
+    if SECRET_KEY in INSECURE_KEYS or len(SECRET_KEY) < 32:
+        raise ValueError("DJANGO_SECRET_KEY must be securely configured (at least 32 characters, non-default) when DJANGO_DEBUG=False.")
+
+    WEAK_PASSWORDS = {'postgres', 'roomgenie_secure_pass', 'password', 'admin', 'root', ''}
+    if DB_PASSWORD in WEAK_PASSWORDS or len(DB_PASSWORD) < 8:
+        raise ValueError("DB_PASSWORD must be explicitly configured with a strong, non-default password (at least 8 characters) when DJANGO_DEBUG=False.")
 
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = [

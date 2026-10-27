@@ -1,7 +1,9 @@
 # Environment variables and secrets
 .env
+.env.production
 .env.local
 .env.*.local
+.env.*
 *.env
 
 # Python & Django
@@ -11,8 +13,9 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
+staticfiles/
+backend/staticfiles/
 downloads/
 eggs/
 .eggs/

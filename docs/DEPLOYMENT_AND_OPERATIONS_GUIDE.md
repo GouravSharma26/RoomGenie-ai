@@ -67,16 +67,19 @@ cd roomgenie-ai
 cp .env.example .env.production
 ```
 
+# Generate a secure 50+ character secret key:
+# python -c "import secrets; print(secrets.token_urlsafe(50))"
+
 Configure the production secrets in `.env.production`:
 ```env
 DJANGO_DEBUG=False
-DJANGO_SECRET_KEY=change-this-to-a-very-long-and-secure-random-string-in-prod
+DJANGO_SECRET_KEY=k7B_9vM2xL4qP9wZ1yD8fG3jR6tV5nC0mX7sA4eQ2wE8rT1yU9iO5pA3sD7fG1hJ4
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,backend,frontend
 
 DB_ENGINE=django.db.backends.postgresql
 DB_NAME=roomgenie_db
 DB_USER=roomgenie_user
-DB_PASSWORD=roomgenie_super_secure_production_password_2026
+DB_PASSWORD=rG_p9!s3cure_db_pass_2026_prod
 DB_HOST=postgres
 DB_PORT=5432
 

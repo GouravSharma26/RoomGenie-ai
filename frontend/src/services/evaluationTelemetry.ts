@@ -1,4 +1,5 @@
 import type { CanonicalScene } from '../types/scene';
+import { API_BASE_URL } from './apiConfig';
 
 export type EvaluationCondition = 'manual' | 'ai_assisted';
 export type EvaluationSequence = 'G1' | 'G2' | 'G3' | 'G4';
@@ -96,7 +97,6 @@ export interface StartSessionParams {
 
 const STORAGE_KEY = 'roomgenie_evaluation_session';
 const PENDING_STORAGE_KEY = 'roomgenie_evaluation_pending_session';
-const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:8000';
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let lastInteractionTimestamp: number = Date.now();

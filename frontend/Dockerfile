@@ -10,6 +10,9 @@ RUN npm ci
 # Copy frontend source code and public assets
 COPY . .
 
+# Explicitly set empty VITE_API_URL for production so requests use same-origin relative paths through Nginx
+ENV VITE_API_URL=""
+
 # Build production bundle with TypeScript check
 RUN npm run build
 
