@@ -5,9 +5,10 @@
 **Branch:** `main`  
 **Starting Baseline Commit:** `39a34a1`  
 **Phase 8.4 Closure Commit:** `33581f2` (Verified and pushed to `origin/main`)  
-**Phase 8.5 Commit:** `aded08e` (Verified in GitHub Actions CI Run 40547878994)
-**Phase:** 8.5 — Research Readiness Gate & Analysis Plan Lock  
-**Final Verdict:** **`READY FOR SUPERVISOR REVIEW`** *(Governance Gate Closed Pending Institutional Ethics Approval)*  
+**Phase 8.5 Baseline Commits:** `aded08e` (CI Run 40547878994) / `1a1982b` (CI Run 40549462524)<br/>
+**Phase:** 8.5 — Research Readiness Gate & Analysis Plan Lock<br/>
+**Final Verdict:** **`APPROVED WITH DOCUMENTED LIMITATIONS`** *(Pre-Study Readiness Approved; Governance Gate Closed Pending Institutional Ethics Clearance & Supervisor Package Sign-Off)*
+
 
 ---
 
@@ -96,12 +97,14 @@ Prior to the system restart, the full test suite had also been verified locally:
 1. **Governance Blocker (External):** Institutional Ethics Review Committee clearance is pending. Participant recruitment and trial scheduling cannot commence until official clearance is received.
 2. **Supervisor Sign-Off (Academic):** Selection between Satterthwaite and Kenward–Roger LMM adjustments and approval of exploratory ordinal SUS analysis must be formalized prior to unblinding study data.
 3. **Physical Testing Precondition:** Following ethics approval, a single-session target-hardware dry run on the `realme Narzo 70 Turbo 5G` using a synthetic fixture must be performed before the first participant session.
+4. **Data Quality Precision Limitation (UUIDv4 Enforcement):** Primary key uniqueness and RFC 4122 UUID syntax are automated at model and serializer levels, but UUID version 4 specifically is not enforced at the API boundary (`StartSessionSerializer` parses any RFC 4122 UUID). Conformance to UUIDv4 is classified as a post-export manual audit / validation-script check.
+5. **Export Determinism Limitation (Timestamp Collisions):** The export command applies `.order_by('start_time')`. In the event that multiple sessions share identical start timestamps (e.g. synthetic test fixtures), secondary tie-breaker ordering is not guaranteed at the query level and requires secondary sorting by `sessionId` during pre-flight data ingestion.
 
 ---
 
 ## 7. Recommended Next Steps
 
-1. **Submit Readiness Package:** Provide [`docs/RESEARCH_PROTOCOL_AND_TASKS.md`](RESEARCH_PROTOCOL_AND_TASKS.md), [`docs/STATISTICAL_ANALYSIS_PLAN.md`](STATISTICAL_ANALYSIS_PLAN.md), [`docs/RESEARCH_DECISION_REGISTER.md`](RESEARCH_DECISION_REGISTER.md), and [`docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`](ETHICS_AND_DATA_GOVERNANCE_GATE.md) to the academic project supervisor for formal review.
+1. **Submit Readiness Package:** Provide [`docs/RESEARCH_PROTOCOL_AND_TASKS.md`](RESEARCH_PROTOCOL_AND_TASKS.md), [`docs/STATISTICAL_ANALYSIS_PLAN.md`](STATISTICAL_ANALYSIS_PLAN.md), [`docs/RESEARCH_DECISION_REGISTER.md`](RESEARCH_DECISION_REGISTER.md), [`docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`](RESEARCH_DATA_QUALITY_CHECKLIST.md), and [`docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`](ETHICS_AND_DATA_GOVERNANCE_GATE.md) to the academic project supervisor for formal review.
 2. **Submit Ethics Application:** Prepare the institutional ethics board submission with the supervisor's endorsement.
 3. **Maintain Safeguards:** Keep `ENABLE_EVALUATION_TELEMETRY=False` active and all participant recruitment paused.
 
@@ -109,7 +112,7 @@ Prior to the system restart, the full test suite had also been verified locally:
 
 ## 8. Final Readiness Verdict
 
-$$\mathbf{READY\ FOR\ SUPERVISOR\ REVIEW}$$
+$$\mathbf{APPROVED\ WITH\ DOCUMENTED\ LIMITATIONS}$$
 
 **Justification:**  
-All software components, telemetry metrics, survey validation rules, and dataset export commands are fully implemented, verified, and documented. The statistical analysis plan is mathematically defined and locked against p-hacking. The three open supervisor decisions are isolated and accompanied by justified recommendations. The ethics gate is explicitly closed, with participant recruitment strictly paused pending institutional review board clearance. The project is completely prepared for academic supervisor review.
+All software components, telemetry metrics, survey validation rules, and dataset export commands are fully implemented, verified, and documented. The statistical analysis plan is mathematically defined and locked against p-hacking. The three open supervisor decisions are isolated and accompanied by justified recommendations. The data quality checklist precisely identifies automated model/API guarantees versus manual/post-export audit requirements, including UUIDv4 verification and export tie-ordering limitations. The ethics gate is explicitly closed, with participant recruitment strictly paused pending institutional review board clearance. Pre-study readiness is approved with documented limitations, and the project is fully prepared for academic supervisor review.

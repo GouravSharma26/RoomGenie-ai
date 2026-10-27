@@ -38,8 +38,11 @@ Every quality check is explicitly categorized by execution mechanism:
   *Classification:* `AUTOMATED (MODEL/API VERIFIED)` via `get_schemaVersion()` method field in `serializers.py`.
 
 ### Dimension 2: Duplicate Records & Identifier Uniqueness
-- [ ] **2.1 Session ID Uniqueness:** Every `sessionId` is a unique UUIDv4; zero duplicate session IDs across the exported dataset.  
-  *Classification:* `AUTOMATED (MODEL/API VERIFIED)` via PostgreSQL primary key constraint on `EvaluationSession.id`.
+- [ ] **2.1 Session ID Uniqueness, Format Validity & UUIDv4 Compliance:**
+  - *Uniqueness:* Zero duplicate session IDs across the exported dataset (`AUTOMATED (MODEL/API VERIFIED)` via PostgreSQL primary key constraint on `EvaluationSession.id`).
+  - *Format Validity:* Standard RFC 4122 UUID formatting (`AUTOMATED (MODEL/API VERIFIED)` via DRF `StartSessionSerializer.sessionId` and Django `models.UUIDField`).
+  - *UUID Version 4 Specifically:* Verified compliance with UUIDv4 (`version == 4`).
+  *Classification:* `MANUAL AUDIT` / `FUTURE SCRIPT` for Version 4 specifically (while `EvaluationSession.id` specifies `default=uuid.uuid4`, client-initiated sessions pass `sessionId` through `StartSessionSerializer`, where DRF accepts any valid RFC 4122 UUID without asserting `version == 4`; dataset-wide UUIDv4 conformance must be verified post-export via validation script `uuid.UUID(row['sessionId']).version == 4` or manual audit).
 - [ ] **2.2 Participant Observation Balance:** Exactly 2 completed session records exist per participant ID (one for Period 1, one for Period 2), or an explicit abort record is present.  
   *Classification:* `MANUAL AUDIT` (Cross-tabulate `participantId` by `trialPeriod`; verify `count == 2` per participant).
 
@@ -110,8 +113,10 @@ Every quality check is explicitly categorized by execution mechanism:
   *Classification:* `AUTOMATED (MODEL/API VERIFIED)` via `hashlib.sha256()` in `views.py`.
 
 ### Dimension 11: Export Reproducibility & Record Counts
-- [ ] **11.1 Export Command Determinism:** Re-running `python manage.py export_evaluation_dataset --format csv --status completed` produces an identical row order (ordered by `startTime`).  
-  *Classification:* `AUTOMATED (MODEL/API VERIFIED)` via `.order_by('start_time')` in `export_evaluation_dataset.py`.
+- [ ] **11.1 Export Command Determinism & Timestamp Tie Limitation:**
+  - Re-running `python manage.py export_evaluation_dataset --format csv --status completed` produces chronological row ordering by `startTime`.
+  - *Limitation / Tie Handling:* Query ordering relies strictly on `.order_by('start_time')`. For records with distinct start timestamps, row ordering is deterministic. However, if multiple records share identical start timestamps (e.g. batch fixtures or clock resolution collisions), secondary tie-breaker ordering is non-deterministic at the database query engine level (as no secondary unique sort key like `id` is specified).
+  *Classification:* `AUTOMATED (MODEL/API VERIFIED)` for unique timestamps; `MANUAL AUDIT` / `DOCUMENTED LIMITATION` for timestamp collisions (researchers must audit start timestamps for collisions or sort by `(startTime, sessionId)` during post-export data ingestion).
 - [ ] **11.2 Record Count Verification:** Number of exported CSV rows equals the count of completed database records ($N_{\text{exported}} = N_{\text{DB}}$).  
   *Classification:* `MANUAL AUDIT` (Confirm exported row count against independent session tracking log).
 

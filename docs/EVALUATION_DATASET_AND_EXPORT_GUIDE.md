@@ -47,6 +47,12 @@ python manage.py export_evaluation_dataset --format csv --status completed --out
 | `--task` | string | `living_room`, `home_study` | `None` (all) | Restricts export to a specific experimental task. |
 | `--status` | string | `in_progress`, `completed`, `aborted` | `None` (all) | Restricts export to sessions with the specified terminal or in-flight state. |
 
+### 2.1 Export Determinism & Ordering Semantics
+
+The export command executes `queryset.order_by('start_time')`.
+- **Chronological Determinism:** When records have distinct start timestamps, row output ordering is deterministic across repeated export executions.
+- **Timestamp Collisions (Documented Limitation):** If multiple sessions share identical `start_time` timestamps (e.g. batch-seeded synthetic records), secondary tie-breaker ordering is not guaranteed at the database engine level (no secondary sort key like `id` is specified). For strict row-order reproducibility when ties are possible, pre-flight analysis scripts should apply secondary sorting by `sessionId`.
+
 ---
 
 ## 3. Dataset Schemas & Authoritative Field Mapping
@@ -57,7 +63,7 @@ The CSV format serializes tabular records containing 33 columns. It is designed 
 
 | Column Header | Data Type | Nullable? | Source Model Field | Description |
 | :--- | :---: | :---: | :--- | :--- |
-| `sessionId` | UUID string | No | `id` | Unique UUIDv4 identifier for the trial session. |
+| `sessionId` | UUID string | No | `id` | Unique UUID identifier for the trial session (format validated by DRF serializer; uniqueness enforced by primary key). |
 | `participantId` | string | No | `participant_id` | Pseudonymized participant code (e.g., `P01`, `P04`). |
 | `condition` | string | No | `condition` | Experimental condition (`manual` or `ai_assisted`). |
 | `sequenceOrder` | string | No | `sequence_order` | Counterbalancing sequence group (`G1`, `G2`, `G3`, `G4`). |
