@@ -57,7 +57,8 @@ roomgenie-ai/
 │   ├── STATISTICAL_ANALYSIS_PLAN.md           # Pre-registered SAP: models, diagnostics, FWER control
 │   ├── RESEARCH_DATA_QUALITY_CHECKLIST.md     # 11-dimensional pre-/post-collection data audit checklist
 │   ├── ETHICS_AND_DATA_GOVERNANCE_GATE.md     # Institutional pre-clearance gate, consent, data minimization
-│   ├── PHASE_8_5_RESEARCH_READINESS_REPORT.md # Executive readiness synthesis & supervisor review package
+│   ├── SUPERVISOR_REVIEW_PACKAGE.md           # Unified supervisor review dossier & ethics submission materials
+│   ├── PHASE_8_5_RESEARCH_READINESS_REPORT.md # Executive readiness synthesis & precision audit verdict
 │   ├── THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md # 12-chapter B.Tech thesis outline & LMM/GLMM models
 │   ├── EVALUATION_DATASET_AND_EXPORT_GUIDE.md # CLI export workflow, CSV/JSON schema specification
 │   ├── RESEARCH_PROTOCOL_AND_TASKS.md         # Within-subject crossover protocol, Latin square, rubrics
@@ -278,7 +279,14 @@ python manage.py export_evaluation_dataset --format=csv --output=data/evaluation
   - Formal Statistical Analysis Plan (SAP) locking $H_{01}..H_{04}$, LMM/GLMM models, diagnostics, and Holm-Bonferroni correction ([`docs/STATISTICAL_ANALYSIS_PLAN.md`](docs/STATISTICAL_ANALYSIS_PLAN.md))
   - 11-dimensional research data quality and integrity checklist ([`docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`](docs/RESEARCH_DATA_QUALITY_CHECKLIST.md))
   - Pre-clearance ethics and data governance gate with paused participant recruitment ([`docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`](docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md))
-  - Executive research readiness report and supervisor review package ([`docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md`](docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md))
+  - Executive research readiness report and precision audit verdict ([`docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md`](docs/PHASE_8_5_RESEARCH_READINESS_REPORT.md))
+- [x] **Phase 8.6 — Supervisor Review Package & Ethics Submission Preparation**
+  - Unified Academic Supervisor Review Package & Ethics Submission Dossier ([`docs/SUPERVISOR_REVIEW_PACKAGE.md`](docs/SUPERVISOR_REVIEW_PACKAGE.md))
+  - Research protocol, Latin square counterbalancing, and confirmatory hypotheses ($H_{01} \dots H_{04}$)
+  - Formal presentation of isolated pending supervisor decisions (`DEC-13`, `DEC-14`, `DEC-15`)
+  - Complete 21-decision research register, 11-dimensional data quality checklist, and export guide
+  - Draft Participant Information Sheet (PIS) and Informed Consent Form (ICF) with 14-day withdrawal right
+  - Explicit checklist of outstanding institutional ethics approvals and pre-study requirements
 - [ ] **Empirical Phase — Participant Study & Final Thesis Defense**
   - Institutional ethics committee review and clearance (Prerequisite)
   - Target-hardware end-to-end dry run (Post-ethics, Pre-collection)

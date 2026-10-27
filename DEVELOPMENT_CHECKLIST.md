@@ -60,7 +60,7 @@ Use this after every milestone. Keep it honest: only tick items you personally v
 ## Release and research
 
 - [x] No credentials, private photos, local database dumps, or private participant data are committed (Verified: `.env` is gitignored; ephemeral photos expire and clean up automatically; telemetry disabled by default).
-- [x] Research task, measures, consent procedure, and limitations are documented (Documented in `docs/RESEARCH_PROTOCOL_AND_TASKS.md`, `docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md`, `docs/EVALUATION_DATASET_AND_EXPORT_GUIDE.md`, `docs/RESEARCH_DECISION_REGISTER.md`, `docs/STATISTICAL_ANALYSIS_PLAN.md`, `docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`, and `docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`).
+- [x] Research task, measures, consent procedure, and limitations are documented (Documented in `docs/RESEARCH_PROTOCOL_AND_TASKS.md`, `docs/THESIS_SYNTHESIS_AND_REPORT_OUTLINE.md`, `docs/EVALUATION_DATASET_AND_EXPORT_GUIDE.md`, `docs/RESEARCH_DECISION_REGISTER.md`, `docs/STATISTICAL_ANALYSIS_PLAN.md`, `docs/RESEARCH_DATA_QUALITY_CHECKLIST.md`, `docs/ETHICS_AND_DATA_GOVERNANCE_GATE.md`, and `docs/SUPERVISOR_REVIEW_PACKAGE.md`).
 - [ ] Results are based on actual collected data, not simulated claims (Software engineering verification, strict SUS validation, and export command verified complete; human participant data collection strictly paused pending formal institutional ethics board approval).
 - [x] Screenshots/demo match the implemented version (Verified in `docs/SCREENSHOTS.md` and `docs/MANUAL_AR_TESTING_PROTOCOL.md`).
 - [x] README describes current features and known limitations accurately.
