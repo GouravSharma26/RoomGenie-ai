@@ -25,9 +25,12 @@ import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 import { ArPlacementModal } from './components/editor/ArPlacementModal';
 import { EvaluationTrialModal } from './components/editor/EvaluationTrialModal';
+import { AuthModal } from './components/auth/AuthModal';
 import { initEvaluationTelemetry } from './services/evaluationTelemetry';
 import { ensureAuthenticated, getDesignById } from './services/designApi';
+import { useAuthStore } from './services/authStore';
 import { useEditorStore } from './editor3d/store/editorStore';
+import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'editor' | 'dashboard'>('editor');
@@ -43,6 +46,8 @@ export default function App() {
   const [isArModalOpen, setIsArModalOpen] = useState<boolean>(false);
   const [isEvaluationTrialOpen, setIsEvaluationTrialOpen] = useState<boolean>(false);
 
+  const { isAuthenticated, user, logout, openAuthModal, checkAuth } = useAuthStore();
+
   const fetchHealth = async () => {
     setLoading(true);
     const result = await checkBackendHealth();
@@ -50,6 +55,10 @@ export default function App() {
     setLastChecked(new Date());
     setLoading(false);
   };
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   useEffect(() => {
     let isMounted = true;
@@ -149,6 +158,32 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3 text-xs text-slate-400">
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/60 border border-indigo-700/60 text-indigo-300 text-xs">
+                  <UserIcon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="font-medium max-w-[120px] truncate">{user?.username || 'Account'}</span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-slate-700/80 hover:border-rose-800/50 flex items-center gap-1.5 transition text-xs"
+                  title="Sign out of account"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => openAuthModal('login')}
+                className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition shadow-sm text-xs"
+                title="Sign in or create account"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )}
+
             <span className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/60 border border-slate-700/60 text-[11px]">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               B.Tech CSE Project
@@ -352,6 +387,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <AuthModal />
     </div>
   );
 }

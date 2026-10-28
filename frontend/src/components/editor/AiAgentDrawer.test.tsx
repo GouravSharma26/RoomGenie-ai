@@ -9,6 +9,7 @@ import {
   type ActiveEvaluationSession 
 } from '../../services/evaluationTelemetry';
 import type { CanonicalScene } from '../../types/scene';
+import { useAuthStore } from '../../services/authStore';
 
 vi.mock('../../services/agentApi');
 
@@ -56,6 +57,12 @@ describe('AiAgentDrawer Telemetry Integration', () => {
     sessionStorage.clear();
     clearActiveSession();
     vi.restoreAllMocks();
+
+    useAuthStore.setState({
+      isAuthenticated: true,
+      token: 'mock-agent-test-token',
+      user: { id: 1, username: 'testuser', email: 'test@example.com' },
+    });
 
     vi.mocked(agentApi.createAgentSession).mockResolvedValue({
       id: 'mock-agent-session-id',

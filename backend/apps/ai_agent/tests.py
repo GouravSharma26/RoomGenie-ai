@@ -1,7 +1,9 @@
 import threading
+import unittest
 import uuid
 from decimal import Decimal
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
@@ -678,6 +680,7 @@ class AgentApiSecurityAndApprovalTests(APITestCase):
         self.assertEqual(len(self.design_a.scene_json['objects']), 0)
 
 
+@unittest.skipIf(connection.vendor != 'postgresql', "Concurrency testing requires PostgreSQL row-level locks")
 class AgentConcurrencyAndAtomicApplyTests(APITransactionTestCase):
     """
     Concurrency and data-integrity tests verifying atomic row-level locking (select_for_update)

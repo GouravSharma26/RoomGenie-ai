@@ -13,16 +13,17 @@ An AI-Agent-Assisted Interior Design System combining interactive 3D furniture p
 > **Research Ethics & Telemetry Governance:**
 > - `ENABLE_EVALUATION_TELEMETRY=False` remains the default across all environments. Telemetry recording is only activated when explicitly configured for approved user studies.
 > - Participant recruitment remains strictly **PAUSED** pending formal institutional ethics committee review.
-> - Automated software verification (241 Django backend tests and 143 frontend Vitest tests) confirms engineering correctness but does **not** constitute ethics clearance or empirical human-subject findings.
+> - Automated software verification (241 Django backend tests and 156 frontend Vitest tests) confirms engineering correctness but does **not** constitute ethics clearance or empirical human-subject findings.
 > - All empirical thesis tables, effect sizes, and results remain unpopulated placeholders until formal approval and actual participant trials.
 
 ---
 
 ## Technical Stack & Locked Decisions
 
-- **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS v4 (143 Vitest unit/integration tests)
+- **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS v4 (156 Vitest unit/integration tests across 15 test suites)
 - **3D Engine:** Three.js + React Three Fiber + Drei (Phase 1)
 - **Backend:** Python 3.12 + Django 5.2 LTS + Django REST Framework + CORS Headers (241 Django unit/integration tests)
+- **Authentication:** Django REST Framework Token Authentication (`/api/v1/auth/login/`, `/api/v1/auth/register/`, `/api/v1/auth/me/`) with client `useAuthStore` session management and production-disabled demo bypass (`ALLOW_DEMO_AUTH=False`)
 - **Database:** PostgreSQL 17 (authoritative relational & canonical scene persistence)
 - **AI Baselines:** 
   - LLM & Spatial Reasoning: Google Gemini API (`gemini-3.8-flash`) behind `BaseDesignLLMAdapter`, deterministic `MockDesignLLMAdapter` default in dev/tests

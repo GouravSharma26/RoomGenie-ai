@@ -1,14 +1,18 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import App from './App';
 import * as api from './services/api';
 import * as agentApi from './services/agentApi';
 import * as designApi from './services/designApi';
 import { useEditorStore } from './editor3d/store/editorStore';
+import { useAuthStore } from './services/authStore';
 
 vi.mock('./services/api');
 vi.mock('./services/designApi', () => ({
   ensureAuthenticated: vi.fn().mockResolvedValue('mock-token'),
+  getAuthToken: vi.fn().mockReturnValue('mock-token'),
+  setAuthToken: vi.fn(),
+  removeAuthToken: vi.fn(),
   getDesignById: vi.fn(),
   listSavedDesigns: vi.fn().mockResolvedValue([]),
   saveDesignToBackend: vi.fn().mockResolvedValue({ id: 'test-id', title: 'Test' }),
@@ -172,8 +176,30 @@ vi.mock('./components/editor/ModelPreviewCanvas', () => ({
 }));
 
 describe('RoomGenie AI App Component', () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/api/v1/auth/me/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ id: 1, username: 'demo_engineer', email: 'demo@roomgenie.local' }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+    });
+
+    useAuthStore.setState({
+      isAuthenticated: true,
+      token: 'mock-token',
+      user: { id: 1, username: 'demo_engineer', email: 'demo@roomgenie.local' },
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   it('renders application brand and 3D Room Editor by default', () => {

@@ -26,23 +26,22 @@ export function setAuthToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function removeAuthToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export class AuthenticationRequiredError extends Error {
+  constructor(message: string = 'Authentication required. Please sign in to access this feature.') {
+    super(message);
+    this.name = 'AuthenticationRequiredError';
+  }
+}
+
 export async function ensureAuthenticated(): Promise<string> {
   const existing = getAuthToken();
   if (existing) return existing;
 
-  // Seamlessly provision local development/demo engineer account
-  const res = await fetch(`${API_BASE_URL}/api/v1/auth/demo/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Authentication initialization failed: HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  setAuthToken(data.token);
-  return data.token;
+  throw new AuthenticationRequiredError();
 }
 
 function getAuthHeaders(token: string) {

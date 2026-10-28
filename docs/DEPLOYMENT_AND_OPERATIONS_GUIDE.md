@@ -262,6 +262,16 @@ Room photos uploaded for vision analysis are subject to a 1-hour retention polic
 docker compose -f docker-compose.prod.yml exec backend python manage.py cleanup_expired_photos
 ```
 
+### Production User Authentication
+
+In production environments (`DJANGO_DEBUG=False`, `ALLOW_DEMO_AUTH=False`), the mock demo endpoint `/api/v1/auth/demo/` is strictly disabled and responds with HTTP 403 Forbidden.
+
+RoomGenie AI uses Django REST Framework Token Authentication:
+1. **User Registration:** Users create an account via `POST /api/v1/auth/register/` (Username, Email, Password).
+2. **User Login:** Users log in via `POST /api/v1/auth/login/` (Username/Email, Password) to receive an authentication token.
+3. **Session Validation:** The frontend validates active credentials via `GET /api/v1/auth/me/` on application mount.
+4. **Protected Features:** Cloud design saving/loading (`/api/v1/designs/`) and the AI Assistant (`/api/v1/ai/`) require active authentication. Unauthenticated users are presented with clear login/registration prompts rather than failing background network calls.
+
 ---
 
 ## 7. Troubleshooting Matrix
@@ -270,6 +280,7 @@ docker compose -f docker-compose.prod.yml exec backend python manage.py cleanup_
 |---|---|---|
 | Frontend displays `Backend Unreachable` | Backend container is starting or crashed. | Check `docker compose logs backend`. Verify PostgreSQL health check passes. |
 | `DJANGO_SECRET_KEY must be securely configured` | `DJANGO_DEBUG=False` with default secret key. | Set a secure non-default `DJANGO_SECRET_KEY` in `.env.production`. |
+| 403 Forbidden on `/api/v1/auth/demo/` | Demo bypass is disabled in production. | Expected behavior. Users must log in or register through the user account modal (`POST /api/v1/auth/login/` or `/register/`). |
 | 403 Forbidden on API calls | Missing CORS origin or CSRF header. | Ensure browser origin is listed in `CORS_ALLOWED_ORIGINS`. In reverse proxy mode, accessing via port 80 avoids CORS entirely. |
 | 3D models fail to render | Missing `.glb` files in static distribution. | Check `/usr/share/nginx/html/models/` in frontend container. Verify `coffee_table.glb`, `desk.glb`, `sofa.glb` are present. |
 | Database connection refused on port 5433 | Native PostgreSQL already bound to 5432/5433. | Use `docker-compose.prod.yml` which communicates over internal Docker bridge network without host port collision. |

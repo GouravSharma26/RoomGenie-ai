@@ -12,9 +12,11 @@ import {
   Palette, 
   Trash2, 
   RefreshCw,
-  Coins
+  Coins,
+  LogIn
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
+import { useAuthStore } from '../../services/authStore';
 import { 
   createAgentSession, 
   sendAgentPrompt, 
@@ -100,9 +102,12 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     scrollToBottom();
   }, [messages, isLoading]);
 
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const openAuthModal = useAuthStore((state) => state.openAuthModal);
+
   // Initialize or fetch active session on first drawer open
   useEffect(() => {
-    if (!isOpen || session) return;
+    if (!isOpen || session || !isAuthenticated) return;
 
     let isSubscribed = true;
     void Promise.resolve().then(async () => {
@@ -127,7 +132,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     return () => {
       isSubscribed = false;
     };
-  }, [isOpen, session]);
+  }, [isOpen, session, isAuthenticated]);
 
   const handleSubmitPrompt = useCallback(async (promptText: string) => {
     const trimmed = promptText.trim();
@@ -348,13 +353,34 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         </div>
       )}
 
-      {/* Messages Thread */}
+      {/* Messages Thread or Sign In Required */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-          >
+        {!isAuthenticated ? (
+          <div className="h-full flex flex-col items-center justify-center p-6 text-center space-y-4 my-auto">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600/30 via-indigo-600/30 to-pink-600/30 border border-purple-500/40 text-purple-400 flex items-center justify-center shadow-xl shadow-purple-950/60 ring-1 ring-white/10">
+              <Sparkles className="w-7 h-7 text-yellow-300 animate-pulse" />
+            </div>
+            <div className="max-w-xs space-y-1.5">
+              <h3 className="text-sm font-bold text-white">Sign In to use AI Designer</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Spatial layout recommendations, 2-phase proposals, and budget validation require an authenticated account.
+              </p>
+            </div>
+            <button
+              onClick={() => openAuthModal('login')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition active:scale-95 border border-purple-400/30"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Sign In / Create Account</span>
+            </button>
+          </div>
+        ) : (
+          <>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
+              >
             {/* Sender Bubble */}
             <div
               className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
@@ -503,59 +529,65 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
             <span>AI is designing and validating room layout...</span>
           </div>
         )}
-        <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} />
+          </>
+        )}
       </div>
 
-      {/* Suggested Quick Prompts */}
-      <div className="px-4 py-2 border-t border-slate-800/80 bg-slate-950/40">
-        <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider block mb-1.5">
-          Suggested Prompts:
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {QUICK_PROMPTS.map((prompt, i) => (
-            <button
-              key={i}
-              onClick={() => handleSubmitPrompt(prompt)}
-              disabled={isLoading}
-              className="text-[11px] text-slate-300 hover:text-white bg-slate-800/80 hover:bg-indigo-900/40 border border-slate-700/80 hover:border-indigo-500/40 px-2 py-1 rounded-md transition text-left truncate max-w-full disabled:opacity-50"
+      {isAuthenticated && (
+        <>
+          {/* Suggested Quick Prompts */}
+          <div className="px-4 py-2 border-t border-slate-800/80 bg-slate-950/40">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider block mb-1.5">
+              Suggested Prompts:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_PROMPTS.map((prompt, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSubmitPrompt(prompt)}
+                  disabled={isLoading}
+                  className="text-[11px] text-slate-300 hover:text-white bg-slate-800/80 hover:bg-indigo-900/40 border border-slate-700/80 hover:border-indigo-500/40 px-2 py-1 rounded-md transition text-left truncate max-w-full disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Prompt Input Form */}
+          <div className="p-4 border-t border-slate-800 bg-slate-950/80">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmitPrompt(inputText);
+              }}
+              className="flex items-center gap-2"
             >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Prompt Input Form */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/80">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSubmitPrompt(inputText);
-          }}
-          className="flex items-center gap-2"
-        >
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            disabled={isLoading}
-            placeholder="Type design instruction (e.g., 'Add a sofa and desk')..."
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !inputText.trim()}
-            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition active:scale-95 disabled:opacity-40 disabled:hover:bg-indigo-600"
-            title="Send prompt to AI Assistant"
-          >
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
-        </form>
-      </div>
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={isLoading}
+                placeholder="Type design instruction (e.g., 'Add a sofa and desk')..."
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputText.trim()}
+                className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition active:scale-95 disabled:opacity-40 disabled:hover:bg-indigo-600"
+                title="Send prompt to AI Assistant"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </button>
+            </form>
+          </div>
+        </>
+      )}
     </div>
   );
 };

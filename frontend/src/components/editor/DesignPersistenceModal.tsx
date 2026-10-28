@@ -8,9 +8,12 @@ import {
   CheckCircle2, 
   AlertCircle, 
   Loader2, 
-  Boxes 
+  Boxes,
+  Lock,
+  LogIn
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
+import { useAuthStore } from '../../services/authStore';
 import { 
   listSavedDesigns, 
   saveDesignToBackend, 
@@ -28,6 +31,9 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
   const loadScene = useEditorStore((state) => state.loadScene);
   const setStoreCurrentDesignId = useEditorStore((state) => state.setCurrentDesignId);
 
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const openAuthModal = useAuthStore((state) => state.openAuthModal);
+
   const [designs, setDesigns] = useState<DesignRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -36,6 +42,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const refreshDesigns = async () => {
+    if (!isAuthenticated) return;
     setLoading(true);
     setStatusMsg(null);
     try {
@@ -49,7 +56,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
   };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !isAuthenticated) return;
     let isSubscribed = true;
 
     void Promise.resolve().then(async () => {
@@ -74,7 +81,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
     return () => {
       isSubscribed = false;
     };
-  }, [isOpen]);
+  }, [isOpen, isAuthenticated]);
 
   if (!isOpen) return null;
 
@@ -160,111 +167,134 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
         )}
 
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          {/* Save Current Scene Section */}
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <Save className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Save Active Scene</span>
-              </label>
-              <span className="text-[11px] text-slate-500">
-                {scene.objects.length} furniture items &bull; {scene.room.width}m &times; {scene.room.length}m
-              </span>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter design name..."
-                className="flex-1 bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
+          {!isAuthenticated ? (
+            <div className="py-12 px-4 text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mx-auto shadow-lg shadow-indigo-950/50">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="max-w-xs mx-auto space-y-1">
+                <h4 className="text-sm font-semibold text-white">Sign In Required</h4>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Sign in or create an account to access your saved cloud designs and store room layout snapshots.
+                </p>
+              </div>
               <button
-                onClick={() => handleSave(false)}
-                disabled={saving || !title.trim()}
-                className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                onClick={() => openAuthModal('login', () => refreshDesigns())}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition active:scale-95"
               >
-                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                <span>{currentDesignId ? 'Update' : 'Save'}</span>
+                <LogIn className="w-4 h-4" />
+                <span>Sign In / Register</span>
               </button>
-              {currentDesignId && (
-                <button
-                  onClick={() => handleSave(true)}
-                  disabled={saving || !title.trim()}
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
-                  title="Save as a new separate copy"
-                >
-                  Save As New
-                </button>
-              )}
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Save Current Scene Section */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                    <Save className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Save Active Scene</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    {scene.objects.length} furniture items &bull; {scene.room.width}m &times; {scene.room.length}m
+                  </span>
+                </div>
 
-          {/* Saved Designs List Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Saved Designs in Database</span>
-              </h4>
-              <span className="text-[11px] text-slate-500">{designs.length} saved</span>
-            </div>
-
-            {loading ? (
-              <div className="py-8 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                <span>Loading designs from API...</span>
-              </div>
-            ) : designs.length === 0 ? (
-              <div className="py-8 px-4 text-center rounded-xl border border-dashed border-slate-800 text-slate-500 text-xs">
-                No designs saved yet. Save your current scene above!
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {designs.map((record) => (
-                  <div
-                    key={record.id}
-                    onClick={() => handleLoad(record)}
-                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                      currentDesignId === record.id
-                        ? 'bg-indigo-600/10 border-indigo-500/40 text-white'
-                        : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300'
-                    }`}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Enter design name..."
+                    className="flex-1 bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={() => handleSave(false)}
+                    disabled={saving || !title.trim()}
+                    className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium flex items-center gap-1.5 transition active:scale-95 shadow-sm"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-indigo-400 shrink-0">
-                        <Boxes className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-white truncate">{record.title}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {record.object_count} item{record.object_count === 1 ? '' : 's'} &bull;{' '}
-                          {new Date(record.updated_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => handleLoad(record)}
-                        className="px-2.5 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-[11px] font-medium border border-indigo-500/20 transition"
-                      >
-                        Load
-                      </button>
-                      <button
-                        onClick={(e) => handleDelete(record.id, e)}
-                        className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition"
-                        title="Delete design"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    <span>{currentDesignId ? 'Update' : 'Save'}</span>
+                  </button>
+                  {currentDesignId && (
+                    <button
+                      onClick={() => handleSave(true)}
+                      disabled={saving || !title.trim()}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                      title="Save as a new separate copy"
+                    >
+                      Save As New
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* Saved Designs List Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                    <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Saved Designs in Database</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500">{designs.length} saved</span>
+                </div>
+
+                {loading ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                    <span>Loading designs from API...</span>
+                  </div>
+                ) : designs.length === 0 ? (
+                  <div className="py-8 px-4 text-center rounded-xl border border-dashed border-slate-800 text-slate-500 text-xs">
+                    No designs saved yet. Save your current scene above!
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {designs.map((record) => (
+                      <div
+                        key={record.id}
+                        onClick={() => handleLoad(record)}
+                        className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                          currentDesignId === record.id
+                            ? 'bg-indigo-600/10 border-indigo-500/40 text-white'
+                            : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-indigo-400 shrink-0">
+                            <Boxes className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-white truncate">{record.title}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {record.object_count} item{record.object_count === 1 ? '' : 's'} &bull;{' '}
+                              {new Date(record.updated_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => handleLoad(record)}
+                            className="px-2.5 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-[11px] font-medium border border-indigo-500/20 transition"
+                          >
+                            Load
+                          </button>
+                          <button
+                            onClick={(e) => handleDelete(record.id, e)}
+                            className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition"
+                            title="Delete design"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
