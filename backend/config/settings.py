@@ -31,7 +31,7 @@ ALLOW_DEMO_AUTH = DEBUG and os.getenv('ALLOW_DEMO_AUTH', 'True').strip().lower()
 
 ALLOWED_HOSTS = [
     host.strip() 
-    for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') 
+    for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,.onrender.com').split(',') 
     if host.strip()
 ]
 if DEBUG:
@@ -202,10 +202,25 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:5173,http://127.0.0.1:5173'
+        'http://localhost:5173,http://127.0.0.1:5173,https://room-genie-ai-nine.vercel.app'
     ).split(',')
     if origin.strip()
 ]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.onrender\.com$",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        'CSRF_TRUSTED_ORIGINS',
+        'https://*.vercel.app,https://*.onrender.com,http://localhost:5173,http://127.0.0.1:5173'
+    ).split(',')
+    if origin.strip()
+]
+
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
