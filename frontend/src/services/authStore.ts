@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { API_BASE_URL } from './apiConfig';
 import { getAuthToken, setAuthToken, removeAuthToken } from './designApi';
+import { parseAuthApiError } from '../utils/passwordValidation';
 
 export interface UserProfile {
   id: number;
@@ -17,6 +18,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  fieldErrors?: Record<string, string[]>;
   isAuthModalOpen: boolean;
   authModalMode: 'login' | 'register';
   authSuccessCallback: (() => void) | null;
@@ -37,6 +39,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: Boolean(getAuthToken()),
   isLoading: false,
   error: null,
+  fieldErrors: {},
   isAuthModalOpen: false,
   authModalMode: 'login',
   authSuccessCallback: null,
@@ -46,6 +49,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthModalOpen: true,
       authModalMode: mode,
       error: null,
+      fieldErrors: {},
       authSuccessCallback: onSuccess || null,
     });
   },
@@ -54,14 +58,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       isAuthModalOpen: false,
       error: null,
+      fieldErrors: {},
       authSuccessCallback: null,
     });
   },
 
-  setError: (error: string | null) => set({ error }),
+  setError: (error: string | null) => set({ error, fieldErrors: {} }),
 
   login: async (username: string, password: string) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, fieldErrors: {} });
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/auth/login/`, {
         method: 'POST',
@@ -72,10 +77,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
       if (!res.ok) {
-        const errorDetail = data.detail || (data.errors ? JSON.stringify(data.errors) : 'Login failed.');
-        set({ error: errorDetail, isLoading: false });
+        const parsed = parseAuthApiError(data, 'Login failed. Please check your credentials.');
+        set({ error: parsed.message, fieldErrors: parsed.fieldErrors, isLoading: false });
         return false;
       }
 
@@ -89,6 +100,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
         error: null,
+        fieldErrors: {},
         isAuthModalOpen: false,
         authSuccessCallback: null,
       });
@@ -99,7 +111,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (err: any) {
       set({
-        error: err.message || 'Network error occurred during login.',
+        error: err?.message || 'Network error occurred during login.',
+        fieldErrors: {},
         isLoading: false,
       });
       return false;
@@ -107,7 +120,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   register: async (username: string, email: string, password: string, passwordConfirm?: string) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, fieldErrors: {} });
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/auth/register/`, {
         method: 'POST',
@@ -123,15 +136,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
       if (!res.ok) {
-        let errorDetail = data.detail;
-        if (!errorDetail && data.errors) {
-          errorDetail = Object.entries(data.errors)
-            .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
-            .join(' | ');
-        }
-        set({ error: errorDetail || 'Registration failed.', isLoading: false });
+        const parsed = parseAuthApiError(data, 'Registration validation failed.');
+        set({ error: parsed.message, fieldErrors: parsed.fieldErrors, isLoading: false });
         return false;
       }
 
@@ -145,6 +159,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
         error: null,
+        fieldErrors: {},
         isAuthModalOpen: false,
         authSuccessCallback: null,
       });
@@ -155,7 +170,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (err: any) {
       set({
-        error: err.message || 'Network error occurred during registration.',
+        error: err?.message || 'Network error occurred during registration. Please check your connection and try again.',
+        fieldErrors: {},
         isLoading: false,
       });
       return false;
@@ -169,6 +185,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
       isAuthenticated: false,
       error: null,
+      fieldErrors: {},
       isAuthModalOpen: false,
       authSuccessCallback: null,
     });
