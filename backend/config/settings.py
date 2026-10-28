@@ -106,16 +106,27 @@ DB_PASSWORD = os.getenv('DB_PASSWORD', 'postgres')
 DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
 DB_PORT = os.getenv('DB_PORT', '5432')
 
-DATABASES = {
-    'default': {
-        'ENGINE': DB_ENGINE,
-        'NAME': DB_NAME,
-        'USER': DB_USER,
-        'PASSWORD': DB_PASSWORD,
-        'HOST': DB_HOST,
-        'PORT': DB_PORT,
+if DB_ENGINE == 'django.db.backends.sqlite3':
+    sqlite_name = os.getenv('DB_NAME', 'db.sqlite3')
+    if not sqlite_name.endswith('.sqlite3') and not sqlite_name.endswith('.db'):
+        sqlite_name = f"{sqlite_name}.sqlite3"
+    DATABASES = {
+        'default': {
+            'ENGINE': DB_ENGINE,
+            'NAME': BASE_DIR / sqlite_name,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': DB_ENGINE,
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
