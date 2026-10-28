@@ -106,7 +106,22 @@ DB_PASSWORD = os.getenv('DB_PASSWORD', 'postgres')
 DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
 DB_PORT = os.getenv('DB_PORT', '5432')
 
-if DB_ENGINE == 'django.db.backends.sqlite3':
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    import urllib.parse
+    url = urllib.parse.urlparse(DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': url.path.lstrip('/'),
+            'USER': urllib.parse.unquote(url.username or ''),
+            'PASSWORD': urllib.parse.unquote(url.password or ''),
+            'HOST': url.hostname or '',
+            'PORT': str(url.port or '5432'),
+        }
+    }
+    DB_PASSWORD = DATABASES['default']['PASSWORD']
+elif DB_ENGINE == 'django.db.backends.sqlite3':
     sqlite_name = os.getenv('DB_NAME', 'db.sqlite3')
     if not sqlite_name.endswith('.sqlite3') and not sqlite_name.endswith('.db'):
         sqlite_name = f"{sqlite_name}.sqlite3"
