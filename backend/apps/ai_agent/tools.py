@@ -309,10 +309,16 @@ def validate_and_simulate_actions(
                 add_reference_error(f"Action [{action_idx}]: Asset '{raw_asset_id}' does not exist in catalogue or is inactive.")
                 continue
 
-            # Default position if not provided: center on floor resting at half-height
+            # Dimensions and floor grounding
             dims = [float(asset.width), float(asset.height), float(asset.depth)]
-            half_height = dims[1] / 2.0
-            pos = cleaned_pos if cleaned_pos is not None else [0.0, half_height, 0.0]
+            half_height = (dims[1] * cleaned_scale[1]) / 2.0
+            if cleaned_pos is not None:
+                pos = list(cleaned_pos)
+                # If LLM provided Y=0 (floor level), ground object automatically at half-height
+                if abs(pos[1]) < 0.01:
+                    pos[1] = half_height
+            else:
+                pos = [0.0, half_height, 0.0]
 
             color = raw_color if raw_color is not None else '#4f46e5'
             new_item_id = f"item-{uuid.uuid4().hex[:8]}"
