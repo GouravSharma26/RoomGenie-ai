@@ -233,7 +233,7 @@ if TESTING:
 else:
     default_ai_mode = 'gemini' if os.getenv('GEMINI_API_KEY') else 'mock'
     AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', default_ai_mode).lower()
-    ROOM_VISION_PROVIDER_MODE = os.getenv('ROOM_VISION_PROVIDER_MODE', default_ai_mode).lower()
+    ROOM_VISION_PROVIDER_MODE = os.getenv('ROOM_VISION_PROVIDER_MODE', 'mock').lower()
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')

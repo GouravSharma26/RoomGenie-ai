@@ -7,6 +7,7 @@ from django.db import connection
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
+from unittest.mock import patch, MagicMock
 from apps.ai_agent.models import AgentSession, AgentRun
 from apps.ai_agent.adapters import get_design_llm_adapter, MockDesignLLMAdapter
 from apps.ai_agent.tools import validate_and_simulate_actions, ALLOWED_ACTION_TYPES
@@ -867,3 +868,166 @@ class AgentConcurrencyAndAtomicApplyTests(APITransactionTestCase):
         # Design is valid and only has the winning proposal's item (not corrupted)
         self.design_a.refresh_from_db()
         self.assertEqual(len(self.design_a.scene_json['objects']), 1)
+
+
+class GeminiAdapterSecurityAndFallbackTests(unittest.TestCase):
+    """
+    Tests ensuring Gemini API integration enforces secure header authentication,
+    candidate model fallback resiliency, and absolute redaction of credentials in logs and metadata.
+    """
+
+    def test_sanitize_sensitive_text(self):
+        from apps.ai_agent.adapters.gemini import sanitize_sensitive_text
+
+        secret = "AIzaSySecretApiKey12345"
+
+        # 1. Direct secret in error
+        err1 = f"Failed to connect using key {secret}: connection reset"
+        clean1 = sanitize_sensitive_text(err1, secret)
+        self.assertNotIn(secret, clean1)
+        self.assertIn("[REDACTED]", clean1)
+
+        # 2. Secret in URL query param
+        err2 = f"GET https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={secret} HTTP/1.1"
+        clean2 = sanitize_sensitive_text(err2, secret)
+        self.assertNotIn(secret, clean2)
+        self.assertIn("?key=[REDACTED]", clean2)
+
+        # 3. Header string formatting
+        err3 = f"Headers: {{'x-goog-api-key': '{secret}'}}"
+        clean3 = sanitize_sensitive_text(err3, secret)
+        self.assertNotIn(secret, clean3)
+        self.assertIn("[REDACTED]", clean3)
+
+    @patch('urllib.request.urlopen')
+    def test_gemini_adapter_header_authentication_and_clean_endpoint(self, mock_urlopen):
+        import json
+        from apps.ai_agent.adapters.gemini import GeminiDesignLLMAdapter
+
+        fake_api_key = "AIzaSyTestHeaderAuthKey999"
+        adapter = GeminiDesignLLMAdapter()
+        adapter.api_key = fake_api_key
+        adapter.model_name = "gemini-3.8-flash"
+        adapter.fallback_models = []
+
+        fake_gemini_resp = {
+            'candidates': [{
+                'content': {
+                    'parts': [{
+                        'functionCall': {
+                            'name': 'add_furniture',
+                            'args': {
+                                'asset_id': 'armchair-accent-nordic',
+                                'position': [1.0, 0.44, -1.0],
+                            }
+                        }
+                    }]
+                }
+            }]
+        }
+
+        mock_context = MagicMock()
+        mock_context.__enter__.return_value.read.return_value = json.dumps(fake_gemini_resp).encode('utf-8')
+        mock_urlopen.return_value = mock_context
+
+        scene = {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []}
+        result = adapter.generate_design_proposal("Add an armchair", scene)
+
+        # Verify request url and headers
+        self.assertEqual(mock_urlopen.call_count, 1)
+        req = mock_urlopen.call_args[0][0]
+
+        # URL MUST NOT contain '?key=' or any query parameter with the key
+        self.assertNotIn("?key=", req.full_url)
+        self.assertNotIn(fake_api_key, req.full_url)
+        self.assertEqual(
+            req.full_url,
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+        )
+
+        # Header MUST contain x-goog-api-key
+        header_val = req.get_header('X-goog-api-key')
+        self.assertEqual(header_val, fake_api_key)
+
+        # Result checks
+        self.assertEqual(result.provider, 'gemini')
+        self.assertEqual(result.model, 'gemini-3.8-flash')
+        self.assertEqual(len(result.proposed_actions), 1)
+        self.assertEqual(result.proposed_actions[0]['type'], 'add_furniture')
+
+    @patch('urllib.request.urlopen')
+    def test_gemini_adapter_model_fallback_on_503(self, mock_urlopen):
+        import json
+        import urllib.error
+        from apps.ai_agent.adapters.gemini import GeminiDesignLLMAdapter
+
+        adapter = GeminiDesignLLMAdapter()
+        adapter.api_key = "AIzaSyFallbackKey777"
+        adapter.model_name = "gemini-3.8-flash"
+        adapter.fallback_models = ["gemini-3-flash-preview"]
+
+        # Call 1: HTTP 503 on gemini-3.8-flash
+        # Call 2: 200 OK on gemini-3-flash-preview
+        fake_gemini_resp = {
+            'candidates': [{
+                'content': {
+                    'parts': [{'text': 'Here is a recommended layout.'}]
+                }
+            }]
+        }
+
+        mock_context_success = MagicMock()
+        mock_context_success.__enter__.return_value.read.return_value = json.dumps(fake_gemini_resp).encode('utf-8')
+
+        http_503_error = urllib.error.HTTPError(
+            url="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+            code=503,
+            msg="Service Unavailable",
+            hdrs={},
+            fp=None
+        )
+
+        mock_urlopen.side_effect = [http_503_error, mock_context_success]
+
+        scene = {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []}
+        result = adapter.generate_design_proposal("Suggest a layout", scene)
+
+        self.assertEqual(mock_urlopen.call_count, 2)
+        self.assertEqual(result.provider, 'gemini')
+        self.assertEqual(result.model, 'gemini-3-flash-preview')
+        self.assertTrue(result.raw_metadata.get('fallback_triggered'))
+        self.assertIn('previous_model_errors', result.raw_metadata)
+
+    @patch('urllib.request.urlopen')
+    def test_gemini_adapter_all_models_fail_redacts_credentials(self, mock_urlopen):
+        import urllib.error
+        from apps.ai_agent.adapters.gemini import GeminiDesignLLMAdapter
+
+        fake_api_key = "AIzaSySecretLeakProofKey444"
+        adapter = GeminiDesignLLMAdapter()
+        adapter.api_key = fake_api_key
+        adapter.model_name = "gemini-3.8-flash"
+        adapter.fallback_models = ["gemini-3-flash-preview"]
+
+        # Simulate exception containing the raw key
+        leak_error = urllib.error.URLError(f"Connection failed for key={fake_api_key}")
+        mock_urlopen.side_effect = [leak_error, leak_error]
+
+        scene = {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []}
+        result = adapter.generate_design_proposal("Furnish room", scene)
+
+        # Fallback to mock adapter
+        self.assertEqual(result.provider, 'mock')
+        fallback_reason = result.raw_metadata.get('fallback_reason', '')
+        self.assertNotIn(fake_api_key, fallback_reason)
+        self.assertIn("[REDACTED]", fallback_reason)
+
+    def test_gemini_adapter_no_key_delegates_to_mock(self):
+        from apps.ai_agent.adapters.gemini import GeminiDesignLLMAdapter
+
+        adapter = GeminiDesignLLMAdapter()
+        adapter.api_key = ""
+        scene = {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []}
+        result = adapter.generate_design_proposal("Hello", scene)
+        self.assertEqual(result.provider, 'mock')
+        self.assertEqual(result.raw_metadata.get('fallback_reason'), 'no_gemini_api_key')

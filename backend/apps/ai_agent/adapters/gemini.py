@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 import urllib.request
 import urllib.error
@@ -10,6 +11,23 @@ from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
 from apps.ai_agent.tools import get_available_tool_definitions
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_sensitive_text(text: str, secret: str = "") -> str:
+    """
+    Sanitizes strings to prevent credential exposure in logs or response metadata.
+    Redacts the secret API key if present and any key query parameters.
+    """
+    if not text:
+        return ""
+    sanitized = str(text)
+    if secret and secret.strip():
+        sanitized = sanitized.replace(secret.strip(), "[REDACTED]")
+    # Redact URL query parameter patterns like ?key=... or &key=...
+    sanitized = re.sub(r'([?&]key=)[^&\s]+', r'\1[REDACTED]', sanitized)
+    # Redact x-goog-api-key headers if captured in string representation
+    sanitized = re.sub(r'(x-goog-api-key["\']?\s*[:=]\s*["\']?)[^"\'\s,]+', r'\1[REDACTED]', sanitized, flags=re.IGNORECASE)
+    return sanitized
 
 
 class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
@@ -110,14 +128,17 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
         for model_candidate in models_to_try:
             endpoint = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model_candidate}:generateContent?key={self.api_key}"
+                f"{model_candidate}:generateContent"
             )
             model_start = time.time()
             try:
                 req = urllib.request.Request(
                     endpoint,
                     data=encoded_payload,
-                    headers={'Content-Type': 'application/json'},
+                    headers={
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': self.api_key,
+                    },
                     method='POST'
                 )
                 with urllib.request.urlopen(req, timeout=8) as response:
@@ -130,7 +151,9 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                     'fallback_triggered': model_candidate != self.model_name,
                 }
                 if errors_encountered:
-                    raw_meta['previous_model_errors'] = errors_encountered
+                    raw_meta['previous_model_errors'] = [
+                        sanitize_sensitive_text(err, self.api_key) for err in errors_encountered
+                    ]
 
                 return self._parse_gemini_response(
                     resp_data=resp_data,
@@ -140,23 +163,27 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 )
 
             except Exception as exc:
-                err_msg = f"{model_candidate}: {str(exc)}"
+                clean_exc = sanitize_sensitive_text(str(exc), self.api_key)
+                err_msg = f"{model_candidate}: {clean_exc}"
                 errors_encountered.append(err_msg)
                 logger.warning(
                     "Gemini API model %s failed (%s). Checking next candidate model.",
                     model_candidate,
-                    exc
+                    clean_exc
                 )
 
         # If all candidate models failed, gracefully fall back to Mock adapter
+        sanitized_summary = "; ".join(
+            sanitize_sensitive_text(err, self.api_key) for err in errors_encountered
+        )
         logger.warning(
             "All Gemini API model candidates failed (%s). Falling back to mock adapter.",
-            "; ".join(errors_encountered)
+            sanitized_summary
         )
         fallback_res = self.mock_fallback.generate_design_proposal(
             user_prompt, current_scene, conversation_history, catalogue_context
         )
-        fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {'; '.join(errors_encountered)}"
+        fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {sanitized_summary}"
         return fallback_res
 
     def _parse_gemini_response(

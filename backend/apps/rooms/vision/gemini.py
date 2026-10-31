@@ -61,7 +61,7 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
 
         endpoint = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model_name}:generateContent?key={self.api_key}"
+            f"{self.model_name}:generateContent"
         )
 
         prompt_instruction = (
@@ -128,7 +128,10 @@ class GeminiRoomVisionAdapter(BaseRoomVisionAdapter):
         req = urllib.request.Request(
             endpoint,
             data=data_json,
-            headers={'Content-Type': 'application/json'},
+            headers={
+                'Content-Type': 'application/json',
+                'x-goog-api-key': self.api_key,
+            },
             method='POST'
         )
 
