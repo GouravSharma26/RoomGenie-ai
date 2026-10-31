@@ -3,6 +3,7 @@ Django settings for RoomGenie AI backend.
 """
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -225,10 +226,22 @@ if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
 # AI and Model Provider Baseline Settings
-AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', 'mock').lower()
-ROOM_VISION_PROVIDER_MODE = os.getenv('ROOM_VISION_PROVIDER_MODE', 'mock').lower()
+TESTING = 'test' in sys.argv
+if TESTING:
+    AI_PROVIDER_MODE = 'mock'
+    ROOM_VISION_PROVIDER_MODE = 'mock'
+else:
+    default_ai_mode = 'gemini' if os.getenv('GEMINI_API_KEY') else 'mock'
+    AI_PROVIDER_MODE = os.getenv('AI_PROVIDER_MODE', default_ai_mode).lower()
+    ROOM_VISION_PROVIDER_MODE = os.getenv('ROOM_VISION_PROVIDER_MODE', default_ai_mode).lower()
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
+GEMINI_FALLBACK_MODELS = [
+    m.strip()
+    for m in os.getenv('GEMINI_FALLBACK_MODELS', 'gemini-3-flash-preview,gemini-2.5-flash').split(',')
+    if m.strip()
+]
 
 IMAGE_TO_3D_PROVIDER_MODE = os.getenv('IMAGE_TO_3D_PROVIDER_MODE', 'mock').lower()
 TRIPO_API_KEY = os.getenv('TRIPO_API_KEY', '')

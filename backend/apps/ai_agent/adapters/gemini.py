@@ -16,12 +16,19 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
     """
     Live adapter for Google Gemini API (model baseline: gemini-3.8-flash).
     Sends structured tool definitions and scene context.
-    Falls back gracefully to MockDesignLLMAdapter if API key is not configured or network fails.
+    Supports resilient candidate model fallback (e.g., gemini-3-flash-preview, gemini-2.5-flash)
+    if the primary model experiences high upstream demand (HTTP 503) or timeouts.
+    Falls back gracefully to MockDesignLLMAdapter if API key is not configured or all network attempts fail.
     """
 
     def __init__(self):
         self.api_key = getattr(settings, 'GEMINI_API_KEY', '')
         self.model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-3.8-flash')
+        self.fallback_models = getattr(
+            settings,
+            'GEMINI_FALLBACK_MODELS',
+            ['gemini-3-flash-preview', 'gemini-2.5-flash']
+        )
         self.mock_fallback = MockDesignLLMAdapter()
 
     def generate_design_proposal(
@@ -41,11 +48,6 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             )
             result.raw_metadata['fallback_reason'] = 'no_gemini_api_key'
             return result
-
-        endpoint = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model_name}:generateContent?key={self.api_key}"
-        )
 
         system_instruction = (
             "You are RoomGenie AI, an expert interior architect and 3D spatial design assistant. "
@@ -95,29 +97,75 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 'maxOutputTokens': 1024,
             }
         }
+        encoded_payload = json.dumps(payload).encode('utf-8')
 
-        try:
-            req = urllib.request.Request(
-                endpoint,
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
+        # Build candidate models sequence: primary model followed by resilient fallbacks
+        models_to_try = [self.model_name]
+        for fb in self.fallback_models:
+            if fb and fb not in models_to_try:
+                models_to_try.append(fb)
+
+        errors_encountered = []
+
+        for model_candidate in models_to_try:
+            endpoint = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_candidate}:generateContent?key={self.api_key}"
             )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                resp_data = json.loads(response.read().decode('utf-8'))
+            model_start = time.time()
+            try:
+                req = urllib.request.Request(
+                    endpoint,
+                    data=encoded_payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    resp_data = json.loads(response.read().decode('utf-8'))
 
-            latency = int((time.time() - start_time) * 1000)
-            return self._parse_gemini_response(resp_data, latency)
+                latency = int((time.time() - start_time) * 1000)
+                raw_meta = {
+                    'primary_model': self.model_name,
+                    'model_used': model_candidate,
+                    'fallback_triggered': model_candidate != self.model_name,
+                }
+                if errors_encountered:
+                    raw_meta['previous_model_errors'] = errors_encountered
 
-        except Exception as exc:
-            logger.warning("Gemini API call failed (%s). Falling back to mock adapter.", exc)
-            fallback_res = self.mock_fallback.generate_design_proposal(
-                user_prompt, current_scene, conversation_history, catalogue_context
-            )
-            fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {str(exc)}"
-            return fallback_res
+                return self._parse_gemini_response(
+                    resp_data=resp_data,
+                    latency_ms=latency,
+                    model_name=model_candidate,
+                    raw_meta=raw_meta
+                )
 
-    def _parse_gemini_response(self, resp_data: dict[str, Any], latency_ms: int) -> DesignProposalResult:
+            except Exception as exc:
+                err_msg = f"{model_candidate}: {str(exc)}"
+                errors_encountered.append(err_msg)
+                logger.warning(
+                    "Gemini API model %s failed (%s). Checking next candidate model.",
+                    model_candidate,
+                    exc
+                )
+
+        # If all candidate models failed, gracefully fall back to Mock adapter
+        logger.warning(
+            "All Gemini API model candidates failed (%s). Falling back to mock adapter.",
+            "; ".join(errors_encountered)
+        )
+        fallback_res = self.mock_fallback.generate_design_proposal(
+            user_prompt, current_scene, conversation_history, catalogue_context
+        )
+        fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {'; '.join(errors_encountered)}"
+        return fallback_res
+
+    def _parse_gemini_response(
+        self,
+        resp_data: dict[str, Any],
+        latency_ms: int,
+        model_name: str,
+        raw_meta: dict[str, Any] | None = None
+    ) -> DesignProposalResult:
         text_parts = []
         proposed_actions = []
 
@@ -126,8 +174,8 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             content = candidates[0].get('content', {})
             parts = content.get('parts', [])
             for part in parts:
-                if 'text' in part:
-                    text_parts.append(part['text'])
+                if 'text' in part and part['text'].strip():
+                    text_parts.append(part['text'].strip())
                 if 'functionCall' in part:
                     fn_call = part['functionCall']
                     fn_name = fn_call.get('name')
@@ -135,13 +183,38 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                     action_dict = {'type': fn_name, **fn_args}
                     proposed_actions.append(action_dict)
 
-        full_text = "\n".join(text_parts).strip() or "I have prepared spatial recommendations for your room."
+        full_text = "\n".join(text_parts).strip()
+        if not full_text:
+            if proposed_actions:
+                summaries = []
+                for act in proposed_actions:
+                    act_type = act.get('type')
+                    if act_type == 'add_furniture':
+                        asset = act.get('asset_id', 'item')
+                        pos = act.get('position')
+                        pos_str = f" at [{pos[0]:.1f}m, {pos[2]:.1f}m]" if isinstance(pos, list) and len(pos) >= 3 else ""
+                        summaries.append(f"adding {asset}{pos_str}")
+                    elif act_type == 'move_object':
+                        summaries.append(f"repositioning object {act.get('object_id', '')}")
+                    elif act_type == 'replace_furniture':
+                        summaries.append(f"replacing with {act.get('new_asset_id', '')}")
+                    elif act_type == 'set_material':
+                        summaries.append(f"setting color to {act.get('color', '')}")
+                    elif act_type == 'clear_room':
+                        summaries.append("clearing room layout")
+                action_summary = ", ".join(summaries) if summaries else "layout adjustments"
+                full_text = f"I have formulated design recommendations for your room: {action_summary}. Please review the 3D preview and approve to apply."
+            else:
+                full_text = "I have prepared spatial recommendations for your room."
+
+        metadata = raw_meta or {}
+        metadata['candidates_count'] = len(candidates)
 
         return DesignProposalResult(
             text_response=full_text,
             proposed_actions=proposed_actions,
             provider='gemini',
-            model=self.model_name,
+            model=model_name,
             latency_ms=latency_ms,
-            raw_metadata={'candidates_count': len(candidates)},
+            raw_metadata=metadata,
         )

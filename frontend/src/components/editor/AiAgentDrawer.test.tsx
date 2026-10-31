@@ -651,4 +651,113 @@ describe('AiAgentDrawer Telemetry Integration', () => {
     // Boundary counter must NOT increment
     expect(session?.attemptedOutOfBoundsCount).toBe(0);
   });
+
+  describe('Provider Distinction & Live AI Badges', () => {
+    it('renders Live Gemini AI badge with model and latency when provider is gemini', async () => {
+      vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+        run: {
+          id: 'run-gemini-live-1',
+          session: 'mock-agent-session-id',
+          user_prompt: 'Add an armchair',
+          status: 'proposed',
+          ai_response_text: 'I recommend placing an armchair in the corner.',
+          proposed_actions: [
+            { name: 'add_furniture', parameters: { asset_id: 'armchair-accent-nordic', position: [-1.2, 0.44, 0.6] } },
+          ],
+          validation_results: {
+            is_valid: true,
+            schema_valid: true,
+            reference_valid: true,
+            domain_valid: true,
+            budget_valid: true,
+            errors: [],
+            warnings: [],
+            budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+          },
+          provider_metadata: {
+            provider: 'gemini',
+            model: 'gemini-3-flash-preview',
+            latency_ms: 1850,
+          },
+          created_at: new Date().toISOString(),
+        },
+        candidate_scene: sampleScene,
+        budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+        requires_approval: true,
+      });
+
+      render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+      await waitFor(() => {
+        expect(agentApi.createAgentSession).toHaveBeenCalled();
+      });
+
+      const input = screen.getByPlaceholderText(/Type design instruction/i);
+      fireEvent.change(input, { target: { value: 'Add an armchair' } });
+      fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Live Gemini AI')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('gemini-3-flash-preview')).toBeInTheDocument();
+      expect(screen.getByText('1850ms')).toBeInTheDocument();
+      expect(screen.queryByText('Offline Mock')).not.toBeInTheDocument();
+    });
+
+    it('renders Offline Mock badge with fallback warning when fallback occurs', async () => {
+      vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+        run: {
+          id: 'run-mock-fallback-1',
+          session: 'mock-agent-session-id',
+          user_prompt: 'Add an armchair',
+          status: 'proposed',
+          ai_response_text: 'Mock proposal for armchair.',
+          proposed_actions: [
+            { name: 'add_furniture', parameters: { asset_id: 'armchair-accent-nordic', position: [-1.2, 0.44, 0.6] } },
+          ],
+          validation_results: {
+            is_valid: true,
+            schema_valid: true,
+            reference_valid: true,
+            domain_valid: true,
+            budget_valid: true,
+            errors: [],
+            warnings: [],
+            budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+          },
+          provider_metadata: {
+            provider: 'mock',
+            model: 'deterministic-mock-v1',
+            latency_ms: 2,
+            raw_metadata: {
+              fallback_reason: 'gemini_error: gemini-3.8-flash timed out',
+            },
+          },
+          created_at: new Date().toISOString(),
+        },
+        candidate_scene: sampleScene,
+        budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+        requires_approval: true,
+      });
+
+      render(<AiAgentDrawer isOpen={true} onClose={() => {}} />);
+
+      await waitFor(() => {
+        expect(agentApi.createAgentSession).toHaveBeenCalled();
+      });
+
+      const input = screen.getByPlaceholderText(/Type design instruction/i);
+      fireEvent.change(input, { target: { value: 'Add an armchair' } });
+      fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Offline Mock')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('deterministic-mock-v1')).toBeInTheDocument();
+      expect(screen.getByText(/Mock Fallback: gemini_error/i)).toBeInTheDocument();
+      expect(screen.queryByText('Live Gemini AI')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -13,7 +13,8 @@ import {
   Trash2, 
   RefreshCw,
   Coins,
-  LogIn
+  LogIn,
+  Cpu
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { useAuthStore } from '../../services/authStore';
@@ -416,6 +417,39 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                     </span>
                   )}
                 </div>
+
+                {/* AI Provider & Execution Metadata Badge */}
+                {msg.run.provider_metadata && (
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px]" data-testid="ai-provider-badge">
+                    <div className="flex items-center gap-1.5">
+                      {msg.run.provider_metadata.provider === 'gemini' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <Sparkles className="w-3 h-3 text-emerald-400 animate-pulse" />
+                          Live Gemini AI
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                          <Cpu className="w-3 h-3 text-slate-400" />
+                          Offline Mock
+                        </span>
+                      )}
+                      <span className="text-slate-400 font-mono text-[10px]">
+                        {msg.run.provider_metadata.model}
+                      </span>
+                    </div>
+                    {typeof msg.run.provider_metadata.latency_ms === 'number' && (
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {msg.run.provider_metadata.latency_ms}ms
+                      </span>
+                    )}
+                    {msg.run.provider_metadata.raw_metadata?.fallback_reason && (
+                      <div className="w-full text-[10px] text-amber-400/90 italic pt-0.5 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>Mock Fallback: {String(msg.run.provider_metadata.raw_metadata.fallback_reason).slice(0, 100)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Actions List */}
                 <div className="space-y-1.5">
