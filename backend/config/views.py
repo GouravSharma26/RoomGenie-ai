@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import connection
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -29,6 +30,9 @@ def health_check(request):
         'service': 'RoomGenie AI Backend',
         'version': '0.1.0',
         'database': check_database_connection(),
+        'ai_provider_mode': getattr(settings, 'AI_PROVIDER_MODE', 'unknown'),
+        'has_gemini_key': bool(getattr(settings, 'GEMINI_API_KEY', '')),
+        'gemini_model': getattr(settings, 'GEMINI_MODEL', 'unknown'),
         'timestamp': timezone.now().isoformat(),
     }
     return Response(payload, status=status.HTTP_200_OK)
