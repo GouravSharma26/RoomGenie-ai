@@ -10,6 +10,7 @@ import {
 } from '../../services/evaluationTelemetry';
 import type { CanonicalScene } from '../../types/scene';
 import { useAuthStore } from '../../services/authStore';
+import { useEditorStore } from '../../editor3d/store/editorStore';
 
 vi.mock('../../services/agentApi');
 
@@ -758,6 +759,118 @@ describe('AiAgentDrawer Telemetry Integration', () => {
       expect(screen.getByText('deterministic-mock-v1')).toBeInTheDocument();
       expect(screen.getByText(/Mock Fallback: gemini_error/i)).toBeInTheDocument();
       expect(screen.queryByText('Live Gemini AI')).not.toBeInTheDocument();
+    });
+
+    it('applies approved proposal to 3D scene store, populates undo/redo history, and fires onSceneApplied', async () => {
+      const onSceneApplied = vi.fn();
+      const updatedScene: CanonicalScene = {
+        ...sampleScene,
+        objects: [
+          ...sampleScene.objects,
+          {
+            id: 'item-armchair-new',
+            assetId: 'armchair-accent-nordic',
+            name: 'Lounge Accent Armchair',
+            position: [-1.2, 0.44, 0.6],
+            dimensions: [0.85, 0.88, 0.85],
+            scale: [1, 1, 1],
+            rotationEuler: [0, 0, 0],
+          },
+        ],
+      };
+
+      vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
+        run: {
+          id: 'run-apply-3d-1',
+          session: 'mock-agent-session-id',
+          user_prompt: 'Add an armchair',
+          status: 'proposed',
+          ai_response_text: 'Adding an armchair to your seating layout.',
+          proposed_actions: [
+            { name: 'add_furniture', parameters: { asset_id: 'armchair-accent-nordic', position: [-1.2, 0.44, 0.6] } },
+          ],
+          validation_results: {
+            is_valid: true,
+            schema_valid: true,
+            reference_valid: true,
+            domain_valid: true,
+            budget_valid: true,
+            errors: [],
+            warnings: [],
+            budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+          },
+          provider_metadata: { provider: 'mock', model: 'mock', latency_ms: 10 },
+          created_at: new Date().toISOString(),
+        },
+        candidate_scene: updatedScene,
+        budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+        requires_approval: true,
+      });
+
+      vi.mocked(agentApi.applyAgentRun).mockResolvedValueOnce({
+        detail: 'Proposal successfully approved and applied to design.',
+        run: {
+          id: 'run-apply-3d-1',
+          session: 'mock-agent-session-id',
+          user_prompt: 'Add an armchair',
+          status: 'approved',
+          ai_response_text: 'Adding an armchair to your seating layout.',
+          proposed_actions: [],
+          validation_results: {
+            is_valid: true,
+            errors: [],
+            warnings: [],
+            budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+          },
+          provider_metadata: { provider: 'mock', model: 'mock' },
+          created_at: new Date().toISOString(),
+        },
+        applied_scene: updatedScene,
+        budget_diff: { diff_paise: 1199900, room_containment_valid: true, room_violations: [] },
+      });
+
+      // Initialize editorStore with sampleScene
+      useEditorStore.getState().loadScene(sampleScene);
+      expect(useEditorStore.getState().scene.objects.length).toBe(1);
+
+      render(<AiAgentDrawer isOpen={true} onClose={() => {}} onSceneApplied={onSceneApplied} />);
+
+      await waitFor(() => {
+        expect(agentApi.createAgentSession).toHaveBeenCalled();
+      });
+
+      const input = screen.getByPlaceholderText(/Type design instruction/i);
+      fireEvent.change(input, { target: { value: 'Add an armchair' } });
+      fireEvent.click(screen.getByTitle('Send prompt to AI Assistant'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Approve & Apply to 3D Scene/i })).toBeInTheDocument();
+      });
+
+      // Approve proposal
+      fireEvent.click(screen.getByRole('button', { name: /Approve & Apply to 3D Scene/i }));
+
+      await waitFor(() => {
+        expect(agentApi.applyAgentRun).toHaveBeenCalledWith('run-apply-3d-1', expect.anything());
+        expect(screen.getByText('Approved')).toBeInTheDocument();
+      });
+
+      // 1. Verify 3D scene store has updated objects
+      const currentObjects = useEditorStore.getState().scene.objects;
+      expect(currentObjects.length).toBe(2);
+      expect(currentObjects.map((o) => o.name)).toContain('Lounge Accent Armchair');
+
+      // 2. Verify onSceneApplied callback was fired
+      expect(onSceneApplied).toHaveBeenCalledWith(updatedScene);
+
+      // 3. Verify undo reverts 3D scene back to original 1 item
+      expect(useEditorStore.getState().canUndo()).toBe(true);
+      useEditorStore.getState().undo();
+      expect(useEditorStore.getState().scene.objects.length).toBe(1);
+
+      // 4. Verify redo restores 3D scene back to 2 items
+      useEditorStore.getState().redo();
+      expect(useEditorStore.getState().scene.objects.length).toBe(2);
     });
   });
 });
