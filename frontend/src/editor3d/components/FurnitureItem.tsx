@@ -67,9 +67,12 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const hoveredId = useEditorStore((state) => state.hoveredId);
   const selectObject = useEditorStore((state) => state.selectObject);
   const hoverObject = useEditorStore((state) => state.hoverObject);
+  const spatialValidations = useEditorStore((state) => state.spatialValidations);
 
   const isSelected = selectedId === placement.id;
   const isHovered = hoveredId === placement.id;
+  const validation = spatialValidations[placement.id];
+  const hasConflict = Boolean(validation && !validation.valid);
 
   const color = placement.materialOverrides?.color || '#4f46e5';
   const roughness = placement.materialOverrides?.roughness ?? 0.7;
@@ -308,15 +311,15 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
     >
       {renderFurniture()}
 
-      {/* Selection & Hover Wireframe / Glow Highlight */}
-      {(isSelected || isHovered) && (
+      {/* Selection, Hover, or Spatial Conflict Wireframe / Glow Highlight */}
+      {(isSelected || isHovered || hasConflict) && (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[width * 1.05, height * 1.05, depth * 1.05]} />
           <meshBasicMaterial
-            color={isSelected ? '#6366f1' : '#a5b4fc'}
+            color={hasConflict ? '#f43f5e' : isSelected ? '#6366f1' : '#a5b4fc'}
             wireframe
             transparent
-            opacity={isSelected ? 0.9 : 0.4}
+            opacity={hasConflict ? 0.95 : isSelected ? 0.9 : 0.4}
           />
         </mesh>
       )}
@@ -325,7 +328,12 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
       {isSelected && (
         <mesh position={[0, -height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.1, Math.max(width, depth) * 0.65, 32]} />
-          <meshBasicMaterial color="#6366f1" transparent opacity={0.4} side={THREE.DoubleSide} />
+          <meshBasicMaterial
+            color={hasConflict ? '#f43f5e' : '#6366f1'}
+            transparent
+            opacity={0.4}
+            side={THREE.DoubleSide}
+          />
         </mesh>
       )}
     </group>

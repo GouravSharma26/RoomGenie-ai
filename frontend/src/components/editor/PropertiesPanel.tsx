@@ -8,7 +8,10 @@ import {
   Move, 
   Maximize, 
   Palette, 
-  Info 
+  Info,
+  AlertTriangle,
+  CheckCircle2,
+  Wand2
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import type { Vector3Tuple } from '../../types/scene';
@@ -35,6 +38,8 @@ export const PropertiesPanel: React.FC = () => {
   const deleteSelected = useEditorStore((state) => state.deleteSelected);
   const startInteraction = useEditorStore((state) => state.startInteraction);
   const endInteraction = useEditorStore((state) => state.endInteraction);
+  const spatialValidations = useEditorStore((state) => state.spatialValidations);
+  const resolveSelectedPlacement = useEditorStore((state) => state.resolveSelectedPlacement);
 
   const selectedObject = objects.find((obj) => obj.id === selectedId);
 
@@ -111,6 +116,63 @@ export const PropertiesPanel: React.FC = () => {
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Spatial Constraint Status Card */}
+      {(() => {
+        const currentValidation = spatialValidations[selectedObject.id];
+        if (!currentValidation) return null;
+
+        if (!currentValidation.valid) {
+          return (
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-rose-400 font-semibold text-[11px]">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>Spatial Conflict Detected</span>
+              </div>
+              {currentValidation.collisions.length > 0 && (
+                <div className="text-[11px] text-rose-200/90 pl-6">
+                  Intersecting with {currentValidation.collisions.length} other item{currentValidation.collisions.length > 1 ? 's' : ''}
+                </div>
+              )}
+              {currentValidation.boundaryViolations.length > 0 && (
+                <div className="text-[11px] text-rose-200/90 pl-6">
+                  Crosses {currentValidation.boundaryViolations.join(', ')}
+                </div>
+              )}
+              {currentValidation.suggestedPosition && (
+                <button
+                  onClick={resolveSelectedPlacement}
+                  className="w-full mt-1.5 py-1.5 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-[11px] flex items-center justify-center gap-1.5 transition shadow-sm"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  Auto-Resolve Placement
+                </button>
+              )}
+            </div>
+          );
+        }
+
+        if (currentValidation.clearanceViolations.length > 0) {
+          return (
+            <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-xs space-y-1">
+              <div className="flex items-center gap-2 text-amber-400 font-semibold text-[11px]">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                <span>Clearance Warning</span>
+              </div>
+              <p className="text-[10px] text-amber-200/80 pl-5 leading-relaxed">
+                {currentValidation.clearanceViolations[0]}
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="px-3 py-2 rounded-xl bg-emerald-950/30 border border-emerald-800/40 flex items-center gap-2 text-[11px] text-emerald-400 font-medium">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+            <span>Valid Placement (No Collisions)</span>
+          </div>
+        );
+      })()}
 
       {/* Position Controls */}
       <div className="space-y-3">

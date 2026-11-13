@@ -16,6 +16,22 @@ import {
 import { SAMPLE_CATALOG } from '../data/catalog';
 import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
 import { recordEdit, recordOutOfBoundsAttempt, recordUndoRedo } from '../../services/evaluationTelemetry';
+import { 
+  validatePlacement, 
+  type PlacementValidation 
+} from '../../spatial';
+
+export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
+  SAMPLE_CATALOG.map((item) => [item.id, item.category])
+);
+
+export function computeSceneValidations(scene: CanonicalScene): Record<string, PlacementValidation> {
+  const validations: Record<string, PlacementValidation> = {};
+  for (const obj of scene.objects) {
+    validations[obj.id] = validatePlacement(obj, scene.objects, scene.room, CATALOG_CATEGORY_LOOKUP);
+  }
+  return validations;
+}
 
 interface EditorState {
   scene: CanonicalScene;
@@ -29,12 +45,15 @@ interface EditorState {
   activeGestureSnapshot: CanonicalScene | null;
   gestureHadOutOfBoundsAttempt: boolean;
   currentDesignId: string | null;
+  spatialValidations: Record<string, PlacementValidation>;
 
   // Actions
   startInteraction: () => void;
   endInteraction: () => void;
   setCurrentDesignId: (id: string | null) => void;
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
+  resolvePlacement: (id: string) => void;
+  resolveSelectedPlacement: () => void;
   addFurniture: (item: FurnitureCatalogItem) => void;
   addCustomPlacement: (params: {
     assetId: string;
@@ -123,6 +142,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   activeGestureSnapshot: null,
   gestureHadOutOfBoundsAttempt: false,
   currentDesignId: null,
+  spatialValidations: computeSceneValidations(initialScene),
 
   startInteraction: () => {
     set((state) => {
@@ -177,13 +197,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampPositionToRoom(obj.position, obj.dimensions, validatedRoom, obj.scale, obj.rotationEuler),
       }));
 
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        room: validatedRoom,
+        objects: clampedObjects,
+      };
+
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          room: validatedRoom,
-          objects: clampedObjects,
-        },
+        scene: nextScene,
+        spatialValidations: computeSceneValidations(nextScene),
       };
     });
     recordEdit();
@@ -209,7 +232,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         [0, 0, 0]
       );
 
-      const newObject: FurniturePlacement = {
+      const candidateObj: FurniturePlacement = {
         id,
         assetId: item.id,
         name: item.name,
@@ -221,12 +244,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         modelUrl: item.modelUrl,
       };
 
+      // Check spatial constraints against existing objects and resolve if colliding
+      const validation = validatePlacement(
+        candidateObj,
+        [...state.scene.objects, candidateObj],
+        state.scene.room,
+        CATALOG_CATEGORY_LOOKUP
+      );
+      if (!validation.valid && validation.suggestedPosition) {
+        candidateObj.position = validation.suggestedPosition;
+      }
+
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: [...state.scene.objects, candidateObj],
+      };
+
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: [...state.scene.objects, newObject],
-        },
+        scene: nextScene,
+        spatialValidations: computeSceneValidations(nextScene),
         selectedId: id,
       };
     });
@@ -272,12 +309,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         isCustomReconstruction: params.isCustomReconstruction ?? true,
       };
 
+      const validation = validatePlacement(
+        newObject,
+        [...state.scene.objects, newObject],
+        state.scene.room,
+        CATALOG_CATEGORY_LOOKUP
+      );
+      if (!validation.valid && validation.suggestedPosition) {
+        newObject.position = validation.suggestedPosition;
+      }
+
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: [...state.scene.objects, newObject],
+      };
+
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: [...state.scene.objects, newObject],
-        },
+        scene: nextScene,
+        spatialValidations: computeSceneValidations(nextScene),
         selectedId: id,
       };
     });
@@ -324,15 +374,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampedPos,
       };
 
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: updatedObjects,
+      };
+      const validations = computeSceneValidations(nextScene);
+
       if (state.activeGestureSnapshot !== null) {
         // Continuous intermediate update during active gesture:
         // Do NOT increment attemptedOutOfBoundsCount on intermediate ticks.
         // Instead, track that a boundary clamp attempt occurred during this gesture.
         return {
-          scene: {
-            ...state.scene,
-            objects: updatedObjects,
-          },
+          scene: nextScene,
+          spatialValidations: validations,
           gestureHadOutOfBoundsAttempt: state.gestureHadOutOfBoundsAttempt || isClamped,
         };
       }
@@ -347,10 +401,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: updatedObjects,
-        },
+        scene: nextScene,
+        spatialValidations: validations,
       };
     });
   },
@@ -372,13 +424,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         rotationEuler: validatedRot,
       };
 
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: updatedObjects,
+      };
+      const validations = computeSceneValidations(nextScene);
+
       if (state.activeGestureSnapshot !== null) {
         // Continuous intermediate update during active gesture: update scene only
         return {
-          scene: {
-            ...state.scene,
-            objects: updatedObjects,
-          },
+          scene: nextScene,
+          spatialValidations: validations,
         };
       }
 
@@ -386,10 +442,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: updatedObjects,
-        },
+        scene: nextScene,
+        spatialValidations: validations,
       };
     });
   },
@@ -411,13 +465,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         position: clampedPos,
       };
 
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: updatedObjects,
+      };
+      const validations = computeSceneValidations(nextScene);
+
       if (state.activeGestureSnapshot !== null) {
         // Continuous intermediate update during active gesture: update scene only
         return {
-          scene: {
-            ...state.scene,
-            objects: updatedObjects,
-          },
+          scene: nextScene,
+          spatialValidations: validations,
         };
       }
 
@@ -425,10 +483,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const historyUpdate = pushSnapshot(state);
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: updatedObjects,
-        },
+        scene: nextScene,
+        spatialValidations: validations,
       };
     });
   },
@@ -450,12 +506,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       };
 
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: updatedObjects,
+      };
+
       return {
         ...historyUpdate,
-        scene: {
-          ...state.scene,
-          objects: updatedObjects,
-        },
+        scene: nextScene,
+        spatialValidations: computeSceneValidations(nextScene),
       };
     });
   },
@@ -492,12 +551,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       );
     }
 
+    const nextScene: CanonicalScene = {
+      ...scene,
+      objects: [...scene.objects, clone],
+    };
+
     set((state) => ({
       ...pushSnapshot(state),
-      scene: {
-        ...state.scene,
-        objects: [...state.scene.objects, clone],
-      },
+      scene: nextScene,
+      spatialValidations: computeSceneValidations(nextScene),
       selectedId: newId,
     }));
     recordEdit();
@@ -510,12 +572,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(selectedId);
 
+    const nextScene: CanonicalScene = {
+      ...get().scene,
+      objects: get().scene.objects.filter((o) => o.id !== selectedId),
+    };
+
     set((state) => ({
       ...pushSnapshot(state),
-      scene: {
-        ...state.scene,
-        objects: state.scene.objects.filter((o) => o.id !== selectedId),
-      },
+      scene: nextScene,
+      spatialValidations: computeSceneValidations(nextScene),
       selectedId: null,
     }));
     recordEdit();
@@ -525,12 +590,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(id);
 
+    const nextScene: CanonicalScene = {
+      ...get().scene,
+      objects: get().scene.objects.filter((o) => o.id !== id),
+    };
+
     set((state) => ({
       ...pushSnapshot(state),
-      scene: {
-        ...state.scene,
-        objects: state.scene.objects.filter((o) => o.id !== id),
-      },
+      scene: nextScene,
+      spatialValidations: computeSceneValidations(nextScene),
       selectedId: state.selectedId === id ? null : state.selectedId,
     }));
     recordEdit();
@@ -547,6 +615,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...state.scene,
         objects: [],
       },
+      spatialValidations: {},
       selectedId: null,
       currentDesignId: null,
     }));
@@ -575,6 +644,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       ...pushSnapshot(state),
       scene: newScene,
+      spatialValidations: computeSceneValidations(newScene),
       selectedId: newScene.objects.length > 0 ? newScene.objects[0].id : null,
     }));
   },
@@ -600,6 +670,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     set({
       scene: previous,
+      spatialValidations: computeSceneValidations(previous),
       history: newHistory,
       future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
       selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
@@ -630,6 +701,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     set({
       scene: next,
+      spatialValidations: computeSceneValidations(next),
       history: [...history, currentSnapshot].slice(-MAX_HISTORY),
       future: newFuture,
       selectedId: next.objects.length > 0 ? next.objects[0].id : null,
@@ -637,6 +709,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       gestureHadOutOfBoundsAttempt: false,
     });
     recordUndoRedo();
+  },
+
+  resolvePlacement: (id) => {
+    set((state) => {
+      const objIndex = state.scene.objects.findIndex((o) => o.id === id);
+      if (objIndex === -1) return state;
+      const validation = state.spatialValidations[id];
+      if (!validation?.suggestedPosition) return state;
+
+      const obj = state.scene.objects[objIndex];
+      const updatedObjects = [...state.scene.objects];
+      updatedObjects[objIndex] = {
+        ...obj,
+        position: validation.suggestedPosition,
+      };
+
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        objects: updatedObjects,
+      };
+
+      recordEdit();
+      const historyUpdate = pushSnapshot(state);
+      return {
+        ...historyUpdate,
+        scene: nextScene,
+        spatialValidations: computeSceneValidations(nextScene),
+      };
+    });
+  },
+
+  resolveSelectedPlacement: () => {
+    const selectedId = get().selectedId;
+    if (selectedId) {
+      get().resolvePlacement(selectedId);
+    }
   },
 
   canUndo: () => get().history.length > 0,
