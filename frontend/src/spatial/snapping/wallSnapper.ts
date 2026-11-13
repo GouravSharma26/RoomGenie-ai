@@ -136,3 +136,4 @@ export function calculateWallSnap(
 
   return candidates;
 }
+

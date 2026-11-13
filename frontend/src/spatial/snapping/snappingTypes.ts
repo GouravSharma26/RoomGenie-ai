@@ -47,3 +47,4 @@ export interface SnapStateTracker {
   activeXSnap?: { type: SnapType; targetValue: number };
   activeZSnap?: { type: SnapType; targetValue: number };
 }
+

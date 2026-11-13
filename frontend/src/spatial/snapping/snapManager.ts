@@ -1,6 +1,8 @@
 import type { FurniturePlacement, RoomDimensions, Vector3Tuple } from '../../types/scene';
 import { validateRoomBoundaries } from '../constraints/boundaryValidator';
 import { detectCollisions } from '../constraints/collisionDetector';
+import { validateClearanceDetails } from '../constraints/clearanceValidator';
+import type { ClearanceOptions } from '../core/spatialTypes';
 import { calculateGridSnap } from './gridSnapper';
 import { calculateWallSnap } from './wallSnapper';
 import { calculateAlignmentSnap } from './alignmentSnapper';
@@ -16,14 +18,26 @@ import type {
 /**
  * Evaluates candidate positions from all active snappers (Wall, Alignment, Grid),
  * applies priority resolution with hysteresis, and strictly verifies that snapped
- * results do not violate hard spatial constraints (room boundaries, physical collisions).
+ * results do not violate hard spatial constraints:
+ * 1. Room boundary containment (walls, floor, ceiling)
+ * 2. Physical furniture collisions (OBB SAT)
+ * 3. Mandatory hard clearance rules (e.g. egress, door opening)
+ *
+ * Candidate Selection Strategy:
+ * Candidates are grouped by axis (X, Z) and sorted by `priority` descending,
+ * then by `delta` (displacement) ascending.
+ * Consequently, the selected candidate is the HIGHEST-PRIORITY valid candidate
+ * (e.g. Wall Snapping [30] > Alignment Snapping [25..21] > Floor Grid Snapping [10]),
+ * rather than the globally nearest candidate across priority tiers.
  */
 export function calculateSnap(
   target: FurniturePlacement,
   allObjects: FurniturePlacement[],
   room: RoomDimensions,
   config: SnapConfig,
-  stateTracker?: SnapStateTracker
+  stateTracker?: SnapStateTracker,
+  categoryLookup: Record<string, string> = {},
+  clearanceOptions: ClearanceOptions = {}
 ): SnapResult {
   const originalPos = target.position;
 
@@ -57,7 +71,7 @@ export function calculateSnap(
     .filter((c) => c.axis === 'z')
     .sort((a, b) => b.priority - a.priority || a.delta - b.delta);
 
-  // Helper verifying candidate against hard constraints (boundaries & collisions)
+  // Helper verifying candidate against all hard constraints (boundaries, collisions, hard clearances)
   const isPlacementValid = (testPos: Vector3Tuple): boolean => {
     const candidatePlacement: FurniturePlacement = {
       ...target,
@@ -74,6 +88,19 @@ export function calculateSnap(
     const collisions = detectCollisions(candidatePlacement, allObjects);
     if (collisions.length > 0) {
       return false;
+    }
+
+    // 3. Hard clearance constraint check (mandatory minimums)
+    if (clearanceOptions.enforceHardClearance !== false) {
+      const clearanceResult = validateClearanceDetails(
+        candidatePlacement,
+        allObjects,
+        categoryLookup,
+        clearanceOptions
+      );
+      if (clearanceResult.hardViolations.length > 0) {
+        return false;
+      }
     }
 
     return true;
@@ -167,3 +194,4 @@ export function calculateSnap(
     appliedTypes,
   };
 }
+

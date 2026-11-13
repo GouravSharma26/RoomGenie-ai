@@ -343,6 +343,42 @@ describe('Smart Magnetic Snapping — Milestone 2', () => {
       expect(result.position[0]).not.toBe(-2.0);
     });
 
+    it('rejects a snapped candidate that breaches mandatory hard clearance rules', () => {
+      // Bed and wardrobe require 0.40m hard minimum clearance
+      const storage = createMockPlacement({
+        id: 'wardrobe',
+        assetId: 'wardrobe-storage',
+        dimensions: [1.0, 2.0, 0.6],
+        position: [0, 1.0, -1.0],
+      });
+
+      const bed = createMockPlacement({
+        id: 'bed',
+        assetId: 'bed-double',
+        dimensions: [1.6, 0.9, 2.0],
+        // Placed 0.20m away from storage, which violates beds-storage hard minimum of 0.40m
+        position: [0, 0.45, 0.20],
+      });
+
+      const categoryLookup = {
+        'wardrobe-storage': 'storage',
+        'bed-double': 'beds',
+      };
+
+      const result = calculateSnap(
+        bed,
+        [storage, bed],
+        standardRoom,
+        DEFAULT_SNAP_CONFIG,
+        undefined,
+        categoryLookup,
+        { enforceHardClearance: true }
+      );
+
+      // Should not apply a snap position that violates mandatory clearance
+      expect(result.position[2]).toBe(0.20);
+    });
+
     it('maintains hysteresis stickiness when state tracker is active', () => {
       const tracker: SnapStateTracker = {
         activeXSnap: { type: 'wall', targetValue: -2.0 },

@@ -410,7 +410,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           state.scene.objects,
           state.scene.room,
           state.snapConfig,
-          state.snapStateTracker
+          state.snapStateTracker,
+          CATALOG_CATEGORY_LOOKUP
         );
         targetPos = snapResult.position;
         snapGuides = snapResult.guides;

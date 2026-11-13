@@ -298,3 +298,4 @@ export function calculateAlignmentSnap(
 
   return candidates;
 }
+

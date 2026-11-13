@@ -23,3 +23,4 @@ export const SUPPORTED_GRID_SIZES = [
   { label: '10 cm', value: 0.10 },
   { label: '25 cm', value: 0.25 },
 ] as const;
+
