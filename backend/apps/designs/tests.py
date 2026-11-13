@@ -333,3 +333,82 @@ class DesignPersistenceTests(APITestCase):
         self.assertAlmostEqual(retrieved_obj['position'][2], 0.8, places=2)
         self.assertAlmostEqual(retrieved_obj['rotationEuler'][1], math.pi / 2, places=4)
 
+    def test_save_and_retrieve_scene_with_semantic_relationships(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene()
+        # Add a second object (coffee table) in front of sofa
+        scene['objects'].append({
+            'id': 'placement-table-1',
+            'assetId': 'table-oak-coffee',
+            'name': 'Minimalist Coffee Table',
+            'position': [0.0, 0.225, 1.2],
+            'rotationEuler': [0.0, 0.0, 0.0],
+            'scale': [1.0, 1.0, 1.0],
+            'dimensions': [1.2, 0.45, 0.6],
+        })
+        scene['relationships'] = [
+            {
+                'id': 'rel-sofa-table',
+                'anchorObjectId': 'placement-sofa-1',
+                'childObjectId': 'placement-table-1',
+                'socketId': 'sofa-front-table',
+                'gap': 0.45,
+                'relativeYaw': 0.0,
+                'createdAt': 1700000000000,
+            }
+        ]
+        scene['zones'] = [
+            {
+                'id': 'zone-living',
+                'type': 'living',
+                'name': 'Living Area',
+                'memberObjectIds': ['placement-sofa-1', 'placement-table-1'],
+            }
+        ]
+
+        post_res = self.client.post(self.list_url, {
+            'title': 'Living Room with Relationship',
+            'scene_json': scene,
+        }, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_201_CREATED)
+        design_id = post_res.data['id']
+
+        # Retrieve and verify relationships and zones survive intact
+        detail_url = reverse('designs:design-detail', kwargs={'pk': design_id})
+        get_res = self.client.get(detail_url)
+        self.assertEqual(get_res.status_code, status.HTTP_200_OK)
+        saved_scene = get_res.data['scene_json']
+
+        self.assertIn('relationships', saved_scene)
+        self.assertEqual(len(saved_scene['relationships']), 1)
+        rel = saved_scene['relationships'][0]
+        self.assertEqual(rel['id'], 'rel-sofa-table')
+        self.assertEqual(rel['anchorObjectId'], 'placement-sofa-1')
+        self.assertEqual(rel['childObjectId'], 'placement-table-1')
+        self.assertEqual(rel['socketId'], 'sofa-front-table')
+        self.assertEqual(rel['gap'], 0.45)
+        self.assertEqual(rel['relativeYaw'], 0.0)
+
+        self.assertIn('zones', saved_scene)
+        self.assertEqual(len(saved_scene['zones']), 1)
+        self.assertEqual(saved_scene['zones'][0]['id'], 'zone-living')
+
+    def test_reject_scene_with_invalid_relationship_references(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene()
+        scene['relationships'] = [
+            {
+                'id': 'rel-invalid',
+                'anchorObjectId': 'placement-sofa-1',
+                'childObjectId': 'nonexistent-child-id',
+                'socketId': 'sofa-front-table',
+                'gap': 0.45,
+            }
+        ]
+        post_res = self.client.post(self.list_url, {
+            'title': 'Bad Relationship Design',
+            'scene_json': scene,
+        }, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', post_res.data)
+

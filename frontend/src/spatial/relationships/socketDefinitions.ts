@@ -102,3 +102,4 @@ export const CANONICAL_SOCKET_DEFINITIONS: SpatialSocketDefinition[] = [
     maxGap: 0.65,
   },
 ];
+

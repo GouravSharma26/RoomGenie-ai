@@ -244,7 +244,7 @@ def validate_canonical_scene(data: dict) -> dict:
             if 'metalness' in mat_overrides and is_finite_number(mat_overrides['metalness']):
                 cleaned_mat['metalness'] = max(0.0, min(1.0, float(mat_overrides['metalness'])))
 
-        cleaned_objects.append({
+        obj_dict: dict[str, Any] = {
             'id': obj_id,
             'assetId': asset_id,
             'name': name,
@@ -253,9 +253,109 @@ def validate_canonical_scene(data: dict) -> dict:
             'scale': scale,
             'dimensions': dims,
             'materialOverrides': cleaned_mat,
-        })
+        }
+        if 'modelUrl' in obj and isinstance(obj['modelUrl'], str):
+            obj_dict['modelUrl'] = obj['modelUrl']
+        if 'reconstructionJobId' in obj and isinstance(obj['reconstructionJobId'], str):
+            obj_dict['reconstructionJobId'] = obj['reconstructionJobId']
+        if 'isCustomReconstruction' in obj and isinstance(obj['isCustomReconstruction'], bool):
+            obj_dict['isCustomReconstruction'] = obj['isCustomReconstruction']
 
-    return {
+        cleaned_objects.append(obj_dict)
+
+    # 5. Semantic Relationships (optional)
+    relationships = data.get('relationships')
+    cleaned_relationships = []
+    if relationships is not None:
+        if not isinstance(relationships, list):
+            raise serializers.ValidationError("Scene 'relationships' must be a list.")
+
+        seen_child_ids = set()
+        for r_idx, rel in enumerate(relationships):
+            if not isinstance(rel, dict):
+                raise serializers.ValidationError(f"relationships[{r_idx}] must be an object.")
+
+            rel_id = str(rel.get('id', '')).strip()
+            if not rel_id:
+                raise serializers.ValidationError(f"relationships[{r_idx}].id must be a non-empty string.")
+
+            anchor_id = str(rel.get('anchorObjectId', '')).strip()
+            if not anchor_id or anchor_id not in seen_ids:
+                raise serializers.ValidationError(
+                    f"relationships[{r_idx}].anchorObjectId ('{anchor_id}') does not reference an existing object in scene."
+                )
+
+            child_id = str(rel.get('childObjectId', '')).strip()
+            if not child_id or child_id not in seen_ids:
+                raise serializers.ValidationError(
+                    f"relationships[{r_idx}].childObjectId ('{child_id}') does not reference an existing object in scene."
+                )
+
+            if anchor_id == child_id:
+                raise serializers.ValidationError(
+                    f"relationships[{r_idx}]: item '{anchor_id}' cannot attach to itself."
+                )
+
+            if child_id in seen_child_ids:
+                raise serializers.ValidationError(
+                    f"relationships[{r_idx}]: duplicate child '{child_id}' attached to multiple sockets."
+                )
+            seen_child_ids.add(child_id)
+
+            socket_id = str(rel.get('socketId', '')).strip()
+            if not socket_id:
+                raise serializers.ValidationError(f"relationships[{r_idx}].socketId must be a non-empty string.")
+
+            gap_val = rel.get('gap')
+            if gap_val is None:
+                gap_val = rel.get('distance')
+            if gap_val is None or not is_finite_number(gap_val):
+                raise serializers.ValidationError(f"relationships[{r_idx}].gap must be a finite number.")
+            gap_float = float(gap_val)
+            if gap_float < 0.0:
+                raise serializers.ValidationError(f"relationships[{r_idx}].gap cannot be negative.")
+
+            rel_yaw = rel.get('relativeYaw', 0.0)
+            if not is_finite_number(rel_yaw):
+                raise serializers.ValidationError(f"relationships[{r_idx}].relativeYaw must be a finite number.")
+
+            cleaned_rel: dict[str, Any] = {
+                'id': rel_id,
+                'anchorObjectId': anchor_id,
+                'childObjectId': child_id,
+                'socketId': socket_id,
+                'gap': gap_float,
+                'relativeYaw': float(rel_yaw),
+            }
+            if 'createdAt' in rel and is_finite_number(rel['createdAt']):
+                cleaned_rel['createdAt'] = int(rel['createdAt'])
+            cleaned_relationships.append(cleaned_rel)
+
+    # 6. Semantic Zones (optional)
+    zones = data.get('zones')
+    cleaned_zones = []
+    if zones is not None:
+        if not isinstance(zones, list):
+            raise serializers.ValidationError("Scene 'zones' must be a list.")
+        for z_idx, zone in enumerate(zones):
+            if not isinstance(zone, dict):
+                raise serializers.ValidationError(f"zones[{z_idx}] must be an object.")
+            zone_id = str(zone.get('id', '')).strip()
+            if not zone_id:
+                raise serializers.ValidationError(f"zones[{z_idx}].id must be a non-empty string.")
+            z_type = str(zone.get('type', 'living')).strip()
+            z_name = str(zone.get('name', 'Zone')).strip()
+            members = zone.get('memberObjectIds', [])
+            if not isinstance(members, list):
+                raise serializers.ValidationError(f"zones[{z_idx}].memberObjectIds must be a list.")
+            cleaned_zones.append({
+                'id': zone_id,
+                'type': z_type,
+                'name': z_name,
+                'memberObjectIds': [str(m).strip() for m in members if str(m).strip() in seen_ids],
+            })
+
+    result: dict[str, Any] = {
         'schemaVersion': schema_version,
         'unit': 'm',
         'room': {
@@ -265,3 +365,9 @@ def validate_canonical_scene(data: dict) -> dict:
         },
         'objects': cleaned_objects,
     }
+    if relationships is not None:
+        result['relationships'] = cleaned_relationships
+    if zones is not None:
+        result['zones'] = cleaned_zones
+
+    return result

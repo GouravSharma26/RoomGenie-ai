@@ -1,4 +1,10 @@
-import type { RoomDimensions, Vector3Tuple, CanonicalScene, FurniturePlacement } from '../../types/scene';
+import type { 
+  RoomDimensions, 
+  Vector3Tuple, 
+  CanonicalScene, 
+  FurniturePlacement,
+  SemanticRelationship 
+} from '../../types/scene';
 
 export const DEFAULT_ROOM: RoomDimensions = {
   width: 5.0,  // 5 metres
@@ -247,11 +253,48 @@ export function parseCanonicalScene(rawJson: string): CanonicalScene | null {
       });
     }
 
+    const objectIdSet = new Set(objects.map((o) => o.id));
+
+    // Optional relationships
+    const relationships: SemanticRelationship[] = [];
+    if (Array.isArray(parsed.relationships)) {
+      for (const rel of parsed.relationships) {
+        if (
+          rel &&
+          typeof rel === 'object' &&
+          typeof rel.id === 'string' &&
+          typeof rel.anchorObjectId === 'string' &&
+          typeof rel.childObjectId === 'string' &&
+          typeof rel.socketId === 'string' &&
+          objectIdSet.has(rel.anchorObjectId) &&
+          objectIdSet.has(rel.childObjectId) &&
+          rel.anchorObjectId !== rel.childObjectId
+        ) {
+          const gapVal = isFiniteNumber(rel.gap)
+            ? rel.gap
+            : isFiniteNumber(rel.distance)
+            ? rel.distance
+            : 0.45;
+          relationships.push({
+            id: rel.id,
+            anchorObjectId: rel.anchorObjectId,
+            childObjectId: rel.childObjectId,
+            socketId: rel.socketId,
+            gap: Math.max(0, gapVal),
+            relativeYaw: isFiniteNumber(rel.relativeYaw) ? rel.relativeYaw : 0,
+            createdAt: typeof rel.createdAt === 'number' ? rel.createdAt : undefined,
+          });
+        }
+      }
+    }
+
     return {
       schemaVersion: SUPPORTED_SCHEMA_VERSION,
       unit: 'm',
       room,
       objects,
+      relationships,
+      zones: Array.isArray(parsed.zones) ? parsed.zones : undefined,
     };
   } catch {
     return null;

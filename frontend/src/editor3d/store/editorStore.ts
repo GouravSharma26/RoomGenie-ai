@@ -21,6 +21,11 @@ import {
   calculateSnap,
   snapToGrid,
   DEFAULT_SNAP_CONFIG,
+  attachSocket,
+  detachSocket,
+  updateRelationshipGap,
+  transformGroup,
+  purgeInvalidRelationships,
   type PlacementValidation,
   type SnapConfig,
   type SnapGuide,
@@ -33,8 +38,25 @@ export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntrie
 
 export function computeSceneValidations(scene: CanonicalScene): Record<string, PlacementValidation> {
   const validations: Record<string, PlacementValidation> = {};
+  const rels = scene.relationships || [];
+
   for (const obj of scene.objects) {
-    validations[obj.id] = validatePlacement(obj, scene.objects, scene.room, CATALOG_CATEGORY_LOOKUP);
+    const connectedObjectIds = new Set<string>();
+    for (const rel of rels) {
+      if (rel.anchorObjectId === obj.id) {
+        connectedObjectIds.add(rel.childObjectId);
+      } else if (rel.childObjectId === obj.id) {
+        connectedObjectIds.add(rel.anchorObjectId);
+      }
+    }
+
+    validations[obj.id] = validatePlacement(
+      obj,
+      scene.objects,
+      scene.room,
+      CATALOG_CATEGORY_LOOKUP,
+      { exemptObjectIds: connectedObjectIds }
+    );
   }
   return validations;
 }
@@ -94,6 +116,22 @@ interface EditorState {
   toggleAlignmentSnap: () => void;
   setGridSize: (size: number) => void;
   loadScene: (newScene: CanonicalScene) => void;
+  attachObjectToSocket: (
+    anchorId: string,
+    socketId: string,
+    childId: string,
+    options?: { gap?: number; relativeYaw?: number }
+  ) => { success: boolean; error?: string; violations?: string[] };
+  detachObjectFromSocket: (childId: string) => boolean;
+  setRelationshipGap: (
+    childId: string,
+    newGap: number
+  ) => { success: boolean; error?: string; violations?: string[] };
+  moveGroup: (
+    anchorId: string,
+    newPosition: Vector3Tuple,
+    newRotationEuler: Vector3Tuple
+  ) => { success: boolean; movedObjectIds?: string[]; violations?: string[] };
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -117,6 +155,7 @@ const initialScene: CanonicalScene = {
       materialOverrides: { color: SAMPLE_CATALOG[0].defaultColor },
     },
   ],
+  relationships: [],
 };
 
 const MAX_HISTORY = 50;
@@ -134,6 +173,15 @@ function cloneCanonicalScene(scene: CanonicalScene): CanonicalScene {
       scale: [...obj.scale] as Vector3Tuple,
       materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
     })),
+    relationships: scene.relationships ? scene.relationships.map((rel) => ({ ...rel })) : [],
+    zones: scene.zones ? scene.zones.map((zone) => ({
+      ...zone,
+      memberObjectIds: [...zone.memberObjectIds],
+      bounds: zone.bounds ? {
+        min: [...zone.bounds.min] as Vector3Tuple,
+        max: [...zone.bounds.max] as Vector3Tuple,
+      } : undefined,
+    })) : undefined,
   };
 }
 
@@ -626,9 +674,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(selectedId);
 
+    const updatedObjects = get().scene.objects.filter((o) => o.id !== selectedId);
+    const updatedRelationships = (get().scene.relationships || []).filter(
+      (r) => r.anchorObjectId !== selectedId && r.childObjectId !== selectedId
+    );
+
     const nextScene: CanonicalScene = {
       ...get().scene,
-      objects: get().scene.objects.filter((o) => o.id !== selectedId),
+      objects: updatedObjects,
+      relationships: updatedRelationships,
     };
 
     set((state) => ({
@@ -644,9 +698,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Release resource ownership in reconstructedAssetManager
     reconstructedAssetManager.releasePlacement(id);
 
+    const updatedObjects = get().scene.objects.filter((o) => o.id !== id);
+    const updatedRelationships = (get().scene.relationships || []).filter(
+      (r) => r.anchorObjectId !== id && r.childObjectId !== id
+    );
+
     const nextScene: CanonicalScene = {
       ...get().scene,
-      objects: get().scene.objects.filter((o) => o.id !== id),
+      objects: updatedObjects,
+      relationships: updatedRelationships,
     };
 
     set((state) => ({
@@ -668,6 +728,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       scene: {
         ...state.scene,
         objects: [],
+        relationships: [],
       },
       spatialValidations: {},
       selectedId: null,
@@ -734,12 +795,117 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     }
 
+    const sanitizedScene: CanonicalScene = {
+      ...newScene,
+      relationships: newScene.relationships ? [...newScene.relationships] : [],
+    };
+    const purgedScene = purgeInvalidRelationships(sanitizedScene).scene;
+
     set((state) => ({
       ...pushSnapshot(state),
-      scene: newScene,
-      spatialValidations: computeSceneValidations(newScene),
-      selectedId: newScene.objects.length > 0 ? newScene.objects[0].id : null,
+      scene: purgedScene,
+      spatialValidations: computeSceneValidations(purgedScene),
+      selectedId: purgedScene.objects.length > 0 ? purgedScene.objects[0].id : null,
     }));
+  },
+
+  attachObjectToSocket: (anchorId, socketId, childId, options) => {
+    const state = get();
+    const result = attachSocket(state.scene, anchorId, socketId, childId, {
+      ...options,
+      categoryLookup: CATALOG_CATEGORY_LOOKUP,
+    });
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error,
+        violations: result.violations,
+      };
+    }
+
+    const historyUpdate = pushSnapshot(state);
+    set({
+      ...historyUpdate,
+      scene: result.updatedScene,
+      spatialValidations: computeSceneValidations(result.updatedScene),
+    });
+    recordEdit();
+
+    return { success: true };
+  },
+
+  detachObjectFromSocket: (childId) => {
+    const state = get();
+    const rels = state.scene.relationships || [];
+    const isAttached = rels.some((r) => r.childObjectId === childId);
+    if (!isAttached) {
+      return false;
+    }
+
+    const historyUpdate = pushSnapshot(state);
+    const nextScene = detachSocket(state.scene, childId);
+
+    set({
+      ...historyUpdate,
+      scene: nextScene,
+      spatialValidations: computeSceneValidations(nextScene),
+    });
+    recordEdit();
+
+    return true;
+  },
+
+  setRelationshipGap: (childId, newGap) => {
+    const state = get();
+    const result = updateRelationshipGap(state.scene, childId, newGap, {
+      categoryLookup: CATALOG_CATEGORY_LOOKUP,
+    });
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error,
+        violations: result.violations,
+      };
+    }
+
+    const historyUpdate = pushSnapshot(state);
+    set({
+      ...historyUpdate,
+      scene: result.updatedScene,
+      spatialValidations: computeSceneValidations(result.updatedScene),
+    });
+    recordEdit();
+
+    return { success: true };
+  },
+
+  moveGroup: (anchorId, newPosition, newRotationEuler) => {
+    const state = get();
+    const result = transformGroup(state.scene, anchorId, newPosition, newRotationEuler, {
+      categoryLookup: CATALOG_CATEGORY_LOOKUP,
+    });
+
+    if (!result.success) {
+      return {
+        success: false,
+        violations: result.violations,
+      };
+    }
+
+    const historyUpdate = pushSnapshot(state);
+    set({
+      ...historyUpdate,
+      scene: result.updatedScene,
+      spatialValidations: computeSceneValidations(result.updatedScene),
+    });
+    recordEdit();
+
+    return {
+      success: true,
+      movedObjectIds: result.movedObjectIds,
+    };
   },
 
   undo: () => {
@@ -747,19 +913,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (history.length === 0) return;
     const previous = history[history.length - 1];
     const newHistory = history.slice(0, -1);
-    const currentSnapshot: CanonicalScene = {
-      schemaVersion: scene.schemaVersion,
-      unit: scene.unit,
-      room: { ...scene.room },
-      objects: scene.objects.map((obj) => ({
-        ...obj,
-        dimensions: [...obj.dimensions] as Vector3Tuple,
-        position: [...obj.position] as Vector3Tuple,
-        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
-        scale: [...obj.scale] as Vector3Tuple,
-        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
-      })),
-    };
+    const currentSnapshot = cloneCanonicalScene(scene);
 
     set({
       scene: previous,
@@ -778,19 +932,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (future.length === 0) return;
     const next = future[0];
     const newFuture = future.slice(1);
-    const currentSnapshot: CanonicalScene = {
-      schemaVersion: scene.schemaVersion,
-      unit: scene.unit,
-      room: { ...scene.room },
-      objects: scene.objects.map((obj) => ({
-        ...obj,
-        dimensions: [...obj.dimensions] as Vector3Tuple,
-        position: [...obj.position] as Vector3Tuple,
-        rotationEuler: [...obj.rotationEuler] as Vector3Tuple,
-        scale: [...obj.scale] as Vector3Tuple,
-        materialOverrides: obj.materialOverrides ? { ...obj.materialOverrides } : undefined,
-      })),
-    };
+    const currentSnapshot = cloneCanonicalScene(scene);
 
     set({
       scene: next,
