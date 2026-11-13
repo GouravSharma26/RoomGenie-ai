@@ -25,6 +25,7 @@ import { RoomPhotoVisionModal } from './components/editor/RoomPhotoVisionModal';
 import { PhotoTo3DModal } from './components/editor/PhotoTo3DModal';
 import { ArPlacementModal } from './components/editor/ArPlacementModal';
 import { EvaluationTrialModal } from './components/editor/EvaluationTrialModal';
+import { FlowCheckPanel } from './components/editor/FlowCheckPanel';
 import { AuthModal } from './components/auth/AuthModal';
 import { initEvaluationTelemetry } from './services/evaluationTelemetry';
 import { ensureAuthenticated, getDesignById } from './services/designApi';
@@ -214,6 +215,7 @@ export default function App() {
               <RoomCanvas />
             </main>
             <PropertiesPanel />
+            <FlowCheckPanel />
           </div>
 
           <ControlsHelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />

@@ -31,7 +31,9 @@ import {
   type SnapConfig,
   type SnapGuide,
   type SnapStateTracker,
-  type SocketCandidate
+  type SocketCandidate,
+  analyzeWalkability,
+  type WalkabilityAnalysisResult
 } from '../../spatial';
 
 export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
@@ -85,11 +87,16 @@ interface EditorState {
   gestureHadOutOfBoundsAttempt: boolean;
   currentDesignId: string | null;
   spatialValidations: Record<string, PlacementValidation>;
+  showWalkabilityOverlay: boolean;
+  walkabilityAnalysis: WalkabilityAnalysisResult | null;
 
   // Actions
   startInteraction: (draggedId?: string) => void;
   endInteraction: () => void;
   cancelInteraction: () => void;
+  toggleWalkabilityOverlay: () => void;
+  setShowWalkabilityOverlay: (show: boolean) => void;
+  runWalkabilityAnalysis: () => WalkabilityAnalysisResult;
   setActiveSocketCandidate: (candidate: SocketCandidate | null) => void;
   setDraggedObjectId: (id: string | null) => void;
   setCurrentDesignId: (id: string | null) => void;
@@ -222,6 +229,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   gestureHadOutOfBoundsAttempt: false,
   currentDesignId: null,
   spatialValidations: computeSceneValidations(initialScene),
+  showWalkabilityOverlay: false,
+  walkabilityAnalysis: null,
 
   setActiveSocketCandidate: (candidate) => set({ activeSocketCandidate: candidate }),
   setDraggedObjectId: (id) => set({ draggedObjectId: id }),
@@ -282,6 +291,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return {
           scene: nextScene,
           spatialValidations: computeSceneValidations(nextScene),
+          walkabilityAnalysis: state.showWalkabilityOverlay
+            ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+            : state.walkabilityAnalysis,
           activeGestureSnapshot: null,
           gestureHadOutOfBoundsAttempt: false,
           activeSnapGuides: [],
@@ -884,6 +896,29 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         snapConfig: { ...state.snapConfig, gridSnap: nextGridSnap },
       };
     }),
+
+  toggleWalkabilityOverlay: () => {
+    const next = !get().showWalkabilityOverlay;
+    let analysis = get().walkabilityAnalysis;
+    if (next || !analysis) {
+      analysis = analyzeWalkability(get().scene, undefined, CATALOG_CATEGORY_LOOKUP);
+    }
+    set({ showWalkabilityOverlay: next, walkabilityAnalysis: analysis });
+  },
+
+  setShowWalkabilityOverlay: (show: boolean) => {
+    let analysis = get().walkabilityAnalysis;
+    if (show || !analysis) {
+      analysis = analyzeWalkability(get().scene, undefined, CATALOG_CATEGORY_LOOKUP);
+    }
+    set({ showWalkabilityOverlay: show, walkabilityAnalysis: analysis });
+  },
+
+  runWalkabilityAnalysis: () => {
+    const analysis = analyzeWalkability(get().scene, undefined, CATALOG_CATEGORY_LOOKUP);
+    set({ walkabilityAnalysis: analysis });
+    return analysis;
+  },
 
   setSnapConfig: (partial) =>
     set((state) => ({

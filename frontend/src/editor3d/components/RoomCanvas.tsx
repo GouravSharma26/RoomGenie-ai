@@ -6,6 +6,7 @@ import { ViewportControls } from './ViewportControls';
 import { AlignmentGuides } from './AlignmentGuides';
 import { SocketOverlay } from './SocketOverlay';
 import { RelationshipOverlay } from './RelationshipOverlay';
+import { WalkabilityOverlay } from './WalkabilityOverlay';
 import { useEditorStore } from '../store/editorStore';
 
 export const RoomCanvas: React.FC = () => {
@@ -81,6 +82,7 @@ export const RoomCanvas: React.FC = () => {
           <AlignmentGuides />
           <SocketOverlay />
           <RelationshipOverlay />
+          <WalkabilityOverlay />
           <ViewportControls />
         </Suspense>
       </Canvas>

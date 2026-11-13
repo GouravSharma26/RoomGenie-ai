@@ -3,4 +3,8 @@ export * from './gridConfig';
 export * from './gridCoordinates';
 export * from './occupancyRasterizer';
 export * from './occupancyBuilder';
-
+export * from './walkabilityTypes';
+export * from './clearanceMapper';
+export * from './pathfinder';
+export * from './circulationValidator';
+export * from './walkabilityManager';

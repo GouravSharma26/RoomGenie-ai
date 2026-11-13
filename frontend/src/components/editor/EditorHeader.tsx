@@ -14,7 +14,8 @@ import {
   Undo2,
   Redo2,
   Magnet,
-  ChevronDown
+  ChevronDown,
+  Footprints
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { SUPPORTED_GRID_SIZES } from '../../spatial';
@@ -59,6 +60,9 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   const toggleAlignmentSnap = useEditorStore((state) => state.toggleAlignmentSnap);
   const toggleGridSnap = useEditorStore((state) => state.toggleGridSnap);
   const setGridSize = useEditorStore((state) => state.setGridSize);
+  const showWalkabilityOverlay = useEditorStore((state) => state.showWalkabilityOverlay);
+  const toggleWalkabilityOverlay = useEditorStore((state) => state.toggleWalkabilityOverlay);
+  const walkabilityAnalysis = useEditorStore((state) => state.walkabilityAnalysis);
 
   const [showSnapMenu, setShowSnapMenu] = useState(false);
   const snapMenuRef = useRef<HTMLDivElement>(null);
@@ -369,6 +373,33 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             <span>AR View</span>
           </button>
         )}
+
+        {/* Flow Check / Walkability Analysis Trigger */}
+        <button
+          onClick={toggleWalkabilityOverlay}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm flex items-center gap-1.5 transition active:scale-95 border ${
+            showWalkabilityOverlay
+              ? 'bg-indigo-600/30 border-indigo-500/80 text-indigo-300 shadow-indigo-900/30'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+          }`}
+          title="Toggle Flow Check & Walkability Analysis (Phase 4)"
+        >
+          <Footprints className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Flow Check</span>
+          {walkabilityAnalysis && (
+            <span
+              className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                walkabilityAnalysis.circulation.walkabilityScore >= 80
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : walkabilityAnalysis.circulation.walkabilityScore >= 60
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : 'bg-rose-500/20 text-rose-400'
+              }`}
+            >
+              {walkabilityAnalysis.circulation.walkabilityScore}
+            </span>
+          )}
+        </button>
 
         {/* Study Evaluation Trial Trigger */}
         {onOpenEvaluationTrial && (
