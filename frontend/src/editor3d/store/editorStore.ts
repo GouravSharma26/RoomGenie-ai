@@ -407,6 +407,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...historyUpdate,
         scene: nextScene,
         spatialValidations: computeSceneValidations(nextScene),
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
     recordEdit();
@@ -806,6 +809,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...historyUpdate,
         scene: nextScene,
         spatialValidations: computeSceneValidations(nextScene),
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
   },
@@ -1145,6 +1151,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       scene: previous,
       spatialValidations: computeSceneValidations(previous),
+      walkabilityAnalysis: get().showWalkabilityOverlay
+        ? analyzeWalkability(previous, undefined, CATALOG_CATEGORY_LOOKUP)
+        : null,
       history: newHistory,
       future: [currentSnapshot, ...future].slice(0, MAX_HISTORY),
       selectedId: previous.objects.length > 0 ? previous.objects[0].id : null,
@@ -1164,6 +1173,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       scene: next,
       spatialValidations: computeSceneValidations(next),
+      walkabilityAnalysis: get().showWalkabilityOverlay
+        ? analyzeWalkability(next, undefined, CATALOG_CATEGORY_LOOKUP)
+        : null,
       history: [...history, currentSnapshot].slice(-MAX_HISTORY),
       future: newFuture,
       selectedId: next.objects.length > 0 ? next.objects[0].id : null,
@@ -1198,6 +1210,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...historyUpdate,
         scene: nextScene,
         spatialValidations: computeSceneValidations(nextScene),
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
   },
@@ -1353,6 +1368,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedOpeningId: openingId,
         selectedWallId: wallId,
         selectedId: null,
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
 
@@ -1405,6 +1423,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         ...historyUpdate,
         scene: nextScene,
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
 
@@ -1445,6 +1466,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...historyUpdate,
         scene: nextScene,
         selectedOpeningId: state.selectedOpeningId === openingId ? null : state.selectedOpeningId,
+        walkabilityAnalysis: state.showWalkabilityOverlay
+          ? analyzeWalkability(nextScene, undefined, CATALOG_CATEGORY_LOOKUP)
+          : null,
       };
     });
 

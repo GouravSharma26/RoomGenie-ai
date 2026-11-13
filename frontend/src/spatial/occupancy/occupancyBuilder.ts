@@ -13,12 +13,14 @@ import {
   gridToWorldCenter 
 } from './gridCoordinates';
 import { rasterizePlacements } from './occupancyRasterizer';
+import { getCanonicalRoomGeometry, isPointInPolygon } from '../parametric/roomGeometry';
 
 /**
  * Builds an immutable 2D Occupancy Grid representation of a canonical scene.
  * 
  * Converts the continuous room floor and transformed 3D furniture into
  * discrete 2D grid cells with exact footprint coverage and obstacle tracking.
+ * Supports both legacy rectangular rooms and arbitrary polygonal footprints.
  * 
  * Deterministic and side-effect free. Does not mutate the input scene.
  * 
@@ -59,16 +61,19 @@ export function buildOccupancyGrid(
   }
   const resolvedConfig = configValidation.config;
 
-  // 4. Compute grid dimensions
-  const dimensions = computeGridDimensions(roomValidation.dimensions, resolvedConfig);
+  // 4. Compute grid dimensions & resolve authoritative parametric room footprint
+  const canonicalRoom = getCanonicalRoomGeometry(scene.room);
+  const footprint = canonicalRoom.footprint;
+  const dimensions = computeGridDimensions(scene.room, resolvedConfig);
 
-  // 5. Initialize cell array
+  // 5. Initialize cell array with exact point-in-polygon classification
   const cells: GridCell[] = new Array(dimensions.totalCells);
   for (let r = 0; r < dimensions.numRows; r++) {
     for (let c = 0; c < dimensions.numCols; c++) {
       const idx = cellIndex(c, r, dimensions.numCols);
       const bounds = gridToWorldBounds(c, r, dimensions);
       const center = gridToWorldCenter(c, r, dimensions);
+      const isInside = isPointInPolygon(center, footprint);
 
       cells[idx] = {
         col: c,
@@ -81,7 +86,7 @@ export function buildOccupancyGrid(
           minZ: bounds.minZ,
           maxZ: bounds.maxZ,
         },
-        isInsideRoom: true,
+        isInsideRoom: isInside,
         isOccupied: false,
         occupyingObjectIds: [],
         isPartialEdge: bounds.isPartialEdge,
@@ -91,11 +96,22 @@ export function buildOccupancyGrid(
 
   // 6. Rasterize furniture placements
   const placements = Array.isArray(scene.objects) ? scene.objects : [];
-  const { objectOccupancyMap, ignoredObjects, totalOccupiedCells } = rasterizePlacements(
+  const { objectOccupancyMap, ignoredObjects } = rasterizePlacements(
     placements,
     cells,
     dimensions
   );
+
+  // 7. Calculate occupied and free cell counts
+  let totalOccupiedCells = 0;
+  let totalFreeCells = 0;
+  for (const cell of cells) {
+    if (cell.isOccupied) {
+      totalOccupiedCells++;
+    } else if (cell.isInsideRoom) {
+      totalFreeCells++;
+    }
+  }
 
   const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const buildDurationMs = Number((endTime - startTime).toFixed(3));
@@ -105,7 +121,7 @@ export function buildOccupancyGrid(
     config: resolvedConfig,
     cells,
     occupiedCount: totalOccupiedCells,
-    freeCount: dimensions.totalCells - totalOccupiedCells,
+    freeCount: totalFreeCells,
     objectOccupancyMap,
   };
 

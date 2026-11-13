@@ -38,6 +38,8 @@ export interface RoomOpening {
   clearanceDepth: number;
   swingDirection?: 'inward' | 'outward' | 'sliding';
   accessPoint: [number, number]; // Interior landing coordinate [x, z]
+  wallId?: string;
+  isFallback?: boolean;
 }
 
 /**

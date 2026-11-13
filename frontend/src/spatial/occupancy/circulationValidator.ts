@@ -44,22 +44,31 @@ export function validateCirculation(
     const halfWidth = door.width / 2;
     const depth = door.clearanceDepth;
     const [doorX, doorZ] = door.center;
+    const [accX, accZ] = door.accessPoint;
 
-    // Bounding box for door swing zone
-    let minX = doorX - halfWidth;
-    let maxX = doorX + halfWidth;
-    let minZ = doorZ;
-    let maxZ = doorZ;
+    // Vector pointing inwards from door center towards interior landing
+    const vx = accX - doorX;
+    const vz = accZ - doorZ;
+    const vLen = Math.hypot(vx, vz);
+    const nx = vLen > 1e-4 ? vx / vLen : (door.wall === 'north' ? 1 : door.wall === 'south' ? -1 : 0);
+    const nz = vLen > 1e-4 ? vz / vLen : (door.wall === 'south' ? -1 : door.wall === 'north' ? 1 : 0);
+    const ux = -nz;
+    const uz = nx;
 
-    if (door.wall === 'south') {
-      minZ = doorZ - depth;
-    } else if (door.wall === 'north') {
-      maxZ = doorZ + depth;
-    } else if (door.wall === 'east') {
-      minX = doorX - depth;
-    } else if (door.wall === 'west') {
-      maxX = doorX + depth;
-    }
+    // 4 corners of door swing & pedestrian passage corridor
+    const p1x = doorX - halfWidth * ux;
+    const p1z = doorZ - halfWidth * uz;
+    const p2x = doorX + halfWidth * ux;
+    const p2z = doorZ + halfWidth * uz;
+    const p3x = p2x + depth * nx;
+    const p3z = p2z + depth * nz;
+    const p4x = p1x + depth * nx;
+    const p4z = p1z + depth * nz;
+
+    const minX = Math.min(p1x, p2x, p3x, p4x);
+    const maxX = Math.max(p1x, p2x, p3x, p4x);
+    const minZ = Math.min(p1z, p2z, p3z, p4z);
+    const maxZ = Math.max(p1z, p2z, p3z, p4z);
 
     const minC = worldToGrid(minX, minZ, dimensions);
     const maxC = worldToGrid(maxX, maxZ, dimensions);

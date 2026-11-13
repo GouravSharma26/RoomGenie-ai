@@ -315,9 +315,11 @@ export function findPath(
         const orth2 = cellIndex(curCol, curRow + dr, dimensions.numCols);
         if (
           classifications[orth1] === 'blocked' ||
-          classifications[orth2] === 'blocked'
+          classifications[orth2] === 'blocked' ||
+          classifications[orth1] === 'out_of_bounds' ||
+          classifications[orth2] === 'out_of_bounds'
         ) {
-          continue; // Diagonal cuts through corner of obstacle
+          continue; // Diagonal cuts through corner of obstacle or cuts exterior wall corner
         }
       }
 

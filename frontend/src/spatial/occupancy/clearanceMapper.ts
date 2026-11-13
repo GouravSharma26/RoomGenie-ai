@@ -4,6 +4,11 @@ import { computeConvexHull2D, testAABBPolygonIntersection } from './occupancyRas
 import { cellIndex, gridToWorldBounds, worldToGrid } from './gridCoordinates';
 import type { OccupancyGrid } from './occupancyTypes';
 import type { RoomOpening, WalkabilityConfig, WalkabilityCostGrid } from './walkabilityTypes';
+import { 
+  getCanonicalRoomGeometry, 
+  deriveWallProperties, 
+  pointToSegmentDistance 
+} from '../parametric/roomGeometry';
 
 /**
  * Standard default walkability configuration.
@@ -35,6 +40,7 @@ export const CATEGORY_FUNCTIONAL_CLEARANCE: Record<string, { bufferXZ: number }>
 /**
  * Determines room openings / entrances.
  * Uses explicit openings if defined on scene, otherwise deterministically resolves a standard entrance.
+ * Correctly maps Phase 5.3 architectural doors into navigation portals on arbitrary walls.
  */
 export function resolveRoomOpenings(
   room: RoomDimensions,
@@ -44,11 +50,101 @@ export function resolveRoomOpenings(
     return existingOpenings;
   }
 
-  // Standard architectural entrance: Center of South Wall (+Z)
+  // 1. Check if the room has architectural openings (Phase 5.1 / 5.3)
+  if (room.openings && room.openings.length > 0) {
+    // Windows never become pedestrian portals: filter strictly for doors
+    const doors = room.openings.filter((o) => o.type === 'door');
+    if (doors.length > 0) {
+      const canonicalRoom = getCanonicalRoomGeometry(room);
+      const resolvedDoors: RoomOpening[] = [];
+
+      for (const door of doors) {
+        const hostWall = canonicalRoom.walls.find((w) => w.id === door.wallId);
+        if (!hostWall) continue;
+
+        const derived = deriveWallProperties(hostWall, canonicalRoom.height);
+        const [x1, z1] = derived.startPoint;
+        const [ux, uz] = derived.direction;
+        const [nx, nz] = derived.interiorNormal;
+
+        const midDist = door.distanceAlongWall + door.width / 2;
+        const doorCenterX = x1 + midDist * ux;
+        const doorCenterZ = z1 + midDist * uz;
+
+        // Pedestrian landing point stepped inwards along wall interior normal
+        const landingOffset = 0.60;
+        const accessX = doorCenterX + landingOffset * nx;
+        const accessZ = doorCenterZ + landingOffset * nz;
+
+        // Map swing direction
+        let swingDir: 'inward' | 'outward' | 'sliding' = 'inward';
+        if (door.swing && door.swing.includes('outward')) {
+          swingDir = 'outward';
+        } else if (door.swing === 'sliding') {
+          swingDir = 'sliding';
+        }
+
+        // Map wall name for cardinal compatibility
+        let cardinalWall: 'north' | 'south' | 'east' | 'west' = 'south';
+        if (hostWall.id.includes('north')) cardinalWall = 'north';
+        else if (hostWall.id.includes('south')) cardinalWall = 'south';
+        else if (hostWall.id.includes('east')) cardinalWall = 'east';
+        else if (hostWall.id.includes('west')) cardinalWall = 'west';
+
+        resolvedDoors.push({
+          id: door.id,
+          wall: cardinalWall,
+          center: [Number(doorCenterX.toFixed(4)), Number(doorCenterZ.toFixed(4))],
+          width: door.width,
+          clearanceDepth: 0.90,
+          swingDirection: swingDir,
+          accessPoint: [Number(accessX.toFixed(4)), Number(accessZ.toFixed(4))],
+          wallId: hostWall.id,
+          isFallback: false,
+        });
+      }
+
+      if (resolvedDoors.length > 0) {
+        return resolvedDoors;
+      }
+    }
+  }
+
+  // 2. Deterministic Architectural Fallback: Center of South Wall (+Z)
   const doorWidth = 0.90;
   const doorClearanceDepth = 0.90;
-  const southZ = room.length / 2;
+  const canonicalRoom = getCanonicalRoomGeometry(room);
+  const southWall = canonicalRoom.walls.find((w) => w.id.includes('south')) || canonicalRoom.walls[0];
 
+  if (southWall) {
+    const derived = deriveWallProperties(southWall, canonicalRoom.height);
+    const midX = (derived.startPoint[0] + derived.endPoint[0]) / 2;
+    const midZ = (derived.startPoint[1] + derived.endPoint[1]) / 2;
+    const [nx, nz] = derived.interiorNormal;
+    const accessX = midX + 0.5 * nx;
+    const accessZ = midZ + 0.5 * nz;
+
+    let cardinalWall: 'north' | 'south' | 'east' | 'west' = 'south';
+    if (southWall.id.includes('north')) cardinalWall = 'north';
+    else if (southWall.id.includes('east')) cardinalWall = 'east';
+    else if (southWall.id.includes('west')) cardinalWall = 'west';
+
+    return [
+      {
+        id: 'room-main-entrance',
+        wall: cardinalWall,
+        center: [Number(midX.toFixed(4)), Number(midZ.toFixed(4))],
+        width: doorWidth,
+        clearanceDepth: doorClearanceDepth,
+        swingDirection: 'inward',
+        accessPoint: [Number(accessX.toFixed(4)), Number(accessZ.toFixed(4))],
+        wallId: southWall.id,
+        isFallback: true,
+      },
+    ];
+  }
+
+  const southZ = room.length / 2;
   const defaultDoor: RoomOpening = {
     id: 'room-main-entrance',
     wall: 'south',
@@ -57,6 +153,7 @@ export function resolveRoomOpenings(
     clearanceDepth: doorClearanceDepth,
     swingDirection: 'inward',
     accessPoint: [0, Math.max(southZ - doorClearanceDepth * 0.5, 0)],
+    isFallback: true,
   };
 
   return [defaultDoor];
@@ -125,6 +222,8 @@ function computeDistanceField(
 
 /**
  * Builds the comprehensive WalkabilityCostGrid from a CanonicalScene and OccupancyGrid.
+ * Computes exact analytical Euclidean distances to polygonal wall boundaries and
+ * integrates dynamic door openings into the traversable cost grid.
  */
 export function buildWalkabilityCostGrid(
   scene: CanonicalScene,
@@ -146,7 +245,6 @@ export function buildWalkabilityCostGrid(
   const cellFurnitureIds: string[][] = Array.from({ length: totalCells }, () => []);
   const blockedIndices: number[] = [];
   const restrictedIndices: number[] = [];
-  const isBlockedOrWall = new Array<boolean>(totalCells).fill(false);
 
   // 1. Initialize from physical occupancy grid
   for (let i = 0; i < totalCells; i++) {
@@ -156,11 +254,9 @@ export function buildWalkabilityCostGrid(
     if (!cell.isInsideRoom) {
       classifications[i] = 'out_of_bounds';
       costs[i] = Infinity;
-      isBlockedOrWall[i] = true;
     } else if (cell.isOccupied) {
       classifications[i] = 'blocked';
       costs[i] = Infinity;
-      isBlockedOrWall[i] = true;
       blockedIndices.push(i);
     } else {
       classifications[i] = 'free';
@@ -168,22 +264,57 @@ export function buildWalkabilityCostGrid(
     }
   }
 
-  // 2. Mark perimeter room walls as obstacles in distance field
-  for (let c = 0; c < dimensions.numCols; c++) {
-    isBlockedOrWall[c] = true; // North wall
-    isBlockedOrWall[(dimensions.numRows - 1) * dimensions.numCols + c] = true; // South wall
-  }
-  for (let r = 0; r < dimensions.numRows; r++) {
-    isBlockedOrWall[r * dimensions.numCols] = true; // West wall
-    isBlockedOrWall[r * dimensions.numCols + (dimensions.numCols - 1)] = true; // East wall
+  // 2. Compute Exact Analytical Euclidean Distance to Polygonal Wall Boundaries
+  const canonicalRoom = getCanonicalRoomGeometry(scene.room);
+  const walls = canonicalRoom.walls;
+  const obstacleDistances = new Float32Array(totalCells);
+
+  for (let i = 0; i < totalCells; i++) {
+    const cell = occupancyGrid.cells[i];
+    if (!cell.isInsideRoom) {
+      obstacleDistances[i] = 0;
+      continue;
+    }
+
+    const [cx, cz] = cell.center;
+    let minWallDist = Infinity;
+    for (let w = 0; w < walls.length; w++) {
+      const wall = walls[w];
+      const d = pointToSegmentDistance(
+        cx,
+        cz,
+        wall.startPoint[0],
+        wall.startPoint[1],
+        wall.endPoint[0],
+        wall.endPoint[1]
+      );
+      if (d < minWallDist) {
+        minWallDist = d;
+      }
+    }
+    obstacleDistances[i] = minWallDist;
   }
 
-  // 3. Compute Euclidean Distance Transform from obstacles and walls
-  const obstacleDistances = computeDistanceField(
-    dimensions,
-    config.resolution,
-    isBlockedOrWall
-  );
+  // 3. Compute Distance to Furniture Obstacles (if any) and merge with wall distance
+  if (blockedIndices.length > 0) {
+    const isFurnitureBlocked = new Array<boolean>(totalCells).fill(false);
+    for (const bIdx of blockedIndices) {
+      isFurnitureBlocked[bIdx] = true;
+    }
+    const furnitureDistances = computeDistanceField(
+      dimensions,
+      config.resolution,
+      isFurnitureBlocked
+    );
+
+    for (let i = 0; i < totalCells; i++) {
+      if (!occupancyGrid.cells[i].isInsideRoom) {
+        obstacleDistances[i] = 0;
+      } else {
+        obstacleDistances[i] = Math.min(obstacleDistances[i], furnitureDistances[i]);
+      }
+    }
+  }
 
   // 4. Apply pedestrian safety margin around hard obstacles
   const pedClearance = config.pedestrianClearance;
@@ -257,7 +388,7 @@ export function buildWalkabilityCostGrid(
     const accessCoord = worldToGrid(door.accessPoint[0], door.accessPoint[1], dimensions);
     if (!accessCoord) continue;
 
-    const landingRadiusCells = Math.ceil(0.35 / config.resolution);
+    const landingRadiusCells = Math.ceil(0.40 / config.resolution);
 
     for (let dr = -landingRadiusCells; dr <= landingRadiusCells; dr++) {
       for (let dc = -landingRadiusCells; dc <= landingRadiusCells; dc++) {
@@ -266,9 +397,12 @@ export function buildWalkabilityCostGrid(
         if (c < 0 || c >= dimensions.numCols || r < 0 || r >= dimensions.numRows) continue;
         const idx = cellIndex(c, r, dimensions.numCols);
 
-        // If not physically blocked by furniture, guarantee the entrance landing is accessible
+        // If not physically blocked by furniture and inside room, guarantee the entrance landing is accessible
         if (classifications[idx] !== 'blocked' && classifications[idx] !== 'out_of_bounds') {
           costs[idx] = Math.min(costs[idx], 1.2); // Near base cost
+          if (classifications[idx] === 'restricted' && obstacleDistances[idx] > 0.10) {
+            classifications[idx] = 'free';
+          }
         }
       }
     }

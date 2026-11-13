@@ -92,7 +92,7 @@ export function computePolygonBounds(vertices: Point2D[]): FootprintBounds {
 /**
  * Helper to test if two line segments [p1, p2] and [p3, p4] properly intersect.
  */
-function doSegmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): boolean {
+export function doSegmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): boolean {
   const ccw = (a: Point2D, b: Point2D, c: Point2D): number =>
     (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0]);
 
@@ -350,4 +350,99 @@ export function getCanonicalRoomGeometry(room: RoomDimensions): ParametricRoom {
 
   return convertLegacyToParametric(room);
 }
+
+/**
+ * Computes the minimum Euclidean distance from a 2D point [px, pz] to a line segment [x1, z1] -> [x2, z2].
+ */
+export function pointToSegmentDistance(
+  px: number,
+  pz: number,
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number
+): number {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const lenSq = dx * dx + dz * dz;
+  if (lenSq < 1e-12) {
+    return Math.hypot(px - x1, pz - z1);
+  }
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (pz - z1) * dz) / lenSq));
+  const projX = x1 + t * dx;
+  const projZ = z1 + t * dz;
+  return Math.hypot(px - projX, pz - projZ);
+}
+
+/**
+ * Computes the shortest distance from a 2D point [px, pz] to the boundary edges of a polygon.
+ */
+export function pointToPolygonBoundaryDistance(
+  point: Point2D,
+  polygon: Point2D[]
+): number {
+  const n = polygon.length;
+  if (n < 2) return Infinity;
+
+  let minDist = Infinity;
+  for (let i = 0; i < n; i++) {
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % n];
+    const d = pointToSegmentDistance(point[0], point[1], p1[0], p1[1], p2[0], p2[1]);
+    if (d < minDist) {
+      minDist = d;
+    }
+  }
+  return minDist;
+}
+
+/**
+ * Tests if a 2D point [x, z] is inside, on the boundary of, or outside a simple polygon.
+ * Uses ray-casting algorithm (even-odd rule) with explicit boundary segment tolerance.
+ * Handles both clockwise and counter-clockwise winding, convex and concave polygons.
+ *
+ * @param point [x, z] in world coordinates
+ * @param polygon Array of 2D polygon vertices in sequential order
+ * @param tolerance Optional boundary distance tolerance in metres (default 1e-4)
+ * @returns true if inside or on boundary within tolerance, false if outside
+ */
+export function isPointInPolygon(
+  point: Point2D,
+  polygon: Point2D[],
+  tolerance = 1e-4
+): boolean {
+  const n = polygon.length;
+  if (n < 3) return false;
+
+  const [px, pz] = point;
+
+  // 1. Boundary check: if point is within tolerance of any edge segment, classify as inside
+  for (let i = 0; i < n; i++) {
+    const p1 = polygon[i];
+    const p2 = polygon[(i + 1) % n];
+    if (pointToSegmentDistance(px, pz, p1[0], p1[1], p2[0], p2[1]) <= tolerance) {
+      return true;
+    }
+  }
+
+  // 2. Ray-casting test: cast a horizontal ray along +X direction
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = polygon[i][0];
+    const zi = polygon[i][1];
+    const xj = polygon[j][0];
+    const zj = polygon[j][1];
+
+    const crossesY = (zi > pz) !== (zj > pz);
+    if (crossesY) {
+      const intersectX = ((xj - xi) * (pz - zi)) / (zj - zi) + xi;
+      if (px < intersectX) {
+        inside = !inside;
+      }
+    }
+  }
+
+  return inside;
+}
+
 

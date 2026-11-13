@@ -5,9 +5,11 @@ import type {
   GridConfig, 
   GridDimensions 
 } from './occupancyTypes';
+import { computePolygonBounds } from '../parametric/roomGeometry';
 
 /**
  * Computes grid dimensions and bounds for a room using the specified grid configuration.
+ * Supports both legacy rectangular rooms and arbitrary polygonal footprints.
  * Handles non-divisible room dimensions cleanly without expanding room bounds.
  */
 export function computeGridDimensions(
@@ -15,13 +17,30 @@ export function computeGridDimensions(
   config: GridConfig
 ): GridDimensions {
   const resolution = config.resolution;
-  const roomWidth = room.width;
-  const roomLength = room.length;
 
-  const minX = -roomWidth / 2;
-  const maxX = roomWidth / 2;
-  const minZ = -roomLength / 2;
-  const maxZ = roomLength / 2;
+  let minX: number;
+  let maxX: number;
+  let minZ: number;
+  let maxZ: number;
+  let roomWidth: number;
+  let roomLength: number;
+
+  if (room.footprint && room.footprint.length >= 3) {
+    const bounds = computePolygonBounds(room.footprint);
+    minX = bounds.minX;
+    maxX = bounds.maxX;
+    minZ = bounds.minZ;
+    maxZ = bounds.maxZ;
+    roomWidth = bounds.width > 0 ? bounds.width : room.width;
+    roomLength = bounds.length > 0 ? bounds.length : room.length;
+  } else {
+    roomWidth = room.width;
+    roomLength = room.length;
+    minX = -roomWidth / 2;
+    maxX = roomWidth / 2;
+    minZ = -roomLength / 2;
+    maxZ = roomLength / 2;
+  }
 
   const numCols = Math.max(1, Math.ceil(roomWidth / resolution));
   const numRows = Math.max(1, Math.ceil(roomLength / resolution));
@@ -31,8 +50,8 @@ export function computeGridDimensions(
     numRows,
     totalCells: numCols * numRows,
     resolution,
-    roomWidth,
-    roomLength,
+    roomWidth: Number(roomWidth.toFixed(4)),
+    roomLength: Number(roomLength.toFixed(4)),
     minX: Number(minX.toFixed(4)),
     maxX: Number(maxX.toFixed(4)),
     minZ: Number(minZ.toFixed(4)),

@@ -2,11 +2,14 @@ import type { FurniturePlacement, RoomDimensions } from '../../types/scene';
 import { createOBBFromPlacement, getOBBCorners } from '../core/geometryEngine';
 import { computeGroundedY, isProperlyGrounded } from '../core/coordinateSystem';
 import type { WallIdentifier } from '../core/spatialTypes';
+import { isPointInPolygon, doSegmentsIntersect } from '../parametric/roomGeometry';
+import { computeConvexHull2D } from '../occupancy/occupancyRasterizer';
 
 export const BOUNDARY_TOLERANCE = 0.005; // 5mm tolerance for numerical float edge alignment
 
 /**
  * Validates if an object's oriented bounding box is entirely within the room boundaries.
+ * Supports both legacy rectangular rooms and arbitrary parametric polygonal footprints.
  * Returns an array of violated boundary identifiers.
  */
 export function validateRoomBoundaries(
@@ -49,6 +52,42 @@ export function validateRoomBoundaries(
     if (z > halfZ + tolerance) violations.add('back-wall');
     if (y < 0 - tolerance) violations.add('floor');
     if (y > height + tolerance) violations.add('ceiling');
+  }
+
+  // Polygonal footprint boundary validation for parametric rooms
+  if (room.footprint && room.footprint.length >= 3) {
+    const footprint = room.footprint;
+
+    // 1. Verify that all 2D floor-projected corners are strictly within the polygon footprint
+    for (const [x, , z] of corners) {
+      if (!isPointInPolygon([x, z], footprint, tolerance)) {
+        if (x < 0) violations.add('left-wall');
+        else violations.add('right-wall');
+        if (z < 0) violations.add('front-wall');
+        else violations.add('back-wall');
+      }
+    }
+
+    // 2. Verify that horizontal footprint edges do not intersect any polygon boundary walls
+    const projectedPoints = corners.map(([x, , z]) => [x, z] as [number, number]);
+    const hull = computeConvexHull2D(projectedPoints);
+    const numHull = hull.length;
+    const numPoly = footprint.length;
+
+    for (let h = 0; h < numHull; h++) {
+      const h1 = hull[h];
+      const h2 = hull[(h + 1) % numHull];
+
+      for (let p = 0; p < numPoly; p++) {
+        const p1 = footprint[p];
+        const p2 = footprint[(p + 1) % numPoly];
+
+        if (doSegmentsIntersect(h1, h2, p1, p2)) {
+          violations.add('left-wall');
+          break;
+        }
+      }
+    }
   }
 
   return Array.from(violations);
