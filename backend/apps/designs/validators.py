@@ -90,6 +90,167 @@ def compute_transformed_aabb_extents(
     return (ex, ey, ez)
 
 
+def validate_parametric_room_fields(room: dict) -> dict[str, Any]:
+    """
+    Validates optional parametric room extensions (Phase 5.1):
+    footprint polygon, structured wall segments, and architectural openings.
+    Preserves complete backward compatibility for legacy rectangular rooms.
+    """
+    cleaned: dict[str, Any] = {}
+
+    # 1. Footprint (optional)
+    if 'footprint' in room and room['footprint'] is not None:
+        footprint = room['footprint']
+        if not isinstance(footprint, list) or len(footprint) < 3:
+            raise serializers.ValidationError("room.footprint must be a list of at least 3 vertices [x, z].")
+
+        cleaned_footprint = []
+        for idx, pt in enumerate(footprint):
+            if not isinstance(pt, (list, tuple)) or len(pt) != 2:
+                raise serializers.ValidationError(f"room.footprint[{idx}] must be a 2-element array [x, z].")
+            if not is_finite_number(pt[0]) or not is_finite_number(pt[1]):
+                raise serializers.ValidationError(f"room.footprint[{idx}] must contain finite numbers.")
+            cleaned_footprint.append([round(float(pt[0]), 4), round(float(pt[1]), 4)])
+
+        # Compute Shoelace area
+        n = len(cleaned_footprint)
+        shoelace = 0.0
+        for i in range(n):
+            c_pt = cleaned_footprint[i]
+            n_pt = cleaned_footprint[(i + 1) % n]
+            shoelace += c_pt[0] * n_pt[1] - n_pt[0] * c_pt[1]
+        area = abs(shoelace) * 0.5
+        if area < 1.0:
+            raise serializers.ValidationError(f"room.footprint area ({area:.2f}m²) must be at least 1.00m².")
+
+        cleaned['footprint'] = cleaned_footprint
+
+    # 2. Walls (optional)
+    wall_map = {}
+    if 'walls' in room and room['walls'] is not None:
+        walls = room['walls']
+        if not isinstance(walls, list) or len(walls) < 3:
+            raise serializers.ValidationError("room.walls must be a list of at least 3 wall segments.")
+
+        cleaned_walls = []
+        seen_wall_ids = set()
+        for idx, w in enumerate(walls):
+            if not isinstance(w, dict):
+                raise serializers.ValidationError(f"room.walls[{idx}] must be an object.")
+            w_id = str(w.get('id', '')).strip()
+            if not w_id:
+                raise serializers.ValidationError(f"room.walls[{idx}].id must be a non-empty string.")
+            if w_id in seen_wall_ids:
+                raise serializers.ValidationError(f"Duplicate wall ID detected: '{w_id}'.")
+            seen_wall_ids.add(w_id)
+
+            sp = w.get('startPoint')
+            ep = w.get('endPoint')
+            if not isinstance(sp, (list, tuple)) or len(sp) != 2 or not is_finite_number(sp[0]) or not is_finite_number(sp[1]):
+                raise serializers.ValidationError(f"room.walls[{idx}].startPoint must be [x, z] finite floats.")
+            if not isinstance(ep, (list, tuple)) or len(ep) != 2 or not is_finite_number(ep[0]) or not is_finite_number(ep[1]):
+                raise serializers.ValidationError(f"room.walls[{idx}].endPoint must be [x, z] finite floats.")
+
+            dx = float(ep[0]) - float(sp[0])
+            dz = float(ep[1]) - float(sp[1])
+            length = math.hypot(dx, dz)
+            if length < 0.05:
+                raise serializers.ValidationError(f"room.walls[{idx}] ('{w_id}') has near-zero length ({length:.3f}m).")
+
+            cleaned_wall = {
+                'id': w_id,
+                'startPoint': [round(float(sp[0]), 4), round(float(sp[1]), 4)],
+                'endPoint': [round(float(ep[0]), 4), round(float(ep[1]), 4)],
+            }
+            if 'height' in w and is_finite_number(w['height']) and float(w['height']) > 0:
+                cleaned_wall['height'] = round(float(w['height']), 3)
+            if 'thickness' in w and is_finite_number(w['thickness']) and float(w['thickness']) > 0:
+                cleaned_wall['thickness'] = round(float(w['thickness']), 3)
+
+            cleaned_walls.append(cleaned_wall)
+            wall_map[w_id] = {'length': length, 'height': cleaned_wall.get('height', 2.8)}
+
+        cleaned['walls'] = cleaned_walls
+
+    # 3. Openings (optional)
+    if 'openings' in room and room['openings'] is not None:
+        openings = room['openings']
+        if not isinstance(openings, list):
+            raise serializers.ValidationError("room.openings must be a list.")
+
+        cleaned_openings = []
+        seen_op_ids = set()
+        openings_by_wall: dict[str, list[dict[str, Any]]] = {}
+
+        for idx, op in enumerate(openings):
+            if not isinstance(op, dict):
+                raise serializers.ValidationError(f"room.openings[{idx}] must be an object.")
+            op_id = str(op.get('id', '')).strip()
+            if not op_id:
+                raise serializers.ValidationError(f"room.openings[{idx}].id must be a non-empty string.")
+            if op_id in seen_op_ids:
+                raise serializers.ValidationError(f"Duplicate opening ID detected: '{op_id}'.")
+            seen_op_ids.add(op_id)
+
+            wall_id = str(op.get('wallId', '')).strip()
+            if not wall_id or wall_id not in wall_map:
+                raise serializers.ValidationError(f"room.openings[{idx}] references non-existent wall '{wall_id}'.")
+
+            op_type = str(op.get('type', 'door')).strip().lower()
+            if op_type not in {'door', 'window'}:
+                op_type = 'door'
+
+            dist = op.get('distanceAlongWall')
+            if dist is None or not is_finite_number(dist) or float(dist) < 0:
+                raise serializers.ValidationError(f"room.openings[{idx}].distanceAlongWall must be non-negative.")
+            dist_f = float(dist)
+
+            width = op.get('width')
+            if width is None or not is_finite_number(width) or float(width) <= 0:
+                raise serializers.ValidationError(f"room.openings[{idx}].width must be positive.")
+            width_f = float(width)
+
+            height = op.get('height')
+            if height is None or not is_finite_number(height) or float(height) <= 0:
+                raise serializers.ValidationError(f"room.openings[{idx}].height must be positive.")
+            height_f = float(height)
+
+            wall_len = wall_map[wall_id]['length']
+            if dist_f + width_f > wall_len + 0.01:
+                raise serializers.ValidationError(
+                    f"room.openings[{idx}] span ({dist_f + width_f:.2f}m) exceeds wall '{wall_id}' length ({wall_len:.2f}m)."
+                )
+
+            # Check overlap on same wall
+            existing = openings_by_wall.setdefault(wall_id, [])
+            for ex in existing:
+                if max(dist_f, ex['start']) < min(dist_f + width_f, ex['end']) - 1e-4:
+                    raise serializers.ValidationError(f"room.openings[{idx}] overlaps with opening '{ex['id']}' on wall '{wall_id}'.")
+            existing.append({'id': op_id, 'start': dist_f, 'end': dist_f + width_f})
+
+            cleaned_op = {
+                'id': op_id,
+                'wallId': wall_id,
+                'type': op_type,
+                'distanceAlongWall': round(dist_f, 4),
+                'width': round(width_f, 4),
+                'height': round(height_f, 4),
+            }
+            if 'sillHeight' in op and is_finite_number(op['sillHeight']):
+                cleaned_op['sillHeight'] = max(0.0, round(float(op['sillHeight']), 3))
+            if 'swing' in op and isinstance(op['swing'], str):
+                cleaned_op['swing'] = op['swing']
+
+            cleaned_openings.append(cleaned_op)
+
+        cleaned['openings'] = cleaned_openings
+
+    if 'isParametric' in room and isinstance(room['isParametric'], bool):
+        cleaned['isParametric'] = room['isParametric']
+
+    return cleaned
+
+
 def validate_canonical_scene(data: dict) -> dict:
     """
     Authoritative backend validation for canonical scene JSON schemas.
@@ -355,14 +516,18 @@ def validate_canonical_scene(data: dict) -> dict:
                 'memberObjectIds': [str(m).strip() for m in members if str(m).strip() in seen_ids],
             })
 
+    room_result = {
+        'width': room_w,
+        'length': room_l,
+        'height': room_h,
+    }
+    parametric_room_data = validate_parametric_room_fields(room)
+    room_result.update(parametric_room_data)
+
     result: dict[str, Any] = {
         'schemaVersion': schema_version,
         'unit': 'm',
-        'room': {
-            'width': room_w,
-            'length': room_l,
-            'height': room_h,
-        },
+        'room': room_result,
         'objects': cleaned_objects,
     }
     if relationships is not None:

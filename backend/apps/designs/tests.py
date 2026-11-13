@@ -412,3 +412,93 @@ class DesignPersistenceTests(APITestCase):
         self.assertEqual(post_res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('scene_json', post_res.data)
 
+    def test_parametric_room_validation_and_persistence(self):
+        """Test Phase 5.1 parametric room payload with walls, footprint, and openings."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene(room_w=6.0, room_l=5.0, room_h=2.8)
+        scene['room']['isParametric'] = True
+        scene['room']['footprint'] = [
+            [-3.0, 2.5],
+            [3.0, 2.5],
+            [3.0, -2.5],
+            [-3.0, -2.5],
+        ]
+        scene['room']['walls'] = [
+            {'id': 'wall-south', 'startPoint': [-3.0, 2.5], 'endPoint': [3.0, 2.5], 'height': 2.8, 'thickness': 0.15},
+            {'id': 'wall-east', 'startPoint': [3.0, 2.5], 'endPoint': [3.0, -2.5], 'height': 2.8, 'thickness': 0.15},
+            {'id': 'wall-north', 'startPoint': [3.0, -2.5], 'endPoint': [-3.0, -2.5], 'height': 2.8, 'thickness': 0.15},
+            {'id': 'wall-west', 'startPoint': [-3.0, -2.5], 'endPoint': [-3.0, 2.5], 'height': 2.8, 'thickness': 0.15},
+        ]
+        scene['room']['openings'] = [
+            {
+                'id': 'door-main',
+                'wallId': 'wall-south',
+                'type': 'door',
+                'distanceAlongWall': 2.5,
+                'width': 0.90,
+                'height': 2.10,
+                'sillHeight': 0.0,
+                'swing': 'inward',
+            },
+            {
+                'id': 'window-east',
+                'wallId': 'wall-east',
+                'type': 'window',
+                'distanceAlongWall': 1.0,
+                'width': 1.50,
+                'height': 1.20,
+                'sillHeight': 0.90,
+            },
+        ]
+
+        post_res = self.client.post(self.list_url, {
+            'title': 'Parametric Room Design',
+            'scene_json': scene,
+        }, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_201_CREATED)
+        design_id = post_res.data['id']
+
+        get_res = self.client.get(reverse('designs:design-detail', kwargs={'pk': design_id}))
+        self.assertEqual(get_res.status_code, status.HTTP_200_OK)
+        saved_room = get_res.data['scene_json']['room']
+        self.assertTrue(saved_room['isParametric'])
+        self.assertEqual(len(saved_room['footprint']), 4)
+        self.assertEqual(len(saved_room['walls']), 4)
+        self.assertEqual(len(saved_room['openings']), 2)
+        self.assertEqual(saved_room['openings'][0]['id'], 'door-main')
+        self.assertEqual(saved_room['openings'][1]['id'], 'window-east')
+
+    def test_reject_parametric_room_with_invalid_wall_reference_in_opening(self):
+        """Reject opening that points to a non-existent wallId."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene()
+        scene['room']['walls'] = [
+            {'id': 'wall-south', 'startPoint': [-2.5, 2.0], 'endPoint': [2.5, 2.0]},
+            {'id': 'wall-east', 'startPoint': [2.5, 2.0], 'endPoint': [2.5, -2.0]},
+            {'id': 'wall-north', 'startPoint': [2.5, -2.0], 'endPoint': [-2.5, -2.0]},
+        ]
+        scene['room']['openings'] = [
+            {'id': 'door-1', 'wallId': 'ghost-wall-id', 'type': 'door', 'distanceAlongWall': 0.5, 'width': 0.9, 'height': 2.1}
+        ]
+        post_res = self.client.post(self.list_url, {'title': 'Bad Opening', 'scene_json': scene}, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', post_res.data)
+
+    def test_reject_parametric_room_with_overlapping_openings(self):
+        """Reject openings that overlap along the same wall."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        scene = create_sample_scene()
+        scene['room']['walls'] = [
+            {'id': 'wall-south', 'startPoint': [-2.5, 2.0], 'endPoint': [2.5, 2.0]},
+            {'id': 'wall-east', 'startPoint': [2.5, 2.0], 'endPoint': [2.5, -2.0]},
+            {'id': 'wall-north', 'startPoint': [2.5, -2.0], 'endPoint': [-2.5, -2.0]},
+        ]
+        scene['room']['openings'] = [
+            {'id': 'door-1', 'wallId': 'wall-south', 'type': 'door', 'distanceAlongWall': 1.0, 'width': 1.2, 'height': 2.1},
+            {'id': 'window-1', 'wallId': 'wall-south', 'type': 'window', 'distanceAlongWall': 1.5, 'width': 1.0, 'height': 1.2},
+        ]
+        post_res = self.client.post(self.list_url, {'title': 'Overlapping Openings', 'scene_json': scene}, format='json')
+        self.assertEqual(post_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('scene_json', post_res.data)
+
+

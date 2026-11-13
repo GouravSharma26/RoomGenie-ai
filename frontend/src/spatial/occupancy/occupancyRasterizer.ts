@@ -7,11 +7,7 @@ import type {
   IgnoredObjectDiagnostic 
 } from './occupancyTypes';
 import { cellIndex } from './gridCoordinates';
-
-/**
- * 2D point representation on the X/Z floor plane.
- */
-export type Point2D = [number, number];
+import type { Point2D } from '../parametric/parametricTypes';
 
 /**
  * Validates whether a furniture placement has physically valid dimensions, scale, and position.

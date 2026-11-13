@@ -5,6 +5,11 @@ import type {
   FurniturePlacement,
   SemanticRelationship 
 } from '../../types/scene';
+import { 
+  validateFootprintPolygon, 
+  ensureCounterClockwise, 
+  validateWallOpenings 
+} from '../../spatial/parametric';
 
 export const DEFAULT_ROOM: RoomDimensions = {
   width: 5.0,  // 5 metres
@@ -50,7 +55,29 @@ export function validateRoomDimensions(room: Partial<RoomDimensions> | undefined
     10.0
   );
 
-  return { width, length, height };
+  const result: RoomDimensions = { width, length, height };
+
+  // Validate optional parametric room attributes
+  if (Array.isArray(room.footprint) && room.footprint.length >= 3) {
+    const polyVal = validateFootprintPolygon(room.footprint as [number, number][]);
+    if (polyVal.valid) {
+      result.footprint = ensureCounterClockwise(room.footprint as [number, number][]);
+      result.isParametric = room.isParametric !== false;
+    }
+  }
+
+  if (Array.isArray(room.walls) && room.walls.length >= 3) {
+    result.walls = room.walls;
+  }
+
+  if (Array.isArray(room.openings) && result.walls) {
+    const opVal = validateWallOpenings(room.openings, result.walls);
+    if (opVal.valid) {
+      result.openings = opVal.validatedOpenings;
+    }
+  }
+
+  return result;
 }
 
 export function sanitizeVector3(vec: unknown, fallback: Vector3Tuple = [0, 0, 0]): Vector3Tuple {

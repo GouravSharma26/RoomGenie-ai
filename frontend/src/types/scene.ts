@@ -5,10 +5,36 @@
  * Coordinate convention: Three.js (Y vertical / up, X and Z horizontal floor plane)
  */
 
+export interface WallSegment {
+  id: string;
+  startPoint: [number, number]; // [x, z] in metres
+  endPoint: [number, number];   // [x, z] in metres
+  height?: number;              // metres
+  thickness?: number;           // metres
+}
+
+export type WallOpeningType = 'door' | 'window';
+export type DoorSwingType = 'inward' | 'outward' | 'sliding' | 'none';
+
+export interface WallOpening {
+  id: string;
+  wallId: string;
+  type: WallOpeningType;
+  distanceAlongWall: number; // metres from startPoint
+  width: number;             // metres
+  height: number;            // metres
+  sillHeight?: number;       // metres
+  swing?: DoorSwingType;
+}
+
 export interface RoomDimensions {
   width: number;  // X axis (metres)
   length: number; // Z axis (metres)
   height: number; // Y axis (metres)
+  footprint?: [number, number][]; // Ordered 2D vertices [x, z] in metres (Phase 5)
+  walls?: WallSegment[];          // Explicit wall segments (Phase 5)
+  openings?: WallOpening[];       // Architectural openings (doors & windows) (Phase 5)
+  isParametric?: boolean;         // Flag indicating parametric mode is active (Phase 5)
 }
 
 export type Vector3Tuple = [number, number, number];

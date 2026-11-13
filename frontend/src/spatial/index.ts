@@ -17,3 +17,4 @@ export * from './relationships/socketRegistry';
 export * from './relationships/relativeTransforms';
 export * from './relationships/relationshipManager';
 export * from './occupancy';
+export * from './parametric';
