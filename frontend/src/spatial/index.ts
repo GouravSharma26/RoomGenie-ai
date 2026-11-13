@@ -5,4 +5,9 @@ export * from './constraints/collisionDetector';
 export * from './constraints/boundaryValidator';
 export * from './constraints/clearanceValidator';
 export * from './constraints/constraintResolver';
-
+export * from './snapping/snappingTypes';
+export * from './snapping/snappingConfig';
+export * from './snapping/gridSnapper';
+export * from './snapping/wallSnapper';
+export * from './snapping/alignmentSnapper';
+export * from './snapping/snapManager';

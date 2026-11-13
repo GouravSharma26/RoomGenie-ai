@@ -11,7 +11,8 @@ import {
   Info,
   AlertTriangle,
   CheckCircle2,
-  Wand2
+  Wand2,
+  Magnet
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import type { Vector3Tuple } from '../../types/scene';
@@ -40,6 +41,7 @@ export const PropertiesPanel: React.FC = () => {
   const endInteraction = useEditorStore((state) => state.endInteraction);
   const spatialValidations = useEditorStore((state) => state.spatialValidations);
   const resolveSelectedPlacement = useEditorStore((state) => state.resolveSelectedPlacement);
+  const snapConfig = useEditorStore((state) => state.snapConfig);
 
   const selectedObject = objects.find((obj) => obj.id === selectedId);
 
@@ -196,6 +198,12 @@ export const PropertiesPanel: React.FC = () => {
             <Move className="w-3.5 h-3.5 text-indigo-400" />
             Position (Floor Metres)
           </span>
+          {snapConfig.enabled && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-800/40 font-mono">
+              <Magnet className="w-2.5 h-2.5" />
+              Snap {Math.round(snapConfig.gridSize * 100)}cm
+            </span>
+          )}
         </div>
 
         {/* X Slider */}
@@ -208,7 +216,7 @@ export const PropertiesPanel: React.FC = () => {
             type="range"
             min={-halfW + 0.3}
             max={halfW - 0.3}
-            step="0.05"
+            step="0.01"
             value={posX}
             onChange={(e) => handlePositionXChange(parseFloat(e.target.value))}
             onPointerDown={startInteraction}
@@ -230,7 +238,7 @@ export const PropertiesPanel: React.FC = () => {
             type="range"
             min={-halfL + 0.3}
             max={halfL - 0.3}
-            step="0.05"
+            step="0.01"
             value={posZ}
             onChange={(e) => handlePositionZChange(parseFloat(e.target.value))}
             onPointerDown={startInteraction}

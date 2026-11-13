@@ -18,7 +18,13 @@ import { reconstructedAssetManager } from '../../services/reconstructedAssetMana
 import { recordEdit, recordOutOfBoundsAttempt, recordUndoRedo } from '../../services/evaluationTelemetry';
 import { 
   validatePlacement, 
-  type PlacementValidation 
+  calculateSnap,
+  snapToGrid,
+  DEFAULT_SNAP_CONFIG,
+  type PlacementValidation,
+  type SnapConfig,
+  type SnapGuide,
+  type SnapStateTracker
 } from '../../spatial';
 
 export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
@@ -40,6 +46,9 @@ interface EditorState {
   cameraResetNonce: number;
   viewMode: 'perspective' | 'top';
   gridSnap: boolean;
+  snapConfig: SnapConfig;
+  activeSnapGuides: SnapGuide[];
+  snapStateTracker: SnapStateTracker;
   history: CanonicalScene[];
   future: CanonicalScene[];
   activeGestureSnapshot: CanonicalScene | null;
@@ -67,7 +76,7 @@ interface EditorState {
   updatePlacementModelUrl: (id: string, modelUrl: string) => void;
   selectObject: (id: string | null) => void;
   hoverObject: (id: string | null) => void;
-  updatePlacementPosition: (id: string, position: Vector3Tuple) => void;
+  updatePlacementPosition: (id: string, position: Vector3Tuple, options?: { skipSnapping?: boolean }) => void;
   updatePlacementRotation: (id: string, rotation: Vector3Tuple) => void;
   updatePlacementScale: (id: string, scale: Vector3Tuple) => void;
   updatePlacementColor: (id: string, color: string) => void;
@@ -78,6 +87,12 @@ interface EditorState {
   triggerCameraReset: () => void;
   setViewMode: (mode: 'perspective' | 'top') => void;
   toggleGridSnap: () => void;
+  setSnapConfig: (config: Partial<SnapConfig>) => void;
+  setActiveSnapGuides: (guides: SnapGuide[]) => void;
+  toggleSnapEnabled: () => void;
+  toggleWallSnap: () => void;
+  toggleAlignmentSnap: () => void;
+  setGridSize: (size: number) => void;
   loadScene: (newScene: CanonicalScene) => void;
   undo: () => void;
   redo: () => void;
@@ -137,6 +152,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   cameraResetNonce: 0,
   viewMode: 'perspective',
   gridSnap: true,
+  snapConfig: { ...DEFAULT_SNAP_CONFIG },
+  activeSnapGuides: [],
+  snapStateTracker: {},
   history: [],
   future: [],
   activeGestureSnapshot: null,
@@ -156,7 +174,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   endInteraction: () => {
     set((state) => {
-      if (!state.activeGestureSnapshot) return state;
+      if (!state.activeGestureSnapshot) {
+        return { activeSnapGuides: [], snapStateTracker: {} };
+      }
       const initial = state.activeGestureSnapshot;
       const current = state.scene;
       const hasChanged = JSON.stringify(initial) !== JSON.stringify(current);
@@ -173,6 +193,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return {
           activeGestureSnapshot: null,
           gestureHadOutOfBoundsAttempt: false,
+          activeSnapGuides: [],
+          snapStateTracker: {},
           history: [...state.history, initial].slice(-MAX_HISTORY),
           future: [],
         };
@@ -180,6 +202,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         activeGestureSnapshot: null,
         gestureHadOutOfBoundsAttempt: false,
+        activeSnapGuides: [],
+        snapStateTracker: {},
       };
     });
   },
@@ -216,12 +240,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const id = `furniture-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     set((state) => {
       const historyUpdate = pushSnapshot(state);
-      // Find a non-overlapping or offset position
+      // Find a non-overlapping or offset position aligned to the 5cm floor grid
       const offsetMultiplier = state.scene.objects.length * 0.3;
+      const rawX = (offsetMultiplier % (state.scene.room.width / 3)) - (state.scene.room.width / 6);
+      const rawZ = (offsetMultiplier % (state.scene.room.length / 3)) - (state.scene.room.length / 6);
       const initialPos: Vector3Tuple = [
-        (offsetMultiplier % (state.scene.room.width / 3)) - (state.scene.room.width / 6),
+        snapToGrid(rawX, 0.05),
         0,
-        (offsetMultiplier % (state.scene.room.length / 3)) - (state.scene.room.length / 6),
+        snapToGrid(rawZ, 0.05),
       ];
 
       const clampedPos = clampPositionToRoom(
@@ -356,17 +382,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  selectObject: (id) => set({ selectedId: id }),
+  selectObject: (id) =>
+    set((state) => ({
+      selectedId: id,
+      activeSnapGuides: id === null ? [] : state.activeSnapGuides,
+      snapStateTracker: id === null ? {} : state.snapStateTracker,
+    })),
   hoverObject: (id) => set({ hoveredId: id }),
 
-  updatePlacementPosition: (id, position) => {
+  updatePlacementPosition: (id, position, options) => {
     set((state) => {
       const objIndex = state.scene.objects.findIndex((o) => o.id === id);
       if (objIndex === -1) return state;
 
       const obj = state.scene.objects[objIndex];
-      const clampedPos = clampPositionToRoom(position, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
-      const isClamped = Math.abs(clampedPos[0] - position[0]) > 0.001 || Math.abs(clampedPos[2] - position[2]) > 0.001;
+      let targetPos = position;
+      let snapGuides: SnapGuide[] = [];
+
+      // Apply intelligent magnetic snapping if enabled
+      if (state.snapConfig.enabled && !options?.skipSnapping) {
+        const candidatePlacement: FurniturePlacement = {
+          ...obj,
+          position,
+        };
+        const snapResult = calculateSnap(
+          candidatePlacement,
+          state.scene.objects,
+          state.scene.room,
+          state.snapConfig,
+          state.snapStateTracker
+        );
+        targetPos = snapResult.position;
+        snapGuides = snapResult.guides;
+      }
+
+      const clampedPos = clampPositionToRoom(targetPos, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
+      const isClamped = Math.abs(clampedPos[0] - targetPos[0]) > 0.001 || Math.abs(clampedPos[2] - targetPos[2]) > 0.001;
 
       const updatedObjects = [...state.scene.objects];
       updatedObjects[objIndex] = {
@@ -387,6 +438,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return {
           scene: nextScene,
           spatialValidations: validations,
+          activeSnapGuides: snapGuides,
           gestureHadOutOfBoundsAttempt: state.gestureHadOutOfBoundsAttempt || isClamped,
         };
       }
@@ -403,6 +455,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...historyUpdate,
         scene: nextScene,
         spatialValidations: validations,
+        activeSnapGuides: snapGuides,
       };
     });
   },
@@ -627,7 +680,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setViewMode: (mode) => set({ viewMode: mode }),
-  toggleGridSnap: () => set((state) => ({ gridSnap: !state.gridSnap })),
+  toggleGridSnap: () =>
+    set((state) => {
+      const nextGridSnap = !state.gridSnap;
+      return {
+        gridSnap: nextGridSnap,
+        snapConfig: { ...state.snapConfig, gridSnap: nextGridSnap },
+      };
+    }),
+
+  setSnapConfig: (partial) =>
+    set((state) => ({
+      snapConfig: { ...state.snapConfig, ...partial },
+      gridSnap: partial.gridSnap !== undefined ? partial.gridSnap : state.gridSnap,
+    })),
+
+  setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
+
+  toggleSnapEnabled: () =>
+    set((state) => {
+      const nextEnabled = !state.snapConfig.enabled;
+      return {
+        snapConfig: { ...state.snapConfig, enabled: nextEnabled },
+        activeSnapGuides: nextEnabled ? state.activeSnapGuides : [],
+      };
+    }),
+
+  toggleWallSnap: () =>
+    set((state) => ({
+      snapConfig: { ...state.snapConfig, wallSnap: !state.snapConfig.wallSnap },
+    })),
+
+  toggleAlignmentSnap: () =>
+    set((state) => ({
+      snapConfig: { ...state.snapConfig, alignmentSnap: !state.snapConfig.alignmentSnap },
+    })),
+
+  setGridSize: (size) =>
+    set((state) => ({
+      snapConfig: { ...state.snapConfig, gridSize: size },
+    })),
 
   loadScene: (newScene) => {
     const { scene } = get();

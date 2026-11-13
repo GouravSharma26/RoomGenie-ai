@@ -68,11 +68,21 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const selectObject = useEditorStore((state) => state.selectObject);
   const hoverObject = useEditorStore((state) => state.hoverObject);
   const spatialValidations = useEditorStore((state) => state.spatialValidations);
+  const updatePosition = useEditorStore((state) => state.updatePlacementPosition);
+  const startInteraction = useEditorStore((state) => state.startInteraction);
+  const endInteraction = useEditorStore((state) => state.endInteraction);
 
   const isSelected = selectedId === placement.id;
   const isHovered = hoveredId === placement.id;
   const validation = spatialValidations[placement.id];
   const hasConflict = Boolean(validation && !validation.valid);
+
+  const isDragging = useRef(false);
+  const dragPlane = useMemo(
+    () => new THREE.Plane(new THREE.Vector3(0, 1, 0), -placement.position[1]),
+    [placement.position]
+  );
+  const dragOffset = useRef(new THREE.Vector3());
 
   const color = placement.materialOverrides?.color || '#4f46e5';
   const roughness = placement.materialOverrides?.roughness ?? 0.7;
@@ -82,6 +92,42 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const handleClick = (e: any) => {
     e.stopPropagation();
     selectObject(placement.id);
+  };
+
+  const handlePointerDown = (e: any) => {
+    if (!isSelected) {
+      selectObject(placement.id);
+      return;
+    }
+    e.stopPropagation();
+    isDragging.current = true;
+    startInteraction();
+
+    const intersection = new THREE.Vector3();
+    e.ray.intersectPlane(dragPlane, intersection);
+    dragOffset.current.set(
+      intersection.x - placement.position[0],
+      0,
+      intersection.z - placement.position[2]
+    );
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!isDragging.current) return;
+    e.stopPropagation();
+    const intersection = new THREE.Vector3();
+    if (e.ray.intersectPlane(dragPlane, intersection)) {
+      const nextX = intersection.x - dragOffset.current.x;
+      const nextZ = intersection.z - dragOffset.current.z;
+      updatePosition(placement.id, [nextX, placement.position[1], nextZ]);
+    }
+  };
+
+  const handlePointerUp = (e: any) => {
+    if (!isDragging.current) return;
+    e.stopPropagation();
+    isDragging.current = false;
+    endInteraction();
   };
 
   const handlePointerOver = (e: any) => {
@@ -306,6 +352,9 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
       rotation={placement.rotationEuler}
       scale={placement.scale}
       onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >

@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { RoomEnvironment } from './RoomEnvironment';
 import { FurnitureItem } from './FurnitureItem';
 import { ViewportControls } from './ViewportControls';
+import { AlignmentGuides } from './AlignmentGuides';
 import { useEditorStore } from '../store/editorStore';
 
 export const RoomCanvas: React.FC = () => {
@@ -70,6 +71,7 @@ export const RoomCanvas: React.FC = () => {
           {objects.map((obj) => (
             <FurnitureItem key={obj.id} placement={obj} />
           ))}
+          <AlignmentGuides />
           <ViewportControls />
         </Suspense>
       </Canvas>

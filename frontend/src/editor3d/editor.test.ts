@@ -55,8 +55,8 @@ describe('Phase 1: 3D Room Editor Scene State & Validation', () => {
       store.addFurniture(SAMPLE_CATALOG[0]); // 2.1m wide sofa
       const item = useEditorStore.getState().scene.objects[0];
 
-      // Move sofa near edge of 5m room
-      store.updatePlacementPosition(item.id, [1.4, item.position[1], 0]);
+      // Move sofa near edge of 5m room (skipping magnetic snapping to test raw boundary re-clamping)
+      store.updatePlacementPosition(item.id, [1.4, item.position[1], 0], { skipSnapping: true });
       expect(useEditorStore.getState().scene.objects[0].position[0]).toBeCloseTo(1.4, 1);
 
       // Shrink room width from 5m to 2.5m
