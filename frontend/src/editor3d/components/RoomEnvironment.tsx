@@ -1,30 +1,55 @@
-import React from 'react';
+import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useEditorStore } from '../store/editorStore';
+import { buildProceduralRoomGeometries } from '../../spatial/parametric/geometry';
+import { getCanonicalRoomGeometry } from '../../spatial/parametric/roomGeometry';
 
 export const RoomEnvironment: React.FC = () => {
   const room = useEditorStore((state) => state.scene.room);
   const selectObject = useEditorStore((state) => state.selectObject);
 
   const { width, length, height } = room;
-  const halfW = width / 2;
-  const halfL = length / 2;
+
+  // Retrieve canonical room specification (works for both legacy rectangular and parametric models)
+  const canonicalRoom = useMemo(() => getCanonicalRoomGeometry(room), [room]);
+
+  // Procedurally generate deterministic floor, walls, and opening geometries
+  const procedural = useMemo(
+    () => buildProceduralRoomGeometries(canonicalRoom),
+    [canonicalRoom]
+  );
+
+  // Clean up GPU geometries on replacement or unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      procedural.floor.floorGeometry.dispose();
+      procedural.floor.ceilingGeometry?.dispose();
+      procedural.floor.outlineGeometry.dispose();
+      for (const w of procedural.walls) {
+        w.wallGeometry.dispose();
+        w.frameGeometry?.dispose();
+      }
+    };
+  }, [procedural]);
 
   const handleFloorClick = () => {
     // Clicking the empty floor clears object selection
     selectObject(null);
   };
 
+  const { bounds } = procedural.floor;
+  const gridExtent = Math.max(bounds.width || width, bounds.length || length) * 1.5;
+  const gridDivisions = Math.round(Math.max(bounds.width || width, bounds.length || length) * 2);
+
   return (
     <group>
-      {/* Floor Mesh */}
+      {/* Procedurally Triangulated Floor Mesh (supports convex and concave polygons) */}
       <mesh
-        position={[0, -0.01, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={procedural.floor.floorGeometry}
+        position={[0, -0.005, 0]}
         receiveShadow
         onClick={handleFloorClick}
       >
-        <planeGeometry args={[width, length]} />
         <meshStandardMaterial
           color="#1e2230"
           roughness={0.65}
@@ -32,63 +57,75 @@ export const RoomEnvironment: React.FC = () => {
         />
       </mesh>
 
-      {/* Grid Overlay aligned in metres */}
+      {/* Grid Overlay aligned in metres with room center */}
       <gridHelper
-        args={[Math.max(width, length) * 1.5, Math.round(Math.max(width, length) * 2), '#4f46e5', '#334155']}
-        position={[0, 0, 0]}
+        args={[gridExtent, gridDivisions, '#4f46e5', '#334155']}
+        position={[bounds.center[0], 0, bounds.center[1]]}
       />
 
-      {/* Floor Boundary Border Outline */}
-      <lineSegments position={[0, 0.005, 0]}>
-        <edgesGeometry
-          args={[new THREE.BoxGeometry(width, 0.01, length)]}
-        />
+      {/* Floor Boundary Perimeter Outline */}
+      <lineSegments
+        geometry={procedural.floor.outlineGeometry}
+        position={[0, 0.002, 0]}
+      >
         <lineBasicMaterial color="#6366f1" linewidth={2} />
       </lineSegments>
 
-      {/* Semi-transparent Wall Guides */}
-      {/* Back Wall (-Z) */}
-      <mesh position={[0, height / 2, -halfL]} receiveShadow>
-        <planeGeometry args={[width, height]} />
-        <meshStandardMaterial
-          color="#0f172a"
-          transparent
-          opacity={0.35}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Procedurally Generated Walls with Opening Cutouts */}
+      {procedural.walls.map((w) => (
+        <group key={`wall-group-${w.wallId}`}>
+          {/* Solid Wall Body with Door/Window Voids */}
+          <mesh
+            geometry={w.wallGeometry}
+            receiveShadow
+            castShadow
+          >
+            <meshStandardMaterial
+              color="#0f172a"
+              transparent
+              opacity={0.35}
+              roughness={0.6}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
 
-      {/* Left Wall (-X) */}
-      <mesh position={[-halfW, height / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <planeGeometry args={[length, height]} />
-        <meshStandardMaterial
-          color="#0f172a"
-          transparent
-          opacity={0.3}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+          {/* Opening Frame / Architrave Highlights */}
+          {w.frameGeometry && (
+            <mesh
+              geometry={w.frameGeometry}
+              receiveShadow
+              castShadow
+            >
+              <meshStandardMaterial
+                color="#38bdf8"
+                roughness={0.4}
+                metalness={0.2}
+                transparent
+                opacity={0.7}
+              />
+            </mesh>
+          )}
+        </group>
+      ))}
 
-      {/* Corner Posts / Height Markers */}
-      {[
-        [-halfW, -halfL],
-        [halfW, -halfL],
-        [-halfW, halfL],
-        [halfW, halfL],
-      ].map(([cx, cz], i) => (
+      {/* Corner Posts / Height Markers at Polygon Footprint Vertices */}
+      {canonicalRoom.footprint.map(([cx, cz], i) => (
         <mesh key={`post-${i}`} position={[cx, height / 2, cz]}>
           <cylinderGeometry args={[0.015, 0.015, height, 8]} />
           <meshBasicMaterial color="#6366f1" transparent opacity={0.6} />
         </mesh>
       ))}
 
-      {/* Ceiling Envelope Outline */}
-      <lineSegments position={[0, height, 0]}>
-        <edgesGeometry
-          args={[new THREE.BoxGeometry(width, 0.01, length)]}
-        />
-        <lineBasicMaterial color="#4338ca" transparent opacity={0.3} />
-      </lineSegments>
+      {/* Ceiling Perimeter Outline */}
+      {procedural.floor.outlineGeometry && (
+        <lineSegments
+          geometry={procedural.floor.outlineGeometry}
+          position={[0, height, 0]}
+        >
+          <lineBasicMaterial color="#4338ca" transparent opacity={0.3} />
+        </lineSegments>
+      )}
     </group>
   );
 };

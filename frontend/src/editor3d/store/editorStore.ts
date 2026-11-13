@@ -1154,3 +1154,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canUndo: () => get().history.length > 0,
   canRedo: () => get().future.length > 0,
 }));
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { __editorStore?: typeof useEditorStore }).__editorStore = useEditorStore;
+}
