@@ -1,6 +1,13 @@
-import type { Vector3Tuple, SemanticRelationship, SemanticZone, SemanticZoneType } from '../../types/scene';
+import type { 
+  Vector3Tuple, 
+  SemanticRelationship, 
+  SemanticZone, 
+  SemanticZoneType,
+  CanonicalScene,
+  FurniturePlacement 
+} from '../../types/scene';
 
-export type { SemanticRelationship, SemanticZone, SemanticZoneType };
+export type { SemanticRelationship, SemanticZone, SemanticZoneType, CanonicalScene, FurniturePlacement };
 
 /**
  * Defines how a connected child item should orient itself relative to its anchor socket:
@@ -76,4 +83,53 @@ export interface ChildTransformResult {
   anchorSurfacePoint: Vector3Tuple;// World coordinates of anchor contact point
   childContactPoint: Vector3Tuple; // World coordinates of child contact point
   effectiveGap: number;            // Measured distance between contact points (m)
+}
+
+/**
+ * Candidate socket discovered during spatial proximity search.
+ */
+export interface SocketCandidate {
+  socket: SpatialSocketDefinition;
+  anchorPlacement: FurniturePlacement;
+  targetPlacement: FurniturePlacement;
+  targetPosition: Vector3Tuple;
+  targetRotation: Vector3Tuple;
+  distanceToTarget: number;
+  gap: number;
+  valid: boolean;
+  violations: string[];
+}
+
+/**
+ * Result of attempting to attach a child item to an anchor socket.
+ */
+export interface AttachmentResult {
+  success: boolean;
+  relationship?: SemanticRelationship;
+  childPlacement?: FurniturePlacement;
+  updatedScene: CanonicalScene;
+  error?: string;
+  violations?: string[];
+}
+
+/**
+ * Result of adjusting the separation gap of an existing socket relationship.
+ */
+export interface GapUpdateResult {
+  success: boolean;
+  newGap: number;
+  childPlacement?: FurniturePlacement;
+  updatedScene: CanonicalScene;
+  error?: string;
+  violations?: string[];
+}
+
+/**
+ * Result of transforming an anchor group and all its attached children.
+ */
+export interface GroupTransformResult {
+  success: boolean;
+  updatedScene: CanonicalScene;
+  movedObjectIds: string[];
+  violations: string[];
 }

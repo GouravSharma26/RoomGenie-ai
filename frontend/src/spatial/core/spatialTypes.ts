@@ -17,6 +17,7 @@ export interface ClearanceOptions {
   enforceHardClearance?: boolean; // When true, violating hardMin invalidates placement. Default: true
   hardClearanceRatio?: number;   // Fallback ratio of recommended buffer that becomes hard minimum (default 0.5)
   categoryRules?: Record<string, ClearanceRuleDetail>;
+  exemptObjectIds?: Set<string> | string[]; // Objects exempted from clearance rules (e.g. semantic socket partners)
 }
 
 export interface PlacementValidation {

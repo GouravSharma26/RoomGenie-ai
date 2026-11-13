@@ -120,12 +120,34 @@ export function computeChildExtentAlongNormal(
  */
 export function computeChildTransformFromSocket(
   anchor: FurniturePlacement,
-  childDims: Vector3Tuple,
-  childScale: Vector3Tuple = [1, 1, 1],
-  socket: SpatialSocketDefinition,
-  desiredGap?: number,
-  relativeYaw: number = 0
+  childOrDims: FurniturePlacement | Vector3Tuple,
+  childScaleOrSocket: Vector3Tuple | SpatialSocketDefinition,
+  socketOrGap?: SpatialSocketDefinition | number,
+  gapOrYaw?: number,
+  optionalYaw: number = 0
 ): ChildTransformResult {
+  let childDims: Vector3Tuple;
+  let childScale: Vector3Tuple;
+  let socket: SpatialSocketDefinition;
+  let desiredGap: number | undefined;
+  let relativeYaw: number = 0;
+
+  if (Array.isArray(childOrDims)) {
+    // Tuple signature: (anchor, childDims, childScale, socket, gap, yaw)
+    childDims = childOrDims;
+    childScale = (childScaleOrSocket as Vector3Tuple) || [1, 1, 1];
+    socket = socketOrGap as SpatialSocketDefinition;
+    desiredGap = typeof gapOrYaw === 'number' ? gapOrYaw : undefined;
+    relativeYaw = optionalYaw;
+  } else {
+    // Placement signature: (anchor, childPlacement, socket, gap, yaw)
+    childDims = childOrDims.dimensions;
+    childScale = childOrDims.scale || [1, 1, 1];
+    socket = childScaleOrSocket as SpatialSocketDefinition;
+    desiredGap = typeof socketOrGap === 'number' ? socketOrGap : undefined;
+    relativeYaw = typeof gapOrYaw === 'number' ? gapOrYaw : 0;
+  }
+
   const anchorYaw = anchor.rotationEuler[1];
   const childYaw = computeChildYaw(anchorYaw, socket, relativeYaw);
   const deltaYaw = childYaw - anchorYaw;

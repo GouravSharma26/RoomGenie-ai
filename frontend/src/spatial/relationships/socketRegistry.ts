@@ -31,10 +31,20 @@ export class SocketRegistry {
   }
 
   /**
-   * Looks up a specific socket definition by ID.
+   * Looks up a specific socket definition by ID, optionally validating against the anchor asset ID.
    */
-  public getSocketDefinition(socketId: string): SpatialSocketDefinition | undefined {
-    return this.definitions.get(socketId);
+  public getSocketDefinition(
+    socketIdOrAssetId: string,
+    socketId?: string
+  ): SpatialSocketDefinition | undefined {
+    if (socketId) {
+      const def = this.definitions.get(socketId);
+      if (def && (!def.anchorAssetId || def.anchorAssetId === socketIdOrAssetId)) {
+        return def;
+      }
+      return undefined;
+    }
+    return this.definitions.get(socketIdOrAssetId);
   }
 
   /**

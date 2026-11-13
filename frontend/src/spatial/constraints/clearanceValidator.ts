@@ -69,6 +69,16 @@ export function validateClearanceDetails(
 
   for (const obj of allObjects) {
     if (obj.id === target.id) continue;
+
+    // Check if object is explicitly exempted (e.g. connected via semantic socket)
+    if (options.exemptObjectIds) {
+      const isExempt =
+        options.exemptObjectIds instanceof Set
+          ? options.exemptObjectIds.has(obj.id)
+          : options.exemptObjectIds.includes(obj.id);
+      if (isExempt) continue;
+    }
+
     const objOBB = createOBBFromPlacement(obj);
 
     // If objects are physically intersecting, that is handled authoritatively by collision detector
