@@ -14,7 +14,9 @@ import {
   RefreshCw,
   Coins,
   LogIn,
-  Cpu
+  Cpu,
+  Link2,
+  LayoutGrid
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { useAuthStore } from '../../services/authStore';
@@ -459,20 +461,39 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                   {msg.run.proposed_actions.map((act: ProposedAction, idx: number) => (
                     <div
                       key={idx}
-                      className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 text-[11px] flex items-center justify-between gap-2"
+                      className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 text-[11px] flex flex-wrap items-center justify-between gap-2"
+                      data-testid={`proposed-action-${idx}`}
                     >
-                      <div className="flex items-center gap-2 overflow-hidden">
+                      <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-[200px]">
                         {act.name === 'add_furniture' && <PlusCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                         {act.name === 'set_material' && <Palette className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
                         {act.name === 'clear_room' && <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
-                        {act.name !== 'add_furniture' && act.name !== 'set_material' && act.name !== 'clear_room' && (
+                        {act.name === 'attach_to_socket' && <Link2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                        {act.name === 'propose_zone_arrangement' && <LayoutGrid className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                        {act.name !== 'add_furniture' && act.name !== 'set_material' && act.name !== 'clear_room' && act.name !== 'attach_to_socket' && act.name !== 'propose_zone_arrangement' && (
                           <RefreshCw className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                         )}
                         <span className="font-mono text-indigo-300 font-medium shrink-0">{act.name}</span>
                         <span className="text-slate-400 truncate">
-                          {act.parameters?.asset_id || act.parameters?.color || act.parameters?.target_id || ''}
+                          {act.name === 'attach_to_socket' ? (
+                            `${act.parameters?.child_object_id || 'child'} → ${act.parameters?.anchor_object_id || 'anchor'} (${act.parameters?.socket_id || 'socket'})`
+                          ) : act.name === 'propose_zone_arrangement' ? (
+                            `[${act.parameters?.zone_type?.toUpperCase() || 'ZONE'}] ${act.parameters?.intent || ''}`
+                          ) : (
+                            act.parameters?.asset_id || act.parameters?.color || act.parameters?.object_id || ''
+                          )}
                         </span>
                       </div>
+                      {act.name === 'attach_to_socket' && typeof act.parameters?.gap_meters === 'number' && (
+                        <span className="text-[10px] text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
+                          {act.parameters.gap_meters.toFixed(2)}m gap
+                        </span>
+                      )}
+                      {act.name === 'propose_zone_arrangement' && act.parameters?.requirements?.preserve_existing_furniture && (
+                        <span className="text-[10px] text-amber-300 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
+                          Preserve items
+                        </span>
+                      )}
                       {Array.isArray(act.parameters?.position) && (
                         <span className="text-[10px] text-slate-500 font-mono shrink-0">
                           [{act.parameters.position.map((n: number) => n.toFixed(1)).join(', ')}]
@@ -517,17 +538,27 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                   );
                 })()}
 
-                {/* Validation Warnings/Errors */}
+                {/* Validation Warnings/Errors: Hard Blocking Errors vs Soft Advisory Warnings */}
                 {msg.run.validation_results?.errors?.length > 0 && (
-                  <div className="text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/50 rounded p-1.5 space-y-0.5">
+                  <div className="text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/50 rounded p-2 space-y-1">
+                    <div className="flex items-center gap-1 font-semibold text-rose-400">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>Hard Constraint Failures:</span>
+                    </div>
                     {msg.run.validation_results.errors.map((e, idx) => (
-                      <div key={idx}>{e}</div>
+                      <div key={idx} className="pl-4">• {e}</div>
                     ))}
                   </div>
                 )}
                 {msg.run.validation_results?.warnings?.length > 0 && (
-                  <div className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded p-1.5">
-                    {msg.run.validation_results.warnings.join('; ')}
+                  <div className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded p-2 space-y-1">
+                    <div className="flex items-center gap-1 font-semibold text-amber-400">
+                      <Sparkles className="w-3 h-3 shrink-0" />
+                      <span>Advisory Spacing &amp; Orientation Warnings:</span>
+                    </div>
+                    {msg.run.validation_results.warnings.map((w, idx) => (
+                      <div key={idx} className="pl-4">• {w}</div>
+                    ))}
                   </div>
                 )}
 

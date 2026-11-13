@@ -1,5 +1,6 @@
 import copy
 import uuid
+import time
 from decimal import Decimal
 from typing import Any
 from django.core.exceptions import ValidationError
@@ -10,6 +11,15 @@ from apps.designs.validators import (
     is_finite_number,
     validate_vector3,
 )
+from apps.ai_agent.sockets import (
+    get_socket_definition,
+    is_compatible_with_socket,
+    compute_child_transform_from_socket,
+    check_relationship_cycle,
+    validate_room_footprint_containment,
+    check_obb_collisions_3d,
+    check_doorway_landing_clearance,
+)
 
 # Allowlisted agent action types
 ALLOWED_ACTION_TYPES = {
@@ -19,6 +29,8 @@ ALLOWED_ACTION_TYPES = {
     'remove_object',
     'set_material',
     'clear_room',
+    'attach_to_socket',
+    'propose_zone_arrangement',
 }
 
 
@@ -37,6 +49,10 @@ def get_available_tool_definitions() -> list[dict[str, Any]]:
                     'asset_id': {
                         'type': 'string',
                         'description': 'Catalogue ID of the furniture model to add.',
+                    },
+                    'object_id': {
+                        'type': 'string',
+                        'description': 'Optional unique instance ID for referencing this item in subsequent actions.',
                     },
                     'position': {
                         'type': 'array',
@@ -145,6 +161,74 @@ def get_available_tool_definitions() -> list[dict[str, Any]]:
                 'required': [],
             },
         },
+        {
+            'name': 'attach_to_socket',
+            'description': 'Attach a child furniture item to an anchor furniture item via a designated spatial socket with strict relative transform calculation.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'child_object_id': {
+                        'type': 'string',
+                        'description': 'Placement ID of the child item in the scene to be attached.',
+                    },
+                    'anchor_object_id': {
+                        'type': 'string',
+                        'description': 'Placement ID of the anchor host furniture item in the scene.',
+                    },
+                    'socket_id': {
+                        'type': 'string',
+                        'description': 'Authoritative socket ID registered on the anchor item (e.g. "sofa-front-table", "sofa-left-accent", "bed-left-nightstand", "desk-knee-well-chair").',
+                    },
+                    'gap_meters': {
+                        'type': 'number',
+                        'description': 'Physical gap distance in metres between anchor and child surfaces. If omitted, socket recommendedGap is used.',
+                    },
+                    'relative_yaw': {
+                        'type': 'number',
+                        'description': 'Optional additional relative yaw rotation in radians (default: 0.0).',
+                    },
+                },
+                'required': ['child_object_id', 'anchor_object_id', 'socket_id'],
+            },
+        },
+        {
+            'name': 'propose_zone_arrangement',
+            'description': 'Propose a complete functional room zone arrangement (living, sleeping, workspace, dining) respecting room boundaries, openings, sockets, and existing furniture.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'zone_type': {
+                        'type': 'string',
+                        'enum': ['living', 'sleeping', 'workspace', 'dining'],
+                        'description': 'Functional category of the room zone.',
+                    },
+                    'intent': {
+                        'type': 'string',
+                        'description': 'Natural language description of the design intent (e.g. "Create a conversational seating area with sofa, coffee table, and accent chairs").',
+                    },
+                    'requirements': {
+                        'type': 'object',
+                        'properties': {
+                            'required_categories': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Required furniture categories (e.g. ["seating", "tables"]).',
+                            },
+                            'preferred_categories': {
+                                'type': 'array',
+                                'items': {'type': 'string'},
+                                'description': 'Preferred optional furniture categories.',
+                            },
+                            'preserve_existing_furniture': {
+                                'type': 'boolean',
+                                'description': 'If true, existing furniture must not be removed, replaced, or displaced.',
+                            },
+                        },
+                    },
+                },
+                'required': ['zone_type', 'intent'],
+            },
+        },
     ]
 
 
@@ -168,6 +252,10 @@ def validate_and_simulate_actions(
       3. Domain/Spatial Constraint Errors (Tier 3):
          - Room boundary containment breaches.
          - Bounding box / coordinate calculation errors.
+         - Incompatible socket attachment or occupied socket.
+         - Physical OBB-on-OBB collision between unrelated furniture.
+         - Doorway landing obstruction.
+         - Zone preservation violations.
       4. Budget Errors:
          - Layout cost exceeds authoritative design budget limit.
 
@@ -175,7 +263,7 @@ def validate_and_simulate_actions(
       - is_valid: bool (True only if all actions succeed across all categories)
       - schema_valid: bool (True if all proposed actions adhere to tool schemas and parameter types)
       - reference_valid: bool (True if all catalogue assets and scene objects resolve)
-      - domain_valid: bool (True if room containment and spatial bounds are satisfied)
+      - domain_valid: bool (True if room containment, collisions, sockets, and spatial bounds are satisfied)
       - budget_valid: bool (True if budget limits are satisfied)
       - schema_errors: list[str]
       - reference_errors: list[str]
@@ -321,7 +409,11 @@ def validate_and_simulate_actions(
                 pos = [0.0, half_height, 0.0]
 
             color = raw_color if raw_color is not None else '#4f46e5'
-            new_item_id = f"item-{uuid.uuid4().hex[:8]}"
+            custom_item_id = action.get('object_id')
+            if custom_item_id and isinstance(custom_item_id, str) and custom_item_id.strip():
+                new_item_id = custom_item_id.strip()
+            else:
+                new_item_id = f"item-{uuid.uuid4().hex[:8]}"
 
             objects_list.append({
                 'id': new_item_id,
@@ -336,14 +428,12 @@ def validate_and_simulate_actions(
 
         # 2. MOVE OBJECT
         elif action_type == 'move_object':
-            # Schema: required 'object_id' must be a non-empty string
             raw_obj_id = action.get('object_id')
             if raw_obj_id is None:
                 add_schema_error(f"Action [{action_idx}]: Missing required parameter 'object_id' for 'move_object'.")
             elif not isinstance(raw_obj_id, str) or not raw_obj_id.strip():
                 add_schema_error(f"Action [{action_idx}]: Parameter 'object_id' must be a non-empty string.")
 
-            # Schema: optional 'position'
             cleaned_pos = None
             if 'position' in action:
                 try:
@@ -351,7 +441,6 @@ def validate_and_simulate_actions(
                 except Exception as e:
                     add_schema_error(f"Action [{action_idx}]: Invalid position vector: {e}")
 
-            # Schema: optional 'rotation_euler'
             cleaned_rot = None
             if 'rotation_euler' in action:
                 try:
@@ -362,7 +451,6 @@ def validate_and_simulate_actions(
             if len(schema_errors) > action_schema_errs_count:
                 continue
 
-            # Reference Resolution: Object in current scene
             target_obj = next((o for o in objects_list if o.get('id') == raw_obj_id), None)
             if not target_obj:
                 add_reference_error(f"Action [{action_idx}]: Object '{raw_obj_id}' not found in scene.")
@@ -375,7 +463,6 @@ def validate_and_simulate_actions(
 
         # 3. REPLACE FURNITURE
         elif action_type == 'replace_furniture':
-            # Schema: required 'object_id' and 'new_asset_id' must be non-empty strings
             raw_obj_id = action.get('object_id')
             if raw_obj_id is None:
                 add_schema_error(f"Action [{action_idx}]: Missing required parameter 'object_id' for 'replace_furniture'.")
@@ -391,13 +478,11 @@ def validate_and_simulate_actions(
             if len(schema_errors) > action_schema_errs_count:
                 continue
 
-            # Reference Resolution: Scene object
             target_obj = next((o for o in objects_list if o.get('id') == raw_obj_id), None)
             if not target_obj:
                 add_reference_error(f"Action [{action_idx}]: Object '{raw_obj_id}' not found in scene.")
                 continue
 
-            # Reference Resolution: Replacement asset
             asset = FurnitureAsset.objects.filter(id=raw_new_asset_id, is_active=True).first()  # pyrefly: ignore[missing-attribute]
             if not asset:
                 add_reference_error(f"Action [{action_idx}]: Replacement asset '{raw_new_asset_id}' not in catalogue or is inactive.")
@@ -420,13 +505,18 @@ def validate_and_simulate_actions(
             if len(schema_errors) > action_schema_errs_count:
                 continue
 
-            # Reference Resolution: Scene object
             exists = any(o.get('id') == raw_obj_id for o in objects_list)
             if not exists:
                 add_reference_error(f"Action [{action_idx}]: Object '{raw_obj_id}' not found in scene.")
                 continue
 
             objects_list[:] = [o for o in objects_list if o.get('id') != raw_obj_id]
+            # Clean up relationships involving removed item
+            if 'relationships' in candidate_scene:
+                candidate_scene['relationships'] = [
+                    r for r in candidate_scene['relationships']
+                    if r.get('anchorObjectId') != raw_obj_id and r.get('childObjectId') != raw_obj_id
+                ]
 
         # 5. SET MATERIAL
         elif action_type == 'set_material':
@@ -436,12 +526,10 @@ def validate_and_simulate_actions(
             elif not isinstance(raw_obj_id, str) or not raw_obj_id.strip():
                 add_schema_error(f"Action [{action_idx}]: Parameter 'object_id' must be a non-empty string.")
 
-            # Schema: optional 'color'
             raw_color = action.get('color')
             if raw_color is not None and not isinstance(raw_color, str):
                 add_schema_error(f"Action [{action_idx}]: Parameter 'color' must be a string.")
 
-            # Schema: optional 'roughness' [0.0, 1.0]
             raw_roughness = action.get('roughness')
             cleaned_roughness = None
             if raw_roughness is not None:
@@ -450,7 +538,6 @@ def validate_and_simulate_actions(
                 else:
                     cleaned_roughness = float(raw_roughness)
 
-            # Schema: optional 'metalness' [0.0, 1.0]
             raw_metalness = action.get('metalness')
             cleaned_metalness = None
             if raw_metalness is not None:
@@ -462,7 +549,6 @@ def validate_and_simulate_actions(
             if len(schema_errors) > action_schema_errs_count:
                 continue
 
-            # Reference Resolution: Scene object
             target_obj = next((o for o in objects_list if o.get('id') == raw_obj_id), None)
             if not target_obj:
                 add_reference_error(f"Action [{action_idx}]: Object '{raw_obj_id}' not found in scene.")
@@ -486,6 +572,245 @@ def validate_and_simulate_actions(
                 continue
 
             objects_list.clear()
+            if 'relationships' in candidate_scene:
+                candidate_scene['relationships'].clear()
+            if 'zones' in candidate_scene:
+                candidate_scene['zones'].clear()
+
+        # 7. ATTACH TO SOCKET
+        elif action_type == 'attach_to_socket':
+            raw_child_id = action.get('child_object_id')
+            if raw_child_id is None:
+                add_schema_error(f"Action [{action_idx}]: Missing required parameter 'child_object_id' for 'attach_to_socket'.")
+            elif not isinstance(raw_child_id, str) or not raw_child_id.strip():
+                add_schema_error(f"Action [{action_idx}]: Parameter 'child_object_id' must be a non-empty string.")
+
+            raw_anchor_id = action.get('anchor_object_id')
+            if raw_anchor_id is None:
+                add_schema_error(f"Action [{action_idx}]: Missing required parameter 'anchor_object_id' for 'attach_to_socket'.")
+            elif not isinstance(raw_anchor_id, str) or not raw_anchor_id.strip():
+                add_schema_error(f"Action [{action_idx}]: Parameter 'anchor_object_id' must be a non-empty string.")
+
+            raw_socket_id = action.get('socket_id')
+            if raw_socket_id is None:
+                add_schema_error(f"Action [{action_idx}]: Missing required parameter 'socket_id' for 'attach_to_socket'.")
+            elif not isinstance(raw_socket_id, str) or not raw_socket_id.strip():
+                add_schema_error(f"Action [{action_idx}]: Parameter 'socket_id' must be a non-empty string.")
+
+            raw_gap = action.get('gap_meters')
+            cleaned_gap = None
+            if raw_gap is not None:
+                if not is_finite_number(raw_gap) or float(raw_gap) < 0.0:
+                    add_schema_error(f"Action [{action_idx}]: Parameter 'gap_meters' must be a non-negative finite number.")
+                else:
+                    cleaned_gap = float(raw_gap)
+
+            raw_yaw = action.get('relative_yaw')
+            cleaned_yaw = 0.0
+            if raw_yaw is not None:
+                if not is_finite_number(raw_yaw):
+                    add_schema_error(f"Action [{action_idx}]: Parameter 'relative_yaw' must be a finite number.")
+                else:
+                    cleaned_yaw = float(raw_yaw)
+
+            # Self-attachment validation
+            if raw_child_id and raw_anchor_id and raw_child_id == raw_anchor_id:
+                add_domain_error(f"Action [{action_idx}]: Item '{raw_child_id}' cannot attach to itself.")
+
+            if len(schema_errors) > action_schema_errs_count:
+                continue
+
+            # Reference Resolution: Anchor and Child in scene
+            anchor_obj = next((o for o in objects_list if o.get('id') == raw_anchor_id), None)
+            if not anchor_obj:
+                add_reference_error(f"Action [{action_idx}]: Anchor item '{raw_anchor_id}' not found in scene.")
+                continue
+
+            child_obj = next((o for o in objects_list if o.get('id') == raw_child_id), None)
+            if not child_obj:
+                add_reference_error(f"Action [{action_idx}]: Child item '{raw_child_id}' not found in scene.")
+                continue
+
+            # Authoritative socket definition lookup
+            socket_def = get_socket_definition(anchor_obj.get('assetId', ''), raw_socket_id)
+            if not socket_def:
+                add_domain_error(
+                    f"Action [{action_idx}]: Socket '{raw_socket_id}' is not registered on anchor "
+                    f"'{anchor_obj.get('name')}' ({anchor_obj.get('assetId')})."
+                )
+                continue
+
+            # Semantic compatibility check
+            child_asset = FurnitureAsset.objects.filter(id=child_obj.get('assetId')).first()  # pyrefly: ignore[missing-attribute]
+            child_cat = child_asset.category if child_asset else 'decor'
+            child_tags = child_asset.style_tags if child_asset else []
+
+            is_compat, compat_reason = is_compatible_with_socket(socket_def, child_cat, child_tags)
+            if not is_compat:
+                add_domain_error(f"Action [{action_idx}]: {compat_reason}")
+                continue
+
+            # Socket exclusivity check (is socket occupied by a different item?)
+            relationships = candidate_scene.setdefault('relationships', [])
+            for r in relationships:
+                if r.get('anchorObjectId') == raw_anchor_id and r.get('socketId') == raw_socket_id:
+                    if r.get('childObjectId') != raw_child_id:
+                        add_domain_error(
+                            f"Action [{action_idx}]: Socket '{socket_def.get('name')}' is already occupied by item '{r.get('childObjectId')}'."
+                        )
+                        break
+
+            # Graph cycle detection
+            if check_relationship_cycle(relationships, raw_child_id, raw_anchor_id):
+                add_domain_error(
+                    f"Action [{action_idx}]: Cycle detected: '{anchor_obj.get('name')}' is already a descendant of '{child_obj.get('name')}'."
+                )
+                continue
+
+            # Gap limits check
+            if cleaned_gap is not None:
+                if cleaned_gap < socket_def['min_gap'] or cleaned_gap > socket_def['max_gap']:
+                    add_domain_error(
+                        f"Action [{action_idx}]: Requested gap {cleaned_gap}m is outside permitted range "
+                        f"[{socket_def['min_gap']}m, {socket_def['max_gap']}m] for socket '{socket_def.get('name')}'."
+                    )
+                    continue
+
+            # Deterministic transform calculation
+            anchor_pos = [float(p) for p in anchor_obj.get('position', [0.0, 0.0, 0.0])]
+            anchor_rot = [float(r) for r in anchor_obj.get('rotationEuler', [0.0, 0.0, 0.0])]
+            anchor_dims = [float(d) for d in anchor_obj.get('dimensions', [1.0, 1.0, 1.0])]
+            anchor_scale = [float(s) for s in anchor_obj.get('scale', [1.0, 1.0, 1.0])]
+
+            child_dims = [float(d) for d in child_obj.get('dimensions', [1.0, 1.0, 1.0])]
+            child_scale = [float(s) for s in child_obj.get('scale', [1.0, 1.0, 1.0])]
+
+            transform_res = compute_child_transform_from_socket(
+                anchor_pos=anchor_pos,
+                anchor_yaw=anchor_rot[1] if len(anchor_rot) > 1 else 0.0,
+                anchor_dims=anchor_dims,
+                anchor_scale=anchor_scale,
+                child_dims=child_dims,
+                child_scale=child_scale,
+                socket_def=socket_def,
+                desired_gap=cleaned_gap,
+                relative_yaw=cleaned_yaw,
+            )
+
+            # Build candidate child placement for physical validation
+            candidate_child = dict(child_obj)
+            candidate_child['position'] = transform_res['position']
+            candidate_child['rotationEuler'] = transform_res['rotation_euler']
+
+            # Physical validation: Room boundary / footprint containment
+            containment_violations = validate_room_footprint_containment(candidate_child, room)
+            if containment_violations:
+                add_domain_error(
+                    f"Action [{action_idx}]: Attached item '{child_obj.get('name')}' violates room boundary: "
+                    + "; ".join(containment_violations)
+                )
+                continue
+
+            # Physical validation: OBB collisions with unrelated items (excluding anchor and self)
+            collision_detected = False
+            for other_obj in objects_list:
+                if other_obj.get('id') == raw_child_id or other_obj.get('id') == raw_anchor_id:
+                    continue
+                if check_obb_collisions_3d(candidate_child, other_obj):
+                    add_domain_error(
+                        f"Action [{action_idx}]: Attached item '{child_obj.get('name')}' physically collides with '{other_obj.get('name')}'."
+                    )
+                    collision_detected = True
+                    break
+            if collision_detected:
+                continue
+
+            # Physical validation: Doorway landing zone protection
+            door_violations = check_doorway_landing_clearance(candidate_child, room)
+            if door_violations:
+                add_domain_error(
+                    f"Action [{action_idx}]: Attached item '{child_obj.get('name')}' blocks door circulation: "
+                    + "; ".join(door_violations)
+                )
+                continue
+
+            # Mutate child position & rotation in simulation scene
+            child_obj['position'] = transform_res['position']
+            child_obj['rotationEuler'] = transform_res['rotation_euler']
+
+            # Record relationship (one-anchor-per-child rule: replace any previous attachment for this child)
+            relationships[:] = [r for r in relationships if r.get('childObjectId') != raw_child_id]
+            relationships.append({
+                'id': f"rel-{raw_anchor_id}-{raw_socket_id}-{raw_child_id}",
+                'anchorObjectId': raw_anchor_id,
+                'childObjectId': raw_child_id,
+                'socketId': raw_socket_id,
+                'gap': transform_res['gap'],
+                'relativeYaw': transform_res['relative_yaw'],
+                'createdAt': int(time.time() * 1000),
+            })
+
+        # 8. PROPOSE ZONE ARRANGEMENT
+        elif action_type == 'propose_zone_arrangement':
+            raw_zone_type = action.get('zone_type')
+            allowed_zone_types = {'living', 'sleeping', 'workspace', 'dining'}
+            if raw_zone_type is None:
+                add_schema_error(f"Action [{action_idx}]: Missing required parameter 'zone_type' for 'propose_zone_arrangement'.")
+            elif not isinstance(raw_zone_type, str) or raw_zone_type.lower() not in allowed_zone_types:
+                add_schema_error(
+                    f"Action [{action_idx}]: Unsupported zone_type '{raw_zone_type}'. Allowed: {sorted(allowed_zone_types)}."
+                )
+
+            raw_intent = action.get('intent')
+            if raw_intent is None:
+                add_schema_error(f"Action [{action_idx}]: Missing required parameter 'intent' for 'propose_zone_arrangement'.")
+            elif not isinstance(raw_intent, str) or not raw_intent.strip():
+                add_schema_error(f"Action [{action_idx}]: Parameter 'intent' must be a non-empty string.")
+
+            reqs = action.get('requirements')
+            preserve_furniture = True
+            if reqs is not None:
+                if not isinstance(reqs, dict):
+                    add_schema_error(f"Action [{action_idx}]: Parameter 'requirements' must be a dictionary.")
+                else:
+                    if 'preserve_existing_furniture' in reqs and isinstance(reqs['preserve_existing_furniture'], bool):
+                        preserve_furniture = reqs['preserve_existing_furniture']
+
+            if len(schema_errors) > action_schema_errs_count:
+                continue
+
+            # Preservation check: if preserve_existing_furniture is True, no destructive actions allowed in proposal
+            if preserve_furniture:
+                destructive_types = {'clear_room', 'remove_object'}
+                has_destructive = any(
+                    isinstance(a, dict) and (a.get('type') in destructive_types or a.get('action') in destructive_types)
+                    for a in proposed_actions
+                )
+                if has_destructive:
+                    add_domain_error(
+                        f"Action [{action_idx}]: Preservation violation: 'preserve_existing_furniture' is True, "
+                        "but proposal contains destructive operations ('clear_room' or 'remove_object')."
+                    )
+                    continue
+
+            # Room space feasibility check
+            room_area = room_w * room_l
+            if room_area < 2.5:
+                add_domain_error(
+                    f"Action [{action_idx}]: Insufficient room space ({room_area:.2f}m²) for functional '{raw_zone_type}' zone arrangement."
+                )
+                continue
+
+            # Record zone in candidate scene
+            zones = candidate_scene.setdefault('zones', [])
+            zone_id = f"zone-{raw_zone_type}-{uuid.uuid4().hex[:6]}"
+            zone_members = [o.get('id') for o in objects_list if o.get('id')]
+            zones.append({
+                'id': zone_id,
+                'type': raw_zone_type.lower(),
+                'name': f"{raw_zone_type.capitalize()} Area",
+                'memberObjectIds': zone_members,
+            })
 
     # Calculate resulting candidate budget & containment
     try:

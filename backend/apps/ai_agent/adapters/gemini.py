@@ -74,6 +74,11 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             "You help users furnish and arrange their 3D rooms using available catalogue assets. "
             "Coordinate system: Y is up (floor at Y=0), X and Z are floor plane in metres. "
             "Always return your proposed furniture changes by invoking the provided tools. "
+            "When connecting related furniture items (e.g. coffee tables or accent chairs to sofas, nightstands to beds, study chairs to desks), "
+            "use 'attach_to_socket' with registered socket IDs (e.g., 'sofa-front-table', 'sofa-left-accent', 'sofa-right-accent', "
+            "'bed-left-nightstand', 'bed-right-nightstand', 'desk-knee-well-chair') to guarantee physical and ergonomic spacing. "
+            "When designing a functional room zone, use 'propose_zone_arrangement' specifying 'zone_type' and 'intent', "
+            "and respect 'preserve_existing_furniture' requirements. "
             "Keep suggestions tasteful, functional, and ergonomically balanced."
         )
 
@@ -228,6 +233,10 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                         summaries.append(f"setting color to {act.get('color', '')}")
                     elif act_type == 'clear_room':
                         summaries.append("clearing room layout")
+                    elif act_type == 'attach_to_socket':
+                        summaries.append(f"attaching {act.get('child_object_id', '')} to {act.get('anchor_object_id', '')} on socket {act.get('socket_id', '')}")
+                    elif act_type == 'propose_zone_arrangement':
+                        summaries.append(f"arranging {act.get('zone_type', 'functional')} zone")
                 action_summary = ", ".join(summaries) if summaries else "layout adjustments"
                 full_text = f"I have formulated design recommendations for your room: {action_summary}. Please review the 3D preview and approve to apply."
             else:

@@ -116,12 +116,43 @@ export interface SpatialValidationIssue {
     | 'UNREACHABLE_FURNITURE'
     | 'NARROW_PASSAGE'
     | 'SOCKET_INCOMPATIBLE'
+    | 'SOCKET_OCCUPIED'
+    | 'SOCKET_NOT_FOUND'
+    | 'INVALID_GAP'
+    | 'CYCLE_DETECTED'
+    | 'ZONE_PRESERVATION_BREACH'
     | 'BUDGET_EXCEEDED';
   severity: 'fatal' | 'warning' | 'info';
   objectIds: string[];
   message: string;
   location?: Point2D;
   recommendation?: string;
+}
+
+/**
+ * Structured action representing a semantic socket attachment.
+ */
+export interface AttachToSocketAction {
+  type: 'attach_to_socket';
+  child_object_id: string;
+  anchor_object_id: string;
+  socket_id: string;
+  gap_meters?: number;
+  relative_yaw?: number;
+}
+
+/**
+ * Structured action representing a functional zone arrangement.
+ */
+export interface ProposeZoneArrangementAction {
+  type: 'propose_zone_arrangement';
+  zone_type: 'living' | 'sleeping' | 'workspace' | 'dining';
+  intent: string;
+  requirements?: {
+    required_categories?: string[];
+    preferred_categories?: string[];
+    preserve_existing_furniture?: boolean;
+  };
 }
 
 /**

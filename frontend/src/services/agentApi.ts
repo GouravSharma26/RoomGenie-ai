@@ -4,7 +4,16 @@ import { ensureAuthenticated } from './designApi';
 import { API_BASE_URL } from './apiConfig';
 
 export interface ProposedAction {
-  name: 'add_furniture' | 'move_object' | 'replace_furniture' | 'remove_object' | 'set_material' | 'clear_room';
+  name:
+    | 'add_furniture'
+    | 'move_object'
+    | 'replace_furniture'
+    | 'remove_object'
+    | 'set_material'
+    | 'clear_room'
+    | 'attach_to_socket'
+    | 'propose_zone_arrangement'
+    | string;
   parameters: Record<string, any>;
 }
 

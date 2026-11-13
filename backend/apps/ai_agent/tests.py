@@ -1103,3 +1103,498 @@ class GeminiAdapterSecurityAndFallbackTests(unittest.TestCase):
         self.assertIn("Socket 'sofa-front-table' on 'Modern 3-Seater Sofa'", formatted_prompt)
         self.assertIn("Walkability Analysis: Score 85/100", formatted_prompt)
         self.assertIn("Remaining Free Floor Space: 88% available", formatted_prompt)
+
+
+class Phase62SocketAndZoneTests(APITestCase):
+    """
+    Automated test suite for Phase 6.2: Semantic Socket Attachment & Functional Zone Arrangements.
+    Tests authoritative socket registry, relative transform calculation, physical validation
+    (OBB SAT collisions, polygon room boundaries, doorway landing protection), cycle detection,
+    zone arrangement preservation, and mock adapter scenarios.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='phase62user', password='Password123!')
+        self.client.force_authenticate(user=self.user)
+
+        self.sofa = FurnitureAsset.objects.create(
+            id='sofa-modern-3seater',
+            name='Modern 3-Seater Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=2999900,
+            style_tags=['modern', 'minimalist', 'living-room'],
+            currency='INR'
+        )
+        self.coffee_table = FurnitureAsset.objects.create(
+            id='table-oak-coffee',
+            name='Minimalist Coffee Table',
+            category='tables',
+            width=Decimal('1.10'),
+            height=Decimal('0.45'),
+            depth=Decimal('0.60'),
+            price_paise=1499900,
+            style_tags=['scandinavian', 'wood', 'living-room'],
+            currency='INR'
+        )
+        self.armchair = FurnitureAsset.objects.create(
+            id='chair-accent-armchair',
+            name='Lounge Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.88'),
+            depth=Decimal('0.85'),
+            price_paise=1199900,
+            style_tags=['accent', 'living-room', 'reading'],
+            currency='INR'
+        )
+        self.bed = FurnitureAsset.objects.create(
+            id='bed-queen-platform',
+            name='Nordic Queen Platform Bed',
+            category='beds',
+            width=Decimal('1.60'),
+            height=Decimal('0.95'),
+            depth=Decimal('2.10'),
+            price_paise=3499900,
+            style_tags=['scandinavian', 'minimalist', 'bedroom'],
+            currency='INR'
+        )
+        self.nightstand = FurnitureAsset.objects.create(
+            id='table-bedside-nightstand',
+            name='Bedside Nightstand',
+            category='tables',
+            width=Decimal('0.50'),
+            height=Decimal('0.50'),
+            depth=Decimal('0.40'),
+            price_paise=699900,
+            style_tags=['scandinavian', 'minimalist', 'bedroom'],
+            currency='INR'
+        )
+        self.desk = FurnitureAsset.objects.create(
+            id='desk-workspace-study',
+            name='Ergonomic Study Desk',
+            category='tables',
+            width=Decimal('1.40'),
+            height=Decimal('0.75'),
+            depth=Decimal('0.70'),
+            price_paise=1899900,
+            style_tags=['industrial', 'workspace', 'home-office'],
+            currency='INR'
+        )
+        self.bookshelf = FurnitureAsset.objects.create(
+            id='storage-bookshelf-tall',
+            name='4-Tier Bookshelf',
+            category='storage',
+            width=Decimal('0.90'),
+            height=Decimal('1.80'),
+            depth=Decimal('0.35'),
+            price_paise=1599900,
+            style_tags=['modern', 'walnut', 'storage'],
+            currency='INR'
+        )
+
+    def test_canonical_socket_definitions_registered(self):
+        from apps.ai_agent.sockets import CANONICAL_SOCKET_DEFINITIONS, get_socket_definition
+        self.assertEqual(len(CANONICAL_SOCKET_DEFINITIONS), 6)
+        sofa_front = get_socket_definition('sofa-modern-3seater', 'sofa-front-table')
+        self.assertIsNotNone(sofa_front)
+        self.assertEqual(sofa_front['surface_normal'], [0.0, 0.0, 1.0])
+        self.assertEqual(sofa_front['recommended_gap'], 0.45)
+        self.assertEqual(sofa_front['min_gap'], 0.30)
+        self.assertEqual(sofa_front['max_gap'], 0.70)
+
+        bed_left = get_socket_definition('bed-queen-platform', 'bed-left-nightstand')
+        self.assertIsNotNone(bed_left)
+        self.assertEqual(bed_left['surface_normal'], [-1.0, 0.0, 0.0])
+        self.assertEqual(bed_left['recommended_gap'], 0.08)
+
+    def test_socket_compatibility_validation(self):
+        from apps.ai_agent.sockets import get_socket_definition, is_compatible_with_socket
+        socket_def = get_socket_definition('sofa-modern-3seater', 'sofa-front-table')
+        self.assertIsNotNone(socket_def)
+
+        # Compatible table
+        is_ok, reason = is_compatible_with_socket(socket_def, 'tables', ['living-room'])
+        self.assertTrue(is_ok)
+        self.assertEqual(reason, "")
+
+        # Incompatible category: bed on table socket
+        is_ok_bed, reason_bed = is_compatible_with_socket(socket_def, 'beds', ['bedroom'])
+        self.assertFalse(is_ok_bed)
+        self.assertIn("Category 'beds' is not allowed", reason_bed)
+
+    def test_compute_child_transform_relative_accuracy(self):
+        from apps.ai_agent.sockets import get_socket_definition, compute_child_transform_from_socket
+        socket_def = get_socket_definition('sofa-modern-3seater', 'sofa-front-table')
+        self.assertIsNotNone(socket_def)
+
+        anchor_pos = [0.0, 0.425, 0.0]
+        anchor_yaw = 0.0
+        anchor_dims = [2.10, 0.85, 0.90]
+        anchor_scale = [1.0, 1.0, 1.0]
+
+        child_dims = [1.10, 0.45, 0.60]
+        child_scale = [1.0, 1.0, 1.0]
+
+        # Gap = 0.45m
+        transform = compute_child_transform_from_socket(
+            anchor_pos, anchor_yaw, anchor_dims, anchor_scale,
+            child_dims, child_scale, socket_def, desired_gap=0.45
+        )
+
+        # Anchor front is +Z. Half depth of anchor = 0.45m.
+        # Gap = 0.45m.
+        # Half depth of child = 0.30m.
+        # Expected child Z = 0.0 + 0.45 + 0.45 + 0.30 = 1.20m.
+        self.assertAlmostEqual(transform['position'][0], 0.0, places=3)
+        self.assertAlmostEqual(transform['position'][1], 0.225, places=3)  # grounded height 0.45 / 2
+        self.assertAlmostEqual(transform['position'][2], 1.20, places=2)
+        self.assertEqual(transform['gap'], 0.45)
+
+    def test_attach_to_socket_successful_simulation(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern 3-Seater Sofa',
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'position': [0.0, 0.425, -0.5],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'scale': [1.0, 1.0, 1.0],
+                },
+                {
+                    'id': 'table-1',
+                    'assetId': 'table-oak-coffee',
+                    'name': 'Minimalist Coffee Table',
+                    'dimensions': [1.1, 0.45, 0.6],
+                    'position': [0.0, 0.225, 1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'scale': [1.0, 1.0, 1.0],
+                }
+            ],
+            'relationships': [],
+        }
+
+        actions = [
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'sofa-1',
+                'child_object_id': 'table-1',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.45,
+            }
+        ]
+
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertTrue(result['is_valid'])
+        self.assertTrue(result['domain_valid'])
+        self.assertEqual(len(result['errors']), 0)
+
+        rels = result['candidate_scene']['relationships']
+        self.assertEqual(len(rels), 1)
+        self.assertEqual(rels[0]['anchorObjectId'], 'sofa-1')
+        self.assertEqual(rels[0]['childObjectId'], 'table-1')
+        self.assertEqual(rels[0]['socketId'], 'sofa-front-table')
+        self.assertEqual(rels[0]['gap'], 0.45)
+
+        # Check updated child position
+        updated_child = next(o for o in result['candidate_scene']['objects'] if o['id'] == 'table-1')
+        self.assertAlmostEqual(updated_child['position'][2], -0.5 + 0.45 + 0.45 + 0.30, places=2)
+
+    def test_attach_to_socket_incompatible_category_rejected(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern 3-Seater Sofa',
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'position': [0.0, 0.425, 0.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'id': 'bed-1',
+                    'assetId': 'bed-queen-platform',
+                    'name': 'Queen Bed',
+                    'dimensions': [1.6, 0.95, 2.1],
+                    'position': [0.0, 0.475, 1.5],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                }
+            ]
+        }
+        actions = [
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'sofa-1',
+                'child_object_id': 'bed-1',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.45,
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['domain_valid'])
+        self.assertTrue(any("not allowed" in err for err in result['domain_errors']))
+
+    def test_attach_to_socket_occupied_rejected(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0, 0.425, 0], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-1', 'assetId': 'table-oak-coffee', 'name': 'Table 1', 'dimensions': [1.1, 0.45, 0.6], 'position': [0, 0.225, 1], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-2', 'assetId': 'table-oak-coffee', 'name': 'Table 2', 'dimensions': [1.1, 0.45, 0.6], 'position': [0, 0.225, 2], 'rotationEuler': [0, 0, 0]},
+            ],
+            'relationships': [
+                {
+                    'id': 'rel-1',
+                    'anchorObjectId': 'sofa-1',
+                    'childObjectId': 'table-1',
+                    'socketId': 'sofa-front-table',
+                    'gap': 0.45,
+                    'relativeYaw': 0.0
+                }
+            ]
+        }
+        # Attempt to attach table-2 to already occupied front table socket
+        actions = [
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'sofa-1',
+                'child_object_id': 'table-2',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.45,
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertTrue(any("already occupied" in err for err in result['domain_errors']))
+
+    def test_attach_to_socket_cycle_detection(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {'id': 'obj-a', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0, 0.425, 0], 'rotationEuler': [0, 0, 0]},
+                {'id': 'obj-b', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.1, 0.45, 0.6], 'position': [0, 0.225, 1], 'rotationEuler': [0, 0, 0]},
+            ],
+            'relationships': [
+                {'id': 'rel-1', 'anchorObjectId': 'obj-a', 'childObjectId': 'obj-b', 'socketId': 'sofa-front-table', 'gap': 0.45}
+            ]
+        }
+        # Attempt to make obj-a a child of obj-b (cycle)
+        actions = [
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'obj-b',
+                'child_object_id': 'obj-a',
+                'socket_id': 'sofa-front-table',
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertTrue(any("Cycle detected" in err or "not registered" in err for err in result['domain_errors']))
+
+    def test_attach_to_socket_gap_limits(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0, 0.425, 0], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-1', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.1, 0.45, 0.6], 'position': [0, 0.225, 1], 'rotationEuler': [0, 0, 0]},
+            ]
+        }
+        # Below min_gap (0.30m)
+        actions_low = [
+            {'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.15}
+        ]
+        res_low = validate_and_simulate_actions(scene, actions_low)
+        self.assertFalse(res_low['is_valid'])
+        self.assertTrue(any("outside permitted range" in err for err in res_low['domain_errors']))
+
+        # Above max_gap (0.70m)
+        actions_high = [
+            {'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.95}
+        ]
+        res_high = validate_and_simulate_actions(scene, actions_high)
+        self.assertFalse(res_high['is_valid'])
+        self.assertTrue(any("outside permitted range" in err for err in res_high['domain_errors']))
+
+    def test_attach_to_socket_room_boundary_breach(self):
+        # Small room 3.0m x 3.0m
+        scene = {
+            'room': {'width': 3.0, 'length': 3.0, 'height': 2.8},
+            'objects': [
+                # Sofa placed near +Z boundary (Z = 1.0). Half length = 1.5m limit.
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, 1.0], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-1', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.1, 0.45, 0.6], 'position': [0, 0.225, 0], 'rotationEuler': [0, 0, 0]},
+            ]
+        }
+        # Attaching coffee table to front (+Z) pushes table to Z = 1.0 + 0.45 + 0.45 + 0.30 = 2.20m > 1.5m limit!
+        actions = [
+            {'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.45}
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['domain_valid'])
+        self.assertTrue(any("violates room boundary" in err for err in result['domain_errors']))
+
+    def test_attach_to_socket_obb_collision_with_other_furniture(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 6.0, 'height': 2.8},
+            'objects': [
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, 0.0], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-1', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.1, 0.45, 0.6], 'position': [0.0, 0.225, 0.0], 'rotationEuler': [0, 0, 0]},
+                # Pre-existing bookshelf directly in front where coffee table will attach (Z = 1.20)
+                {'id': 'shelf-blocking', 'assetId': 'storage-bookshelf-tall', 'name': 'Bookshelf', 'dimensions': [0.9, 1.8, 0.35], 'position': [0.0, 0.9, 1.20], 'rotationEuler': [0, 0, 0]},
+            ]
+        }
+        actions = [
+            {'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.45}
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['domain_valid'])
+        self.assertTrue(any("physically collides" in err for err in result['domain_errors']))
+
+    def test_attach_to_socket_doorway_landing_obstruction(self):
+        scene = {
+            'room': {
+                'width': 6.0,
+                'length': 6.0,
+                'height': 2.8,
+                'walls': [
+                    {'id': 'wall-front', 'startPoint': [-3.0, 3.0], 'endPoint': [3.0, 3.0]},
+                ],
+                'openings': [
+                    {'id': 'door-main', 'wallId': 'wall-front', 'type': 'door', 'distanceAlongWall': 2.55, 'width': 0.9, 'height': 2.1}
+                ]
+            },
+            'objects': [
+                # Sofa positioned facing door landing
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0.0, 0.425, 1.3], 'rotationEuler': [0, 0, 0]},
+                {'id': 'table-1', 'assetId': 'table-oak-coffee', 'name': 'Table', 'dimensions': [1.1, 0.45, 0.6], 'position': [0.0, 0.225, 0.0], 'rotationEuler': [0, 0, 0]},
+            ]
+        }
+        actions = [
+            {'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.45}
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['domain_valid'])
+        self.assertTrue(any("blocks door circulation" in err for err in result['domain_errors']))
+
+    def test_propose_zone_arrangement_preservation_violation(self):
+        scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {'id': 'sofa-1', 'assetId': 'sofa-modern-3seater', 'name': 'Sofa', 'dimensions': [2.1, 0.85, 0.9], 'position': [0, 0.425, 0], 'rotationEuler': [0, 0, 0]}
+            ]
+        }
+        # Propose zone with preserve_existing_furniture: True, but also including clear_room
+        actions = [
+            {
+                'type': 'propose_zone_arrangement',
+                'zone_type': 'living',
+                'intent': 'Rearrange living area',
+                'requirements': {'preserve_existing_furniture': True}
+            },
+            {
+                'type': 'clear_room',
+                'confirm': True
+            }
+        ]
+        result = validate_and_simulate_actions(scene, actions)
+        self.assertFalse(result['is_valid'])
+        self.assertFalse(result['domain_valid'])
+        self.assertTrue(any("Preservation violation" in err for err in result['domain_errors']))
+
+    def test_mock_adapter_conversational_living_scenario(self):
+        adapter = MockDesignLLMAdapter()
+        scene = {'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}
+
+        proposal = adapter.generate_design_proposal("Create a conversational living area with a sofa, coffee table, and two accent chairs", scene)
+        self.assertEqual(proposal.provider, 'mock')
+        self.assertGreaterEqual(len(proposal.proposed_actions), 7)
+
+        # Validate that the mock proposal passes the deterministic spatial validator cleanly
+        sim_res = validate_and_simulate_actions(scene, proposal.proposed_actions)
+        self.assertTrue(sim_res['is_valid'])
+        self.assertTrue(sim_res['schema_valid'])
+        self.assertTrue(sim_res['reference_valid'])
+        self.assertTrue(sim_res['domain_valid'])
+        self.assertEqual(len(sim_res['errors']), 0)
+
+        # 3 relationships established (front coffee table + left accent armchair + right accent armchair)
+        rels = sim_res['candidate_scene'].get('relationships', [])
+        self.assertEqual(len(rels), 3)
+
+        # Functional living zone established
+        zones = sim_res['candidate_scene'].get('zones', [])
+        self.assertEqual(len(zones), 1)
+        self.assertEqual(zones[0]['type'], 'living')
+
+    def test_mock_adapter_functional_sleeping_scenario(self):
+        adapter = MockDesignLLMAdapter()
+        scene = {'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}
+
+        proposal = adapter.generate_design_proposal("Arrange a functional sleeping zone with bed and nightstands", scene)
+        self.assertEqual(proposal.provider, 'mock')
+
+        sim_res = validate_and_simulate_actions(scene, proposal.proposed_actions)
+        self.assertTrue(sim_res['is_valid'])
+        self.assertTrue(sim_res['domain_valid'])
+
+        rels = sim_res['candidate_scene'].get('relationships', [])
+        self.assertEqual(len(rels), 2)  # left nightstand + right nightstand
+
+        zones = sim_res['candidate_scene'].get('zones', [])
+        self.assertEqual(len(zones), 1)
+        self.assertEqual(zones[0]['type'], 'sleeping')
+
+    def test_mock_adapter_workspace_arrangement_scenario(self):
+        adapter = MockDesignLLMAdapter()
+        scene = {'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}
+
+        proposal = adapter.generate_design_proposal("Design an ergonomic workspace arrangement with desk, chair, and storage", scene)
+        self.assertEqual(proposal.provider, 'mock')
+
+        sim_res = validate_and_simulate_actions(scene, proposal.proposed_actions)
+        self.assertTrue(sim_res['is_valid'])
+        self.assertTrue(sim_res['domain_valid'])
+
+        rels = sim_res['candidate_scene'].get('relationships', [])
+        self.assertEqual(len(rels), 1)  # study chair attached to desk knee well
+        self.assertEqual(rels[0]['socketId'], 'desk-knee-well-chair')
+
+        zones = sim_res['candidate_scene'].get('zones', [])
+        self.assertEqual(len(zones), 1)
+        self.assertEqual(zones[0]['type'], 'workspace')
+
+    def test_gemini_tool_definitions_expose_socket_and_zone_actions(self):
+        from apps.ai_agent.tools import get_available_tool_definitions
+        tools = get_available_tool_definitions()
+        tool_names = [t['name'] for t in tools]
+        self.assertIn('attach_to_socket', tool_names)
+        self.assertIn('propose_zone_arrangement', tool_names)
+
+        # Check attach_to_socket parameters
+        attach_tool = next(t for t in tools if t['name'] == 'attach_to_socket')
+        props = attach_tool['parameters']['properties']
+        self.assertIn('child_object_id', props)
+        self.assertIn('anchor_object_id', props)
+        self.assertIn('socket_id', props)
+        self.assertIn('gap_meters', props)
+        self.assertIn('relative_yaw', props)
+        self.assertEqual(attach_tool['parameters']['required'], ['child_object_id', 'anchor_object_id', 'socket_id'])
+
+        # Check propose_zone_arrangement parameters
+        zone_tool = next(t for t in tools if t['name'] == 'propose_zone_arrangement')
+        zone_props = zone_tool['parameters']['properties']
+        self.assertIn('zone_type', zone_props)
+        self.assertIn('intent', zone_props)
+        self.assertIn('requirements', zone_props)
+        self.assertEqual(zone_tool['parameters']['required'], ['zone_type', 'intent'])
+
