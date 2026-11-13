@@ -26,14 +26,20 @@ import {
   updateRelationshipGap,
   transformGroup,
   purgeInvalidRelationships,
+  findCompatibleSockets,
   type PlacementValidation,
   type SnapConfig,
   type SnapGuide,
-  type SnapStateTracker
+  type SnapStateTracker,
+  type SocketCandidate
 } from '../../spatial';
 
 export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
   SAMPLE_CATALOG.map((item) => [item.id, item.category])
+);
+
+export const CATALOG_TAG_LOOKUP: Record<string, string[]> = Object.fromEntries(
+  SAMPLE_CATALOG.map((item) => [item.id, item.styleTags || []])
 );
 
 export function computeSceneValidations(scene: CanonicalScene): Record<string, PlacementValidation> {
@@ -71,6 +77,8 @@ interface EditorState {
   snapConfig: SnapConfig;
   activeSnapGuides: SnapGuide[];
   snapStateTracker: SnapStateTracker;
+  activeSocketCandidate: SocketCandidate | null;
+  draggedObjectId: string | null;
   history: CanonicalScene[];
   future: CanonicalScene[];
   activeGestureSnapshot: CanonicalScene | null;
@@ -79,8 +87,11 @@ interface EditorState {
   spatialValidations: Record<string, PlacementValidation>;
 
   // Actions
-  startInteraction: () => void;
+  startInteraction: (draggedId?: string) => void;
   endInteraction: () => void;
+  cancelInteraction: () => void;
+  setActiveSocketCandidate: (candidate: SocketCandidate | null) => void;
+  setDraggedObjectId: (id: string | null) => void;
   setCurrentDesignId: (id: string | null) => void;
   setRoomDimensions: (dims: Partial<RoomDimensions>) => void;
   resolvePlacement: (id: string) => void;
@@ -203,6 +214,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   snapConfig: { ...DEFAULT_SNAP_CONFIG },
   activeSnapGuides: [],
   snapStateTracker: {},
+  activeSocketCandidate: null,
+  draggedObjectId: null,
   history: [],
   future: [],
   activeGestureSnapshot: null,
@@ -210,23 +223,51 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   currentDesignId: null,
   spatialValidations: computeSceneValidations(initialScene),
 
-  startInteraction: () => {
+  setActiveSocketCandidate: (candidate) => set({ activeSocketCandidate: candidate }),
+  setDraggedObjectId: (id) => set({ draggedObjectId: id }),
+
+  startInteraction: (draggedId?: string) => {
     set((state) => {
-      if (state.activeGestureSnapshot !== null) return state;
+      if (state.activeGestureSnapshot !== null) {
+        return draggedId !== undefined ? { draggedObjectId: draggedId } : state;
+      }
       return {
         activeGestureSnapshot: cloneCanonicalScene(state.scene),
         gestureHadOutOfBoundsAttempt: false,
+        draggedObjectId: draggedId !== undefined ? draggedId : state.draggedObjectId,
       };
     });
   },
 
   endInteraction: () => {
     set((state) => {
+      let nextScene = state.scene;
+
+      // Check if an active valid socket candidate was magnetically snapped during this drag
+      if (state.activeSocketCandidate && state.activeSocketCandidate.valid && state.draggedObjectId) {
+        const candidate = state.activeSocketCandidate;
+        const attachResult = attachSocket(
+          nextScene,
+          candidate.anchorPlacement.id,
+          candidate.socket.id,
+          state.draggedObjectId,
+          { gap: candidate.gap, categoryLookup: CATALOG_CATEGORY_LOOKUP }
+        );
+        if (attachResult.success) {
+          nextScene = attachResult.updatedScene;
+        }
+      }
+
       if (!state.activeGestureSnapshot) {
-        return { activeSnapGuides: [], snapStateTracker: {} };
+        return {
+          activeSnapGuides: [],
+          snapStateTracker: {},
+          activeSocketCandidate: null,
+          draggedObjectId: null,
+        };
       }
       const initial = state.activeGestureSnapshot;
-      const current = state.scene;
+      const current = nextScene;
       const hasChanged = JSON.stringify(initial) !== JSON.stringify(current);
 
       // Boundary clamp attempt unit of counting:
@@ -239,19 +280,50 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (hasChanged) {
         recordEdit();
         return {
+          scene: nextScene,
+          spatialValidations: computeSceneValidations(nextScene),
           activeGestureSnapshot: null,
           gestureHadOutOfBoundsAttempt: false,
           activeSnapGuides: [],
           snapStateTracker: {},
+          activeSocketCandidate: null,
+          draggedObjectId: null,
           history: [...state.history, initial].slice(-MAX_HISTORY),
           future: [],
         };
       }
       return {
+        scene: nextScene,
         activeGestureSnapshot: null,
         gestureHadOutOfBoundsAttempt: false,
         activeSnapGuides: [],
         snapStateTracker: {},
+        activeSocketCandidate: null,
+        draggedObjectId: null,
+      };
+    });
+  },
+
+  cancelInteraction: () => {
+    set((state) => {
+      if (!state.activeGestureSnapshot) {
+        return {
+          activeSnapGuides: [],
+          snapStateTracker: {},
+          activeSocketCandidate: null,
+          draggedObjectId: null,
+        };
+      }
+      const restoredScene = cloneCanonicalScene(state.activeGestureSnapshot);
+      return {
+        scene: restoredScene,
+        spatialValidations: computeSceneValidations(restoredScene),
+        activeGestureSnapshot: null,
+        gestureHadOutOfBoundsAttempt: false,
+        activeSnapGuides: [],
+        snapStateTracker: {},
+        activeSocketCandidate: null,
+        draggedObjectId: null,
       };
     });
   },
@@ -435,6 +507,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: id,
       activeSnapGuides: id === null ? [] : state.activeSnapGuides,
       snapStateTracker: id === null ? {} : state.snapStateTracker,
+      activeSocketCandidate: id === null ? null : state.activeSocketCandidate,
+      draggedObjectId: id === null ? null : state.draggedObjectId,
     })),
   hoverObject: (id) => set({ hoveredId: id }),
 
@@ -446,6 +520,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const obj = state.scene.objects[objIndex];
       let targetPos = position;
       let snapGuides: SnapGuide[] = [];
+      let socketCandidate: SocketCandidate | null = null;
 
       // Apply intelligent magnetic snapping if enabled
       if (state.snapConfig.enabled && !options?.skipSnapping) {
@@ -453,31 +528,69 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ...obj,
           position,
         };
-        const snapResult = calculateSnap(
-          candidatePlacement,
-          state.scene.objects,
-          state.scene.room,
-          state.snapConfig,
-          state.snapStateTracker,
-          CATALOG_CATEGORY_LOOKUP
-        );
-        targetPos = snapResult.position;
-        snapGuides = snapResult.guides;
+
+        // Check for nearby compatible sockets (within 1.2m radius)
+        const nearbySockets = findCompatibleSockets(state.scene, candidatePlacement, {
+          searchRadius: 1.2,
+          categoryLookup: CATALOG_CATEGORY_LOOKUP,
+          tagLookup: CATALOG_TAG_LOOKUP,
+        });
+
+        if (nearbySockets.length > 0) {
+          const closest = nearbySockets[0];
+          if (closest.distanceToTarget <= 0.8) {
+            socketCandidate = closest;
+            // When within close snap range (<= 0.35m) and valid, magnetically attract to target position
+            if (closest.valid && closest.distanceToTarget <= 0.35) {
+              targetPos = closest.targetPosition;
+            }
+          }
+        }
+
+        // Apply intelligent magnetic grid/wall/center snapping if not magnetically snapped to socket
+        if (!socketCandidate || !socketCandidate.valid) {
+          const snapResult = calculateSnap(
+            candidatePlacement,
+            state.scene.objects,
+            state.scene.room,
+            state.snapConfig,
+            state.snapStateTracker,
+            CATALOG_CATEGORY_LOOKUP
+          );
+          targetPos = snapResult.position;
+          snapGuides = snapResult.guides;
+        }
       }
 
       const clampedPos = clampPositionToRoom(targetPos, obj.dimensions, state.scene.room, obj.scale, obj.rotationEuler);
       const isClamped = Math.abs(clampedPos[0] - targetPos[0]) > 0.001 || Math.abs(clampedPos[2] - targetPos[2]) > 0.001;
 
-      const updatedObjects = [...state.scene.objects];
-      updatedObjects[objIndex] = {
-        ...obj,
-        position: clampedPos,
-      };
+      // Check if object is an anchor with attached children (Group Movement)
+      const directChildren = (state.scene.relationships || []).filter((r) => r.anchorObjectId === id);
+      let nextScene: CanonicalScene;
 
-      const nextScene: CanonicalScene = {
-        ...state.scene,
-        objects: updatedObjects,
-      };
+      if (directChildren.length > 0) {
+        const groupResult = transformGroup(state.scene, id, clampedPos, obj.rotationEuler, {
+          categoryLookup: CATALOG_CATEGORY_LOOKUP,
+        });
+        if (groupResult.success) {
+          nextScene = groupResult.updatedScene;
+        } else {
+          // If group transformation violates bounds or collides externally, keep previous valid scene
+          nextScene = state.scene;
+        }
+      } else {
+        const updatedObjects = [...state.scene.objects];
+        updatedObjects[objIndex] = {
+          ...obj,
+          position: clampedPos,
+        };
+        nextScene = {
+          ...state.scene,
+          objects: updatedObjects,
+        };
+      }
+
       const validations = computeSceneValidations(nextScene);
 
       if (state.activeGestureSnapshot !== null) {
@@ -488,6 +601,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           scene: nextScene,
           spatialValidations: validations,
           activeSnapGuides: snapGuides,
+          activeSocketCandidate: socketCandidate,
+          draggedObjectId: id,
           gestureHadOutOfBoundsAttempt: state.gestureHadOutOfBoundsAttempt || isClamped,
         };
       }
@@ -505,6 +620,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         scene: nextScene,
         spatialValidations: validations,
         activeSnapGuides: snapGuides,
+        activeSocketCandidate: null,
       };
     });
   },
@@ -519,17 +635,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Re-clamp position with new rotation so corners do not pierce room boundaries
       const clampedPos = clampPositionToRoom(obj.position, obj.dimensions, state.scene.room, obj.scale, validatedRot);
 
-      const updatedObjects = [...state.scene.objects];
-      updatedObjects[objIndex] = {
-        ...obj,
-        position: clampedPos,
-        rotationEuler: validatedRot,
-      };
+      // Check if object is an anchor with attached children (Group Rotation)
+      const directChildren = (state.scene.relationships || []).filter((r) => r.anchorObjectId === id);
+      let nextScene: CanonicalScene;
 
-      const nextScene: CanonicalScene = {
-        ...state.scene,
-        objects: updatedObjects,
-      };
+      if (directChildren.length > 0) {
+        const groupResult = transformGroup(state.scene, id, obj.position, validatedRot, {
+          categoryLookup: CATALOG_CATEGORY_LOOKUP,
+        });
+        if (groupResult.success) {
+          nextScene = groupResult.updatedScene;
+        } else {
+          nextScene = state.scene;
+        }
+      } else {
+        const updatedObjects = [...state.scene.objects];
+        updatedObjects[objIndex] = {
+          ...obj,
+          position: clampedPos,
+          rotationEuler: validatedRot,
+        };
+        nextScene = {
+          ...state.scene,
+          objects: updatedObjects,
+        };
+      }
+
       const validations = computeSceneValidations(nextScene);
 
       if (state.activeGestureSnapshot !== null) {
@@ -733,6 +864,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       spatialValidations: {},
       selectedId: null,
       currentDesignId: null,
+      activeSnapGuides: [],
+      activeSocketCandidate: null,
+      draggedObjectId: null,
     }));
     recordEdit();
   },

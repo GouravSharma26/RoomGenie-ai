@@ -4,6 +4,8 @@ import { RoomEnvironment } from './RoomEnvironment';
 import { FurnitureItem } from './FurnitureItem';
 import { ViewportControls } from './ViewportControls';
 import { AlignmentGuides } from './AlignmentGuides';
+import { SocketOverlay } from './SocketOverlay';
+import { RelationshipOverlay } from './RelationshipOverlay';
 import { useEditorStore } from '../store/editorStore';
 
 export const RoomCanvas: React.FC = () => {
@@ -22,7 +24,12 @@ export const RoomCanvas: React.FC = () => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         deleteSelected();
       } else if (e.key === 'Escape') {
-        selectObject(null);
+        const storeState = useEditorStore.getState();
+        if (storeState.activeGestureSnapshot) {
+          storeState.cancelInteraction();
+        } else {
+          selectObject(null);
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -72,6 +79,8 @@ export const RoomCanvas: React.FC = () => {
             <FurnitureItem key={obj.id} placement={obj} />
           ))}
           <AlignmentGuides />
+          <SocketOverlay />
+          <RelationshipOverlay />
           <ViewportControls />
         </Suspense>
       </Canvas>

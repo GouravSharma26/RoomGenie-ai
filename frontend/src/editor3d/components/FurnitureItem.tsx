@@ -101,7 +101,7 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
     }
     e.stopPropagation();
     isDragging.current = true;
-    startInteraction();
+    startInteraction(placement.id);
 
     const intersection = new THREE.Vector3();
     e.ray.intersectPlane(dragPlane, intersection);

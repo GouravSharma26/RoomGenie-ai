@@ -572,4 +572,143 @@ describe('Phase 3.3: Editor Store Integration & Atomic Undo/Redo', () => {
       expect(parsed!.relationships).toEqual([]);
     });
   });
+
+  describe('Phase 3.4: Viewport Interaction & Group Dynamics', () => {
+    it('updatePlacementPosition on anchor automatically moves attached child synchronously', () => {
+      const sofa = createPlacement('sofa-1', 'sofa-modern-3seater', [0, 0.425, 0]);
+      const table = createPlacement('table-1', 'table-oak-coffee', [0, 0.225, 1.2]);
+
+      useEditorStore.getState().loadScene({
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 8.0, length: 8.0, height: 2.8 },
+        objects: [sofa, table],
+        relationships: [],
+      });
+      useEditorStore.getState().attachObjectToSocket('sofa-1', 'sofa-front-table', 'table-1', { gap: 0.45 });
+      useEditorStore.setState({ history: [], future: [] });
+
+      // Move anchor by +1m in X
+      useEditorStore.getState().updatePlacementPosition('sofa-1', [1.0, 0.425, 0.0]);
+
+      const updatedSofa = useEditorStore.getState().scene.objects.find((o) => o.id === 'sofa-1');
+      const updatedTable = useEditorStore.getState().scene.objects.find((o) => o.id === 'table-1');
+
+      expect(updatedSofa?.position[0]).toBeCloseTo(1.0, 2);
+      expect(updatedTable?.position[0]).toBeCloseTo(1.0, 2); // Table followed sofa in X
+    });
+
+    it('updatePlacementRotation on anchor automatically rotates attached child around anchor', () => {
+      const sofa = createPlacement('sofa-1', 'sofa-modern-3seater', [0, 0.425, 0]);
+      const table = createPlacement('table-1', 'table-oak-coffee', [0, 0.225, 1.2]);
+
+      useEditorStore.getState().loadScene({
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 8.0, length: 8.0, height: 2.8 },
+        objects: [sofa, table],
+        relationships: [],
+      });
+      useEditorStore.getState().attachObjectToSocket('sofa-1', 'sofa-front-table', 'table-1', { gap: 0.45 });
+
+      // Rotate sofa 90 degrees (Math.PI / 2)
+      useEditorStore.getState().updatePlacementRotation('sofa-1', [0, Math.PI / 2, 0]);
+
+      const updatedTable = useEditorStore.getState().scene.objects.find((o) => o.id === 'table-1');
+      // Table should now be shifted along +X (sofa's new front)
+      expect(updatedTable?.position[0]).toBeGreaterThan(0.5);
+    });
+
+    it('detects compatible socket candidate during drag near anchor', () => {
+      const sofa = createPlacement('sofa-1', 'sofa-modern-3seater', [0, 0.425, 0]);
+      const table = createPlacement('table-1', 'table-oak-coffee', [2.0, 0.225, 2.0]);
+
+      useEditorStore.getState().loadScene({
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 8.0, length: 8.0, height: 2.8 },
+        objects: [sofa, table],
+        relationships: [],
+      });
+
+      // Start drag interaction on table
+      useEditorStore.getState().startInteraction('table-1');
+
+      // Drag table close to sofa's front socket (prospective target is [0, 0.225, 1.2])
+      useEditorStore.getState().updatePlacementPosition('table-1', [0.1, 0.225, 1.25]);
+
+      const candidate = useEditorStore.getState().activeSocketCandidate;
+      expect(candidate).not.toBeNull();
+      expect(candidate?.socket.id).toBe('sofa-front-table');
+      expect(candidate?.anchorPlacement.id).toBe('sofa-1');
+      expect(candidate?.valid).toBe(true);
+    });
+
+    it('endInteraction commits attachment when dropped near valid socket candidate with exactly 1 history entry', () => {
+      const sofa = createPlacement('sofa-1', 'sofa-modern-3seater', [0, 0.425, 0]);
+      const table = createPlacement('table-1', 'table-oak-coffee', [2.0, 0.225, 2.0]);
+
+      useEditorStore.getState().loadScene({
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 8.0, length: 8.0, height: 2.8 },
+        objects: [sofa, table],
+        relationships: [],
+      });
+      useEditorStore.setState({ history: [], future: [] });
+
+      // Drag and drop near front socket
+      useEditorStore.getState().startInteraction('table-1');
+      useEditorStore.getState().updatePlacementPosition('table-1', [0.05, 0.225, 1.22]);
+
+      expect(useEditorStore.getState().activeSocketCandidate).not.toBeNull();
+
+      // Release drag
+      useEditorStore.getState().endInteraction();
+
+      // Attached
+      const rels = useEditorStore.getState().scene.relationships || [];
+      expect(rels.length).toBe(1);
+      expect(rels[0].anchorObjectId).toBe('sofa-1');
+      expect(rels[0].childObjectId).toBe('table-1');
+      expect(rels[0].socketId).toBe('sofa-front-table');
+
+      // Exactly 1 history entry
+      expect(useEditorStore.getState().history.length).toBe(1);
+
+      // Undo restores unattached state
+      useEditorStore.getState().undo();
+      expect(useEditorStore.getState().scene.relationships?.length).toBe(0);
+    });
+
+    it('cancelInteraction restores initial snapshot, clears candidate, and leaves 0 history entries', () => {
+      const sofa = createPlacement('sofa-1', 'sofa-modern-3seater', [0, 0.425, 0]);
+      const table = createPlacement('table-1', 'table-oak-coffee', [2.0, 0.225, 2.0]);
+
+      useEditorStore.getState().loadScene({
+        schemaVersion: 1,
+        unit: 'm',
+        room: { width: 8.0, length: 8.0, height: 2.8 },
+        objects: [sofa, table],
+        relationships: [],
+      });
+      useEditorStore.setState({ history: [], future: [] });
+
+      useEditorStore.getState().startInteraction('table-1');
+      useEditorStore.getState().updatePlacementPosition('table-1', [0.05, 0.225, 1.22]);
+
+      // Cancel drag (e.g. Escape key)
+      useEditorStore.getState().cancelInteraction();
+
+      expect(useEditorStore.getState().activeSocketCandidate).toBeNull();
+      expect(useEditorStore.getState().draggedObjectId).toBeNull();
+      expect(useEditorStore.getState().scene.relationships?.length).toBe(0);
+      expect(useEditorStore.getState().history.length).toBe(0);
+
+      // Table restored to original [2, 0.225, 2]
+      const currentTable = useEditorStore.getState().scene.objects.find((o) => o.id === 'table-1');
+      expect(currentTable?.position[0]).toBeCloseTo(2.0, 2);
+    });
+  });
 });
+

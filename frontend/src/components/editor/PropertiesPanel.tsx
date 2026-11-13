@@ -12,10 +12,18 @@ import {
   AlertTriangle,
   CheckCircle2,
   Wand2,
-  Magnet
+  Magnet,
+  Link2,
+  Unlink,
+  Layers
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import type { Vector3Tuple } from '../../types/scene';
+import { 
+  defaultSocketRegistry, 
+  getParentRelationship, 
+  getDirectChildren 
+} from '../../spatial';
 
 const PRESET_COLORS = [
   { name: 'Indigo', value: '#4f46e5' },
@@ -42,6 +50,9 @@ export const PropertiesPanel: React.FC = () => {
   const spatialValidations = useEditorStore((state) => state.spatialValidations);
   const resolveSelectedPlacement = useEditorStore((state) => state.resolveSelectedPlacement);
   const snapConfig = useEditorStore((state) => state.snapConfig);
+  const scene = useEditorStore((state) => state.scene);
+  const detachObjectFromSocket = useEditorStore((state) => state.detachObjectFromSocket);
+  const setRelationshipGap = useEditorStore((state) => state.setRelationshipGap);
 
   const selectedObject = objects.find((obj) => obj.id === selectedId);
 
@@ -191,6 +202,157 @@ export const PropertiesPanel: React.FC = () => {
         );
       })()}
 
+      {/* Semantic Relationships & Sockets Section */}
+      {(() => {
+        const parentRel = getParentRelationship(scene, selectedObject.id);
+        const directChildren = getDirectChildren(scene, selectedObject.id);
+        const allAnchorSockets = defaultSocketRegistry.getSocketsForAsset(selectedObject.assetId);
+        const occupiedSocketIds = new Set(directChildren.map((r) => r.socketId));
+        const availableSockets = allAnchorSockets.filter((s) => !occupiedSocketIds.has(s.id));
+
+        const hasRelationships = Boolean(parentRel || directChildren.length > 0 || availableSockets.length > 0);
+        if (!hasRelationships) return null;
+
+        return (
+          <div className="space-y-3 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+            {/* 1. If Child Item Attached to an Anchor */}
+            {parentRel && (() => {
+              const anchor = objects.find((o) => o.id === parentRel.anchorObjectId);
+              const socket = anchor ? defaultSocketRegistry.getSocketDefinition(anchor.assetId, parentRel.socketId) : undefined;
+              const socketName = socket?.name || parentRel.socketId;
+              const minGap = socket?.minGap ?? 0.1;
+              const maxGap = socket?.maxGap ?? 1.5;
+
+              return (
+                <div className="space-y-3" data-testid="attached-relationship-card">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                      <Link2 className="w-3.5 h-3.5 text-indigo-400" />
+                      Attached to Anchor
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-950/80 text-indigo-300 border border-indigo-800/60 font-mono">
+                      Child
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-300 bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Anchor:</span>
+                      <span className="font-medium text-white">{anchor?.name || 'Unknown Item'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Socket:</span>
+                      <span className="font-mono text-indigo-300">{socketName}</span>
+                    </div>
+                  </div>
+
+                  {/* Spacing Gap Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] text-slate-400">
+                      <span>Spacing Gap</span>
+                      <span className="font-mono text-white">{parentRel.gap.toFixed(2)}m</span>
+                    </div>
+                    <input
+                      type="range"
+                      aria-label="Spacing Gap"
+                      min={minGap}
+                      max={maxGap}
+                      step="0.01"
+                      value={parentRel.gap}
+                      onChange={(e) => setRelationshipGap(selectedObject.id, parseFloat(e.target.value))}
+                      onPointerDown={() => startInteraction()}
+                      onPointerUp={endInteraction}
+                      onBlur={endInteraction}
+                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                      <span>Min: {minGap.toFixed(2)}m</span>
+                      <span>Max: {maxGap.toFixed(2)}m</span>
+                    </div>
+                  </div>
+
+                  {/* Detach Action Button */}
+                  <button
+                    onClick={() => detachObjectFromSocket(selectedObject.id)}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white text-xs font-medium border border-slate-700/60 flex items-center justify-center gap-1.5 transition"
+                  >
+                    <Unlink className="w-3.5 h-3.5 text-indigo-400" />
+                    Detach from Socket
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* 2. If Anchor with Connected Children */}
+            {directChildren.length > 0 && (
+              <div className="space-y-2.5 pt-1" data-testid="connected-group-card">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-300">
+                    <Layers className="w-3.5 h-3.5 text-violet-400" />
+                    Connected Furniture
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-950/80 text-violet-300 border border-violet-800/60 font-mono">
+                    {directChildren.length} Attached
+                  </span>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-relaxed bg-violet-950/30 border border-violet-900/40 p-2 rounded-lg">
+                  Group Movement Active: Repositioning or rotating this {selectedObject.name} moves all attached items together.
+                </p>
+
+                <div className="space-y-1.5">
+                  {directChildren.map((rel) => {
+                    const child = objects.find((o) => o.id === rel.childObjectId);
+                    const socket = defaultSocketRegistry.getSocketDefinition(selectedObject.assetId, rel.socketId);
+                    return (
+                      <div
+                        key={rel.id}
+                        className="flex items-center justify-between bg-slate-900/90 p-2 rounded-lg border border-slate-800 text-xs"
+                      >
+                        <div>
+                          <div className="font-medium text-white text-[11px]">{child?.name || 'Child Item'}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {socket?.name || rel.socketId} • {rel.gap.toFixed(2)}m
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => detachObjectFromSocket(rel.childObjectId)}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition"
+                          title={`Detach ${child?.name || 'Item'}`}
+                          aria-label={`Detach ${child?.name || 'Item'}`}
+                        >
+                          <Unlink className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Available Sockets Display */}
+            {availableSockets.length > 0 && (
+              <div className="space-y-1.5 pt-1 border-t border-slate-800/60" data-testid="available-sockets-card">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Available Sockets
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableSockets.map((s) => (
+                    <span
+                      key={s.id}
+                      className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700/60 text-[10px] text-slate-300 font-mono flex items-center gap-1"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      {s.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Position Controls */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
@@ -219,7 +381,7 @@ export const PropertiesPanel: React.FC = () => {
             step="0.01"
             value={posX}
             onChange={(e) => handlePositionXChange(parseFloat(e.target.value))}
-            onPointerDown={startInteraction}
+            onPointerDown={() => startInteraction()}
             onPointerUp={endInteraction}
             onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
             onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
@@ -241,7 +403,7 @@ export const PropertiesPanel: React.FC = () => {
             step="0.01"
             value={posZ}
             onChange={(e) => handlePositionZChange(parseFloat(e.target.value))}
-            onPointerDown={startInteraction}
+            onPointerDown={() => startInteraction()}
             onPointerUp={endInteraction}
             onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
             onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
@@ -267,7 +429,7 @@ export const PropertiesPanel: React.FC = () => {
           step="5"
           value={normalizedRotY}
           onChange={(e) => handleRotationYChange(parseFloat(e.target.value))}
-          onPointerDown={startInteraction}
+          onPointerDown={() => startInteraction()}
           onPointerUp={endInteraction}
           onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
           onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
@@ -311,7 +473,7 @@ export const PropertiesPanel: React.FC = () => {
           step="0.05"
           value={scaleUniform}
           onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
-          onPointerDown={startInteraction}
+          onPointerDown={() => startInteraction()}
           onPointerUp={endInteraction}
           onKeyDown={(e) => { if (e.key.startsWith('Arrow')) startInteraction(); }}
           onKeyUp={(e) => { if (e.key.startsWith('Arrow')) endInteraction(); }}
