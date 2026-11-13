@@ -33,11 +33,39 @@ export interface FurniturePlacement {
   isCustomReconstruction?: boolean; // Flag identifying custom photo-reconstructed items
 }
 
+export interface SemanticRelationship {
+  id: string;                  // Unique relationship UUID
+  anchorObjectId: string;      // Host / Anchor furniture item ID (e.g. Sofa, Bed, Desk)
+  childObjectId: string;       // Connected / Child furniture item ID (e.g. Coffee Table, Nightstand)
+  socketId: string;            // Socket identifier on anchor (e.g. 'front-table')
+  gap: number;                 // Physical surface-to-surface gap distance in metres
+  relativeYaw: number;         // Additional relative yaw rotation in radians (default: 0)
+  createdAt?: number;          // Epoch timestamp when relationship was established
+}
+
+export type SemanticZoneType = 'living' | 'sleeping' | 'workspace' | 'dining' | 'circulation';
+
+export interface SemanticZone {
+  id: string;                  // Unique zone UUID
+  type: SemanticZoneType;      // Functional zone category
+  name: string;                // Display name (e.g. "Primary Living Conversation Zone")
+  anchorObjectId?: string;     // Focal piece of furniture defining the zone
+  memberObjectIds: string[];   // All furniture item IDs participating in this zone
+  bounds?: {
+    min: Vector3Tuple;
+    max: Vector3Tuple;
+  };
+  provenance?: 'user' | 'inferred'; // Whether explicitly configured by user or inferred
+  confidence?: number;         // Confidence score (0.0 to 1.0) when inferred
+}
+
 export interface CanonicalScene {
   schemaVersion: number;
   unit: 'm';
   room: RoomDimensions;
   objects: FurniturePlacement[];
+  relationships?: SemanticRelationship[];
+  zones?: SemanticZone[];
 }
 
 export interface FurnitureCatalogItem {

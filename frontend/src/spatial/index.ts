@@ -11,3 +11,7 @@ export * from './snapping/gridSnapper';
 export * from './snapping/wallSnapper';
 export * from './snapping/alignmentSnapper';
 export * from './snapping/snapManager';
+export * from './relationships/relationshipTypes';
+export * from './relationships/socketDefinitions';
+export * from './relationships/socketRegistry';
+export * from './relationships/relativeTransforms';
