@@ -2,7 +2,7 @@ import type { FurniturePlacement, RoomDimensions } from '../../types/scene';
 import { createOBBFromPlacement, getOBBCorners } from '../core/geometryEngine';
 import { computeGroundedY, isProperlyGrounded } from '../core/coordinateSystem';
 import type { WallIdentifier } from '../core/spatialTypes';
-import { isPointInPolygon, doSegmentsIntersect } from '../parametric/roomGeometry';
+import { isPointInPolygon, doSegmentsIntersect, pointToPolygonBoundaryDistance } from '../parametric/roomGeometry';
 import { computeConvexHull2D } from '../occupancy/occupancyRasterizer';
 
 export const BOUNDARY_TOLERANCE = 0.005; // 5mm tolerance for numerical float edge alignment
@@ -86,6 +86,19 @@ export function validateRoomBoundaries(
           violations.add('left-wall');
           break;
         }
+      }
+    }
+
+    // 3. Bidirectional containment: Verify no room boundary vertex is strictly enclosed inside furniture footprint
+    for (const [vx, vz] of footprint) {
+      if (
+        isPointInPolygon([vx, vz], hull, tolerance) &&
+        pointToPolygonBoundaryDistance([vx, vz], hull) > tolerance
+      ) {
+        if (vx < 0) violations.add('left-wall');
+        else violations.add('right-wall');
+        if (vz < 0) violations.add('front-wall');
+        else violations.add('back-wall');
       }
     }
   }

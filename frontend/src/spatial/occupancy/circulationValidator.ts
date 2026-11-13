@@ -35,10 +35,7 @@ export function validateCirculation(
   }
 
   // 1. Doorway / Entrance Clearance Validation
-  const primaryOpening = openings[0];
-  const primaryEntrancePoint: [number, number] = primaryOpening
-    ? primaryOpening.accessPoint
-    : [0, scene.room.length / 2 - 0.5];
+  const blockedDoorIds = new Set<string>();
 
   for (const door of openings) {
     const halfWidth = door.width / 2;
@@ -90,6 +87,7 @@ export function validateCirculation(
       }
 
       for (const fId of blockingObjIds) {
+        blockedDoorIds.add(door.id);
         const obj = furnitureMap.get(fId);
         const name = obj ? obj.name : 'Furniture';
         issues.push({
@@ -106,25 +104,62 @@ export function validateCirculation(
     }
   }
 
-  // 2. Navigation Routes & Reachability from Entrance to each Furniture Item
+  // 2. Navigation Routes & Reachability from Entrances to each Furniture Item
   let accessibleCount = 0;
+
+  // Candidate entrances:
+  // If some doors are unblocked, prioritize unblocked doors so valid entrances provide routes.
+  // If all doors are blocked, still evaluate reachability from available doors.
+  // If no architectural openings exist, use the fallback south-wall entrance.
+  const unblockedOpenings = openings.filter((d) => !blockedDoorIds.has(d.id));
+  const candidateOpenings = unblockedOpenings.length > 0
+    ? unblockedOpenings
+    : openings;
+
+  const fallbackPoint: [number, number] = [0, scene.room.length / 2 - 0.5];
 
   for (const obj of scene.objects) {
     const targetCenter: [number, number] = [obj.position[0], obj.position[2]];
-    const path = findPath(primaryEntrancePoint, targetCenter, costGrid, {
-      allowRestricted: true,
-      smoothPath: true,
-    });
+    let bestPath: NavigationPath | null = null;
 
-    routes[obj.id] = path;
+    if (candidateOpenings.length === 0) {
+      bestPath = findPath(fallbackPoint, targetCenter, costGrid, {
+        allowRestricted: true,
+        smoothPath: true,
+      });
+    } else {
+      for (const door of candidateOpenings) {
+        const path = findPath(door.accessPoint, targetCenter, costGrid, {
+          allowRestricted: true,
+          smoothPath: true,
+        });
 
-    if (!path.found) {
+        if (path.found) {
+          if (!bestPath || !bestPath.found || path.lengthMeters < bestPath.lengthMeters) {
+            bestPath = path;
+          }
+        } else if (!bestPath) {
+          bestPath = path;
+        }
+      }
+    }
+
+    if (!bestPath) {
+      bestPath = findPath(fallbackPoint, targetCenter, costGrid, {
+        allowRestricted: true,
+        smoothPath: true,
+      });
+    }
+
+    routes[obj.id] = bestPath;
+
+    if (!bestPath.found) {
       issues.push({
         id: `unreachable-${obj.id}`,
         type: 'furniture_unreachable',
         severity: 'error',
         title: `${obj.name} is unreachable`,
-        description: `No walkable passage connects the entrance to "${obj.name}". It is boxed in by other furniture or walls.`,
+        description: `No walkable passage connects any available entrance to "${obj.name}". It is boxed in by other furniture or walls.`,
         affectedFurnitureIds: [obj.id],
         location: targetCenter,
         recommendation: `Provide at least a ${(config.minCorridorWidth * 100).toFixed(0)}cm walkway to "${obj.name}".`,
@@ -133,7 +168,7 @@ export function validateCirculation(
       accessibleCount++;
 
       // Check if path traverses OTHER objects' restricted zones
-      const crossesOtherRestricted = path.gridPath.some((coord) => {
+      const crossesOtherRestricted = bestPath.gridPath.some((coord) => {
         const idx = cellIndex(coord.col, coord.row, dimensions.numCols);
         if (classifications[idx] !== 'restricted') return false;
         const ids = cellFurnitureIds[idx];
