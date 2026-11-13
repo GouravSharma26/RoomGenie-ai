@@ -1,7 +1,11 @@
 import { OBB } from 'three/examples/jsm/math/OBB.js';
 import { Vector3 } from 'three';
 import type { FurniturePlacement, Vector3Tuple } from '../../types/scene';
-import { getRotationMatrix3 } from './coordinateSystem';
+import { 
+  getRotationMatrix3, 
+  sanitizeCoordinate, 
+  sanitizeDimension 
+} from './coordinateSystem';
 
 /**
  * Geometry Engine for RoomGenie AI
@@ -15,11 +19,23 @@ export function createOBB(
   scale: Vector3Tuple = [1, 1, 1],
   rotationEuler: Vector3Tuple = [0, 0, 0]
 ): OBB {
-  const center = new Vector3(position[0], position[1], position[2]);
+  const posX = sanitizeCoordinate(position?.[0], 0);
+  const posY = sanitizeCoordinate(position?.[1], 0);
+  const posZ = sanitizeCoordinate(position?.[2], 0);
+
+  const dimX = sanitizeDimension(dimensions?.[0], 0.5);
+  const dimY = sanitizeDimension(dimensions?.[1], 0.5);
+  const dimZ = sanitizeDimension(dimensions?.[2], 0.5);
+
+  const scaleX = sanitizeDimension(scale?.[0], 1.0);
+  const scaleY = sanitizeDimension(scale?.[1], 1.0);
+  const scaleZ = sanitizeDimension(scale?.[2], 1.0);
+
+  const center = new Vector3(posX, posY, posZ);
   const halfSize = new Vector3(
-    Math.max(dimensions[0] * scale[0], 0.01) / 2,
-    Math.max(dimensions[1] * scale[1], 0.01) / 2,
-    Math.max(dimensions[2] * scale[2], 0.01) / 2
+    Math.max((dimX * scaleX) / 2, 0.005),
+    Math.max((dimY * scaleY) / 2, 0.005),
+    Math.max((dimZ * scaleZ) / 2, 0.005)
   );
   const rotMatrix3 = getRotationMatrix3(rotationEuler);
   return new OBB(center, halfSize, rotMatrix3);
@@ -39,10 +55,13 @@ export function createExpandedOBB(
   bufferXZ: number,
   bufferY: number = 0
 ): OBB {
+  const safeBufXZ = Math.max(sanitizeCoordinate(bufferXZ, 0), 0);
+  const safeBufY = Math.max(sanitizeCoordinate(bufferY, 0), 0);
+
   const expandedHalfSize = new Vector3(
-    baseOBB.halfSize.x + Math.max(bufferXZ, 0),
-    baseOBB.halfSize.y + Math.max(bufferY, 0),
-    baseOBB.halfSize.z + Math.max(bufferXZ, 0)
+    baseOBB.halfSize.x + safeBufXZ,
+    baseOBB.halfSize.y + safeBufY,
+    baseOBB.halfSize.z + safeBufXZ
   );
   return new OBB(baseOBB.center.clone(), expandedHalfSize, baseOBB.rotation.clone());
 }
@@ -97,4 +116,3 @@ export function computeAABBFromOBB(obb: OBB): { min: Vector3Tuple; max: Vector3T
     max: [maxX, maxY, maxZ],
   };
 }
-

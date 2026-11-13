@@ -8,11 +8,24 @@ export type WallIdentifier =
   | 'floor'
   | 'ceiling';
 
+export interface ClearanceRuleDetail {
+  recommended: number; // Soft ergonomic recommendation (metres)
+  hardMin: number;      // Hard physical minimum threshold (metres)
+}
+
+export interface ClearanceOptions {
+  enforceHardClearance?: boolean; // When true, violating hardMin invalidates placement. Default: true
+  hardClearanceRatio?: number;   // Fallback ratio of recommended buffer that becomes hard minimum (default 0.5)
+  categoryRules?: Record<string, ClearanceRuleDetail>;
+}
+
 export interface PlacementValidation {
   valid: boolean;
   collisions: string[];
   boundaryViolations: WallIdentifier[];
-  clearanceViolations: string[];
+  hardClearanceViolations: string[];
+  clearanceViolations: string[]; // All clearance issues (hard violations + soft advisories)
+  clearanceWarnings: string[];   // Soft ergonomic advisories only
   warnings: string[];
   suggestedPosition?: Vector3Tuple;
 }
@@ -26,9 +39,3 @@ export interface TransformedBox {
   category?: string;
   clearanceBuffer?: number;
 }
-
-export interface ClearanceRequirement {
-  defaultBuffer: number;
-  categoryOverrides: Record<string, number>;
-}
-

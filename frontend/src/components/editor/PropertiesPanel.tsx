@@ -123,6 +123,7 @@ export const PropertiesPanel: React.FC = () => {
         if (!currentValidation) return null;
 
         if (!currentValidation.valid) {
+          const groundingWarn = currentValidation.warnings?.find((w) => /floating|sunken/i.test(w));
           return (
             <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs space-y-2">
               <div className="flex items-center gap-2 text-rose-400 font-semibold text-[11px]">
@@ -139,7 +140,17 @@ export const PropertiesPanel: React.FC = () => {
                   Crosses {currentValidation.boundaryViolations.join(', ')}
                 </div>
               )}
-              {currentValidation.suggestedPosition && (
+              {currentValidation.hardClearanceViolations && currentValidation.hardClearanceViolations.length > 0 && (
+                <div className="text-[11px] text-rose-200/90 pl-6">
+                  {currentValidation.hardClearanceViolations[0]}
+                </div>
+              )}
+              {groundingWarn && (
+                <div className="text-[11px] text-rose-200/90 pl-6">
+                  {groundingWarn}
+                </div>
+              )}
+              {currentValidation.suggestedPosition ? (
                 <button
                   onClick={resolveSelectedPlacement}
                   className="w-full mt-1.5 py-1.5 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-[11px] flex items-center justify-center gap-1.5 transition shadow-sm"
@@ -147,20 +158,24 @@ export const PropertiesPanel: React.FC = () => {
                   <Wand2 className="w-3.5 h-3.5" />
                   Auto-Resolve Placement
                 </button>
+              ) : (
+                <div className="text-[10px] text-rose-300/80 italic pl-6">
+                  No valid alternative position found within search radius.
+                </div>
               )}
             </div>
           );
         }
 
-        if (currentValidation.clearanceViolations.length > 0) {
+        if (currentValidation.clearanceWarnings && currentValidation.clearanceWarnings.length > 0) {
           return (
             <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-xs space-y-1">
               <div className="flex items-center gap-2 text-amber-400 font-semibold text-[11px]">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-                <span>Clearance Warning</span>
+                <span>Clearance Advisory</span>
               </div>
               <p className="text-[10px] text-amber-200/80 pl-5 leading-relaxed">
-                {currentValidation.clearanceViolations[0]}
+                {currentValidation.clearanceWarnings[0]}
               </p>
             </div>
           );

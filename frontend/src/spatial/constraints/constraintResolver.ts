@@ -1,27 +1,86 @@
 import type { FurniturePlacement, RoomDimensions, Vector3Tuple } from '../../types/scene';
-import { createOBBFromPlacement } from '../core/geometryEngine';
-import { computeGroundedY } from '../core/coordinateSystem';
+import { createExpandedOBB, createOBBFromPlacement } from '../core/geometryEngine';
+import { computeGroundedY, isProperlyGrounded } from '../core/coordinateSystem';
 import { detectCollisions, doOBBsIntersect } from './collisionDetector';
 import { validateFloorGrounding, validateRoomBoundaries } from './boundaryValidator';
-import { validateClearances } from './clearanceValidator';
-import type { PlacementValidation } from '../core/spatialTypes';
+import { getClearanceRule, validateClearanceDetails } from './clearanceValidator';
+import type { ClearanceOptions, PlacementValidation } from '../core/spatialTypes';
 import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
 
+interface PreparedObstacle {
+  placement: FurniturePlacement;
+  category: string;
+  obb: ReturnType<typeof createOBBFromPlacement>;
+}
+
 /**
- * Searches for the nearest collision-free and boundary-valid position
- * near a desired target coordinate.
+ * Searches for the nearest collision-free, boundary-valid, and clearance-compliant
+ * position near a desired target coordinate.
+ *
+ * Candidate positions are evaluated against ALL hard constraints:
+ * 1. Room boundary containment
+ * 2. Physical furniture collisions (OBB SAT)
+ * 3. Correct floor grounding (Y = H/2)
+ * 4. Mandatory clearance thresholds (e.g. egress, door opening)
  */
 export function findNearestValidPosition(
   target: FurniturePlacement,
   allObjects: FurniturePlacement[],
   room: RoomDimensions,
+  categoryLookup: Record<string, string> = {},
   maxSearchRadius: number = 2.0,
-  stepSize: number = 0.08
+  stepSize: number = 0.08,
+  clearanceOptions: ClearanceOptions = {}
 ): Vector3Tuple | undefined {
   const otherObjects = allObjects.filter((o) => o.id !== target.id);
   const groundedY = computeGroundedY(target.dimensions[1], target.scale[1]);
+  const targetCat = categoryLookup[target.assetId] || 'decor';
+  const enforceHardClearance = clearanceOptions.enforceHardClearance !== false;
 
-  // First check if clamping directly to room boundaries eliminates the violation
+  // Pre-compute obstacles to eliminate redundant OBB allocations inside concentric search
+  const obstacles: PreparedObstacle[] = otherObjects.map((obj) => ({
+    placement: obj,
+    category: categoryLookup[obj.assetId] || 'decor',
+    obb: createOBBFromPlacement(obj),
+  }));
+
+  // Helper evaluating a candidate placement against all hard constraints
+  const isCandidateValid = (candidate: FurniturePlacement): boolean => {
+    // 1. Boundary check
+    if (validateRoomBoundaries(candidate, room).length > 0) {
+      return false;
+    }
+
+    // 2. Grounding check
+    if (!isProperlyGrounded(candidate.position[1], candidate.dimensions[1], candidate.scale[1])) {
+      return false;
+    }
+
+    const candidateOBB = createOBBFromPlacement(candidate);
+
+    // 3. Collision check (OBB SAT)
+    for (let i = 0; i < obstacles.length; i++) {
+      if (doOBBsIntersect(candidateOBB, obstacles[i].obb)) {
+        return false;
+      }
+    }
+
+    // 4. Mandatory clearance constraint check
+    if (enforceHardClearance) {
+      for (let i = 0; i < obstacles.length; i++) {
+        const obs = obstacles[i];
+        const rule = getClearanceRule(targetCat, obs.category, clearanceOptions.categoryRules);
+        const expandedHardOBB = createExpandedOBB(candidateOBB, rule.hardMin, 0);
+        if (expandedHardOBB.intersectsOBB(obs.obb)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  // Step 1: Check if clamping directly to room boundaries produces a valid placement
   const clamped = clampPositionToRoom(
     target.position,
     target.dimensions,
@@ -32,23 +91,16 @@ export function findNearestValidPosition(
 
   const candidateAtClamped: FurniturePlacement = {
     ...target,
-    position: clamped,
+    position: [clamped[0], groundedY, clamped[2]],
   };
 
-  const clampedOBB = createOBBFromPlacement(candidateAtClamped);
-  const hasBoundaryViolations = validateRoomBoundaries(candidateAtClamped, room).length > 0;
-  const hasCollisions = otherObjects.some((obj) =>
-    doOBBsIntersect(clampedOBB, createOBBFromPlacement(obj))
-  );
-
-  if (!hasBoundaryViolations && !hasCollisions) {
-    return clamped;
+  if (isCandidateValid(candidateAtClamped)) {
+    return [clamped[0], groundedY, clamped[2]];
   }
 
-  // Radial concentric search around target
+  // Step 2: Radial concentric search around target
   const steps = Math.ceil(maxSearchRadius / stepSize);
-  // Test 8 angles per ring
-  const angleSteps = 12;
+  const angleSteps = 16; // 16 radial directions for uniform isotropic search
 
   for (let r = 1; r <= steps; r++) {
     const radius = r * stepSize;
@@ -62,16 +114,7 @@ export function findNearestValidPosition(
         position: [testX, groundedY, testZ],
       };
 
-      if (validateRoomBoundaries(candidatePlacement, room).length > 0) {
-        continue;
-      }
-
-      const candidateOBB = createOBBFromPlacement(candidatePlacement);
-      const collides = otherObjects.some((obj) =>
-        doOBBsIntersect(candidateOBB, createOBBFromPlacement(obj))
-      );
-
-      if (!collides) {
+      if (isCandidateValid(candidatePlacement)) {
         return [
           Number(testX.toFixed(3)),
           groundedY,
@@ -89,40 +132,56 @@ export function findNearestValidPosition(
  * 1. Physical collisions (OBB SAT)
  * 2. Room boundaries (walls, floor, ceiling)
  * 3. Floor grounding (Y position)
- * 4. Clearance zones (ergonomic buffer)
+ * 4. Clearance zones (hard mandatory vs soft ergonomic advisory)
  * 5. Suggested position resolution if invalid
  */
 export function validatePlacement(
   target: FurniturePlacement,
   allObjects: FurniturePlacement[],
   room: RoomDimensions,
-  categoryLookup: Record<string, string> = {}
+  categoryLookup: Record<string, string> = {},
+  clearanceOptions: ClearanceOptions = {}
 ): PlacementValidation {
   const collisions = detectCollisions(target, allObjects);
   const boundaryViolations = validateRoomBoundaries(target, room);
   const grounding = validateFloorGrounding(target);
-  const clearanceViolations = validateClearances(target, allObjects, categoryLookup);
+  const clearanceResult = validateClearanceDetails(target, allObjects, categoryLookup, clearanceOptions);
   const warnings: string[] = [];
 
   if (grounding.warning) {
     warnings.push(grounding.warning);
   }
+  for (const softW of clearanceResult.softWarnings) {
+    warnings.push(softW);
+  }
 
+  // Hard constraints: collisions, boundary breach, floor grounding, and hard clearance violations
   const isValid =
     collisions.length === 0 &&
     boundaryViolations.length === 0 &&
-    grounding.isGrounded;
+    grounding.isGrounded &&
+    clearanceResult.hardViolations.length === 0;
 
   let suggestedPosition: Vector3Tuple | undefined;
   if (!isValid) {
-    suggestedPosition = findNearestValidPosition(target, allObjects, room);
+    suggestedPosition = findNearestValidPosition(
+      target,
+      allObjects,
+      room,
+      categoryLookup,
+      2.0,
+      0.08,
+      clearanceOptions
+    );
   }
 
   return {
     valid: isValid,
     collisions,
     boundaryViolations,
-    clearanceViolations,
+    hardClearanceViolations: clearanceResult.hardViolations,
+    clearanceViolations: clearanceResult.allViolations,
+    clearanceWarnings: clearanceResult.softWarnings,
     warnings,
     suggestedPosition,
   };

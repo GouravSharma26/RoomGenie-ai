@@ -1,63 +1,121 @@
 import type { FurniturePlacement } from '../../types/scene';
 import { createExpandedOBB, createOBBFromPlacement } from '../core/geometryEngine';
 import { doOBBsIntersect } from './collisionDetector';
+import type { ClearanceOptions, ClearanceRuleDetail } from '../core/spatialTypes';
 
 /**
  * Standard minimum clearance buffers (in metres) by furniture category pairing.
- * Based on architectural ergonomics and circulation standards.
+ * Dual-tier design:
+ * - recommended: Ergonomic optimal breathing / circulation space (soft recommendation)
+ * - hardMin: Absolute functional minimum required for egress / door opening / legroom (hard constraint)
  */
-export const CLEARANCE_RULES: Record<string, number> = {
-  default: 0.10,            // 10cm default breathing room
-  'seating-tables': 0.35,   // At least 35cm between sofa/chair and coffee table
-  'tables-seating': 0.35,
-  'storage-seating': 0.60,  // Pullout drawers/cabinets need space
-  'beds-storage': 0.70,     // Wardrobe opening in front of bed
-  'beds-seating': 0.50,
+export const DEFAULT_CLEARANCE_RULES: Record<string, ClearanceRuleDetail> = {
+  default: { recommended: 0.10, hardMin: 0.04 },
+  'seating-tables': { recommended: 0.35, hardMin: 0.20 },
+  'tables-seating': { recommended: 0.35, hardMin: 0.20 },
+  'storage-seating': { recommended: 0.60, hardMin: 0.35 },
+  'beds-storage': { recommended: 0.70, hardMin: 0.40 },
+  'beds-seating': { recommended: 0.50, hardMin: 0.30 },
 };
 
-export function getRecommendedClearance(catA?: string, catB?: string): number {
+/**
+ * Legacy flat map for backward compatibility.
+ */
+export const CLEARANCE_RULES: Record<string, number> = Object.fromEntries(
+  Object.entries(DEFAULT_CLEARANCE_RULES).map(([key, rule]) => [key, rule.recommended])
+);
+
+export function getClearanceRule(
+  catA?: string,
+  catB?: string,
+  customRules?: Record<string, ClearanceRuleDetail>
+): ClearanceRuleDetail {
   if (catA && catB) {
     const key = `${catA}-${catB}`;
-    if (CLEARANCE_RULES[key]) return CLEARANCE_RULES[key];
+    if (customRules && customRules[key]) return customRules[key];
+    if (DEFAULT_CLEARANCE_RULES[key]) return DEFAULT_CLEARANCE_RULES[key];
   }
-  return CLEARANCE_RULES.default;
+  return customRules?.default || DEFAULT_CLEARANCE_RULES.default;
+}
+
+export function getRecommendedClearance(catA?: string, catB?: string): number {
+  return getClearanceRule(catA, catB).recommended;
+}
+
+export interface ClearanceValidationResult {
+  hardViolations: string[];
+  softWarnings: string[];
+  allViolations: string[];
 }
 
 /**
- * Validates clearance between a target object and a list of existing objects.
- * Flags objects that violate the recommended ergonomic buffer zone without directly colliding.
+ * Validates clearance between a target object and existing objects in the scene.
+ * Distinguishes between:
+ * - hardViolations: Breaches of mandatory operational clearances (makes placement invalid)
+ * - softWarnings: Ergonomic advisories (preserves placement validity with guidance)
  */
-export function validateClearances(
+export function validateClearanceDetails(
   target: FurniturePlacement,
   allObjects: FurniturePlacement[],
-  categoryLookup: Record<string, string> = {}
-): string[] {
+  categoryLookup: Record<string, string> = {},
+  options: ClearanceOptions = {}
+): ClearanceValidationResult {
   const targetOBB = createOBBFromPlacement(target);
   const targetCat = categoryLookup[target.assetId] || 'decor';
-  const clearanceViolations: string[] = [];
+  const enforceHard = options.enforceHardClearance !== false;
+
+  const hardViolations: string[] = [];
+  const softWarnings: string[] = [];
 
   for (const obj of allObjects) {
     if (obj.id === target.id) continue;
     const objOBB = createOBBFromPlacement(obj);
 
-    // If objects are already physically colliding, that is handled by collision detector
+    // If objects are physically intersecting, that is handled authoritatively by collision detector
     if (doOBBsIntersect(targetOBB, objOBB)) {
       continue;
     }
 
     const objCat = categoryLookup[obj.assetId] || 'decor';
-    const requiredClearance = getRecommendedClearance(targetCat, objCat);
+    const rule = getClearanceRule(targetCat, objCat, options.categoryRules);
 
-    // Expand the target OBB horizontally by the required buffer distance
-    const expandedTargetOBB = createExpandedOBB(targetOBB, requiredClearance, 0);
+    // 1. Check Hard Minimum Clearance
+    const expandedHardOBB = createExpandedOBB(targetOBB, rule.hardMin, 0);
+    if (expandedHardOBB.intersectsOBB(objOBB)) {
+      const msg = `Critical clearance violation: Insufficient space between "${target.name}" and "${obj.name}" (mandatory minimum: ${(rule.hardMin * 100).toFixed(0)}cm)`;
+      if (enforceHard) {
+        hardViolations.push(msg);
+      } else {
+        softWarnings.push(msg);
+      }
+      continue;
+    }
 
-    if (expandedTargetOBB.intersectsOBB(objOBB)) {
-      clearanceViolations.push(
-        `Insufficient clearance between "${target.name}" and "${obj.name}" (min recommended: ${(requiredClearance * 100).toFixed(0)}cm)`
+    // 2. Check Soft Recommended Clearance
+    const expandedRecOBB = createExpandedOBB(targetOBB, rule.recommended, 0);
+    if (expandedRecOBB.intersectsOBB(objOBB)) {
+      softWarnings.push(
+        `Insufficient clearance between "${target.name}" and "${obj.name}" (min recommended: ${(rule.recommended * 100).toFixed(0)}cm)`
       );
     }
   }
 
-  return clearanceViolations;
+  const allViolations = [...hardViolations, ...softWarnings];
+  return {
+    hardViolations,
+    softWarnings,
+    allViolations,
+  };
 }
 
+/**
+ * Convenience wrapper returning all clearance issues (for backward compatibility).
+ */
+export function validateClearances(
+  target: FurniturePlacement,
+  allObjects: FurniturePlacement[],
+  categoryLookup: Record<string, string> = {},
+  options: ClearanceOptions = {}
+): string[] {
+  return validateClearanceDetails(target, allObjects, categoryLookup, options).allViolations;
+}

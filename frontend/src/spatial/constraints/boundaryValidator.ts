@@ -14,6 +14,26 @@ export function validateRoomBoundaries(
   room: RoomDimensions,
   tolerance: number = BOUNDARY_TOLERANCE
 ): WallIdentifier[] {
+  // Guard against non-finite or non-positive room dimensions
+  if (
+    !room ||
+    !Number.isFinite(room.width) || room.width <= 0 ||
+    !Number.isFinite(room.length) || room.length <= 0 ||
+    !Number.isFinite(room.height) || room.height <= 0
+  ) {
+    return ['left-wall', 'right-wall', 'front-wall', 'back-wall', 'ceiling', 'floor'];
+  }
+
+  // Guard against non-finite placement coordinates
+  if (
+    !Array.isArray(placement.position) ||
+    !placement.position.every((n) => typeof n === 'number' && Number.isFinite(n)) ||
+    !Array.isArray(placement.dimensions) ||
+    !placement.dimensions.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  ) {
+    return ['left-wall', 'right-wall', 'front-wall', 'back-wall'];
+  }
+
   const obb = createOBBFromPlacement(placement);
   const corners = getOBBCorners(obb);
   const halfX = room.width / 2;
@@ -35,15 +55,34 @@ export function validateRoomBoundaries(
 }
 
 /**
- * Validates whether an object is properly grounded on the floor (Y = height / 2).
+ * Validates whether an object is properly grounded on the floor (Y = effectiveHeight / 2).
  */
 export function validateFloorGrounding(
   placement: FurniturePlacement,
   tolerance: number = 0.02
 ): { isGrounded: boolean; expectedY: number; currentY: number; warning?: string } {
-  const currentY = placement.position[1];
-  const expectedY = computeGroundedY(placement.dimensions[1], placement.scale[1]);
-  const isGrounded = isProperlyGrounded(currentY, placement.dimensions[1], placement.scale[1], tolerance);
+  const currentY = placement.position?.[1];
+  const height = placement.dimensions?.[1];
+  const scaleY = placement.scale?.[1] ?? 1.0;
+
+  if (
+    typeof currentY !== 'number' ||
+    !Number.isFinite(currentY) ||
+    typeof height !== 'number' ||
+    !Number.isFinite(height) ||
+    height <= 0
+  ) {
+    const fallbackExpected = computeGroundedY(height, scaleY);
+    return {
+      isGrounded: false,
+      expectedY: fallbackExpected,
+      currentY: typeof currentY === 'number' ? currentY : 0,
+      warning: `Object "${placement.name}" has invalid height or vertical position.`,
+    };
+  }
+
+  const expectedY = computeGroundedY(height, scaleY);
+  const isGrounded = isProperlyGrounded(currentY, height, scaleY, tolerance);
 
   let warning: string | undefined;
   if (!isGrounded) {
