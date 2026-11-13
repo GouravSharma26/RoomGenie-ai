@@ -31,6 +31,7 @@ import {
 import type { CanonicalScene } from '../../types/scene';
 import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
 import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
+import { buildSpatialContext } from '../../spatial/ai/spatialContextBuilder';
 
 function checkSceneHasOutOfBounds(scene?: CanonicalScene | null): boolean {
   if (!scene || !scene.room || !Array.isArray(scene.objects)) return false;
@@ -153,7 +154,9 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     setIsLoading(true);
 
     try {
-      const response = await sendAgentPrompt(session.id, trimmed, scene);
+      const walkabilityAnalysis = useEditorStore.getState().walkabilityAnalysis;
+      const spatialContext = buildSpatialContext(scene, walkabilityAnalysis);
+      const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext);
       const assistantMsg: MessageItem = {
         id: response.run.id,
         sender: 'assistant',

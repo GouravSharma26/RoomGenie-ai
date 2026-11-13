@@ -9,6 +9,7 @@ from django.conf import settings
 from apps.ai_agent.adapters.base import BaseDesignLLMAdapter, DesignProposalResult
 from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
 from apps.ai_agent.tools import get_available_tool_definitions
+from apps.ai_agent.spatial_context import format_spatial_context_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
         current_scene: dict[str, Any],
         conversation_history: list[dict[str, str]] | None = None,
         catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
     ) -> DesignProposalResult:
         start_time = time.time()
 
@@ -62,7 +64,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
         if not self.api_key:
             logger.info("GEMINI_API_KEY not configured; executing MockDesignLLMAdapter.")
             result = self.mock_fallback.generate_design_proposal(
-                user_prompt, current_scene, conversation_history, catalogue_context
+                user_prompt, current_scene, conversation_history, catalogue_context, spatial_context=spatial_context
             )
             result.raw_metadata['fallback_reason'] = 'no_gemini_api_key'
             return result
@@ -75,13 +77,10 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             "Keep suggestions tasteful, functional, and ergonomically balanced."
         )
 
-        # Context summary
-        room = current_scene.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}) if isinstance(current_scene, dict) else {}
-        objects = current_scene.get('objects', []) if isinstance(current_scene, dict) else []
-
+        # Context summary: high-signal spatial context when provided, with fallback to basic scene envelope
+        spatial_summary = format_spatial_context_for_prompt(spatial_context, current_scene)
         context_prompt = (
-            f"Room Envelope: {room.get('width', 5)}m wide × {room.get('length', 4)}m long × {room.get('height', 2.8)}m high.\n"
-            f"Currently placed items ({len(objects)} items): {json.dumps(objects, default=str)}\n"
+            f"{spatial_summary}\n"
             f"Available catalogue items: {json.dumps(catalogue_context or [], default=str)}\n\n"
             f"User request: {user_prompt}"
         )
@@ -181,7 +180,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             sanitized_summary
         )
         fallback_res = self.mock_fallback.generate_design_proposal(
-            user_prompt, current_scene, conversation_history, catalogue_context
+            user_prompt, current_scene, conversation_history, catalogue_context, spatial_context=spatial_context
         )
         fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {sanitized_summary}"
         return fallback_res

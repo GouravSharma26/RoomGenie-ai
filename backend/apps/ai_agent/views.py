@@ -54,6 +54,7 @@ class AgentPromptView(APIView):
 
         prompt = serializer.validated_data['prompt']
         client_scene = serializer.validated_data.get('scene_json')
+        spatial_context = serializer.validated_data.get('spatial_context')
 
         # Determine current scene context:
         # For sessions attached to saved designs, the authoritative saved design scene is used.
@@ -89,6 +90,7 @@ class AgentPromptView(APIView):
             current_scene=current_scene,
             conversation_history=history,
             catalogue_context=catalogue_items,
+            spatial_context=spatial_context,
         )
 
         # Determine budget limit if session attached to design with budget

@@ -1,4 +1,5 @@
 import type { CanonicalScene } from '../types/scene';
+import type { SpatialContext } from '../spatial/ai/aiSpatialTypes';
 import { ensureAuthenticated } from './designApi';
 import { API_BASE_URL } from './apiConfig';
 
@@ -126,7 +127,8 @@ export async function createAgentSession(
 export async function sendAgentPrompt(
   sessionId: string,
   prompt: string,
-  sceneJson?: CanonicalScene
+  sceneJson?: CanonicalScene,
+  spatialContext?: SpatialContext
 ): Promise<PromptProposalResponse> {
   const token = await ensureAuthenticated();
   const res = await fetch(`${API_BASE_URL}/api/v1/agent/sessions/${sessionId}/prompt/`, {
@@ -135,6 +137,7 @@ export async function sendAgentPrompt(
     body: JSON.stringify({
       prompt,
       scene_json: sceneJson,
+      spatial_context: spatialContext,
     }),
   });
 

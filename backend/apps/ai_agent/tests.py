@@ -1031,3 +1031,75 @@ class GeminiAdapterSecurityAndFallbackTests(unittest.TestCase):
         result = adapter.generate_design_proposal("Hello", scene)
         self.assertEqual(result.provider, 'mock')
         self.assertEqual(result.raw_metadata.get('fallback_reason'), 'no_gemini_api_key')
+
+    def test_spatial_context_parsing_and_prompt_formatting(self):
+        from apps.ai_agent.spatial_context import parse_spatial_context, format_spatial_context_for_prompt
+
+        raw_context = {
+            'schemaVersion': 1,
+            'room': {
+                'dimensions': [6.0, 2.8, 5.0],
+                'areaSqm': 30.0,
+                'footprint': [[-3.0, 2.5], [3.0, 2.5], [3.0, -2.5], [-3.0, -2.5]],
+                'isParametric': True,
+                'walls': [
+                    {'id': 'wall-south', 'cardinalOrientation': 'south', 'lengthMeters': 6.0},
+                    {'id': 'wall-north', 'cardinalOrientation': 'north', 'lengthMeters': 6.0},
+                ],
+                'openings': [
+                    {
+                        'id': 'door-main',
+                        'type': 'door',
+                        'center': [0.0, 2.5],
+                        'widthMeters': 0.9,
+                        'isPedestrianPortal': True,
+                    }
+                ]
+            },
+            'placedObjects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-3seat-modern',
+                    'name': 'Modern 3-Seater Sofa',
+                    'category': 'seating',
+                    'position': [0.0, 0.425, 0.5],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                    'isAnchor': True,
+                }
+            ],
+            'availableSockets': [
+                {
+                    'anchorObjectId': 'sofa-1',
+                    'anchorName': 'Modern 3-Seater Sofa',
+                    'socketId': 'sofa-front-table',
+                    'socketType': 'coffee-table',
+                    'worldPosition': [0.0, 0.0, 1.2],
+                    'allowedCategories': ['tables'],
+                }
+            ],
+            'walkability': {
+                'walkabilityScore': 85,
+                'isRoomPassable': True,
+                'unblockedEntranceCount': 1,
+                'blockedDoorIds': [],
+            },
+            'usableSpace': {
+                'freeAreaRatio': 0.88,
+            }
+        }
+
+        parsed = parse_spatial_context(raw_context)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed['schema_version'], 1)
+        self.assertEqual(parsed['room']['area_sqm'], 30.0)
+        self.assertEqual(len(parsed['available_sockets']), 1)
+
+        formatted_prompt = format_spatial_context_for_prompt(parsed)
+        self.assertIn("Authoritative Spatial Context (v1)", formatted_prompt)
+        self.assertIn("6.0m (X width) × 2.8m (Y height) × 5.0m (Z length)", formatted_prompt)
+        self.assertIn("door 'door-main' at [0.0, 2.5] width 0.9m [PEDESTRIAN ENTRANCE]", formatted_prompt)
+        self.assertIn("Modern 3-Seater Sofa", formatted_prompt)
+        self.assertIn("Socket 'sofa-front-table' on 'Modern 3-Seater Sofa'", formatted_prompt)
+        self.assertIn("Walkability Analysis: Score 85/100", formatted_prompt)
+        self.assertIn("Remaining Free Floor Space: 88% available", formatted_prompt)

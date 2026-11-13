@@ -18,3 +18,5 @@ export * from './relationships/relativeTransforms';
 export * from './relationships/relationshipManager';
 export * from './occupancy';
 export * from './parametric';
+export * from './ai/aiSpatialTypes';
+export * from './ai/spatialContextBuilder';

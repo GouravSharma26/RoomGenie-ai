@@ -86,3 +86,8 @@ class AgentPromptRequestSerializer(serializers.Serializer):
         default=None,
         help_text="Optional persisted design ID for context."
     )
+    spatial_context = serializers.DictField(
+        required=False,
+        default=None,
+        help_text="Optional versioned SpatialContext representation."
+    )

@@ -27,6 +27,7 @@ class BaseDesignLLMAdapter(ABC):
         current_scene: dict[str, Any],
         conversation_history: list[dict[str, str]] | None = None,
         catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
     ) -> DesignProposalResult:
         """
         Processes user intent in the context of the 3D room scene and catalogue,
