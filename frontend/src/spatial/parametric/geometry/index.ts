@@ -3,12 +3,14 @@ import type { ParametricRoom } from '../parametricTypes';
 import { getCanonicalRoomGeometry } from '../roomGeometry';
 import { buildFloorGeometry } from './floorGeometryBuilder';
 import { buildAllWallsGeometry } from './wallGeometryBuilder';
+import { buildCornerJunctions } from './cornerJunctionBuilder';
 import type { ProceduralRoomGeometries, WallGeometryResult, FloorGeometryResult } from './geometryTypes';
 
 export * from './geometryTypes';
 export * from './wallSectionBuilder';
 export * from './wallGeometryBuilder';
 export * from './floorGeometryBuilder';
+export * from './cornerJunctionBuilder';
 
 /**
  * Builds the complete suite of procedural 3D geometries (floor, walls, openings)
@@ -34,6 +36,11 @@ export function buildProceduralRoomGeometries(
     canonical.defaultThickness ?? 0.15
   );
 
+  const cornerResult = buildCornerJunctions(
+    wallResults.map((w) => w.derived),
+    canonical.height
+  );
+
   const allDiagnostics = [
     ...floorResult.diagnostics,
     ...wallResults.flatMap((w) => w.diagnostics),
@@ -42,6 +49,7 @@ export function buildProceduralRoomGeometries(
   return {
     floor: floorResult,
     walls: wallResults,
+    cornerJunctions: cornerResult.junctionGeometry,
     diagnostics: allDiagnostics,
   };
 }

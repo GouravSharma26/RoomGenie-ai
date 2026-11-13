@@ -88,6 +88,8 @@ export interface FloorGeometryResult {
 export interface ProceduralRoomGeometries {
   floor: FloorGeometryResult;
   walls: WallGeometryResult[];
+  /** Corner junction filler mesh uniting adjacent walls at polygon vertices */
+  cornerJunctions?: THREE.BufferGeometry;
   /** Overall generation diagnostics */
   diagnostics: string[];
 }

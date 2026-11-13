@@ -19,7 +19,15 @@ export type WallOpeningType = 'door' | 'window';
 /**
  * Door opening swing mechanism.
  */
-export type DoorSwingType = 'inward' | 'outward' | 'sliding' | 'none';
+export type DoorSwingType = 
+  | 'inward-left' 
+  | 'inward-right' 
+  | 'outward-left' 
+  | 'outward-right' 
+  | 'inward' 
+  | 'outward' 
+  | 'sliding' 
+  | 'none';
 
 /**
  * First-class architectural opening (Door or Window) relative to a host wall.

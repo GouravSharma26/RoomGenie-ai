@@ -33,7 +33,11 @@ import {
   type SnapStateTracker,
   type SocketCandidate,
   analyzeWalkability,
-  type WalkabilityAnalysisResult
+  type WalkabilityAnalysisResult,
+  getCanonicalRoomGeometry,
+  deriveWallProperties,
+  validateWallOpenings,
+  type WallOpening,
 } from '../../spatial';
 
 export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
@@ -89,6 +93,12 @@ interface EditorState {
   spatialValidations: Record<string, PlacementValidation>;
   showWalkabilityOverlay: boolean;
   walkabilityAnalysis: WalkabilityAnalysisResult | null;
+
+  // Architectural Selection State
+  selectedWallId: string | null;
+  hoveredWallId: string | null;
+  selectedOpeningId: string | null;
+  hoveredOpeningId: string | null;
 
   // Actions
   startInteraction: (draggedId?: string) => void;
@@ -154,6 +164,27 @@ interface EditorState {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
+
+  // Architectural Openings & Wall Editing Actions
+  selectWall: (id: string | null) => void;
+  hoverWall: (id: string | null) => void;
+  selectOpening: (id: string | null) => void;
+  hoverOpening: (id: string | null) => void;
+  clearArchitecturalSelection: () => void;
+  addWallOpening: (
+    wallId: string,
+    type: 'door' | 'window',
+    params?: Partial<WallOpening>
+  ) => { success: boolean; openingId?: string; error?: string };
+  updateWallOpening: (
+    openingId: string,
+    updates: Partial<WallOpening>
+  ) => { success: boolean; error?: string };
+  moveWallOpening: (
+    openingId: string,
+    newDistanceAlongWall: number
+  ) => { success: boolean; error?: string };
+  deleteWallOpening: (openingId: string) => { success: boolean; error?: string };
 }
 
 const initialScene: CanonicalScene = {
@@ -182,7 +213,16 @@ function cloneCanonicalScene(scene: CanonicalScene): CanonicalScene {
   return {
     schemaVersion: scene.schemaVersion,
     unit: scene.unit,
-    room: { ...scene.room },
+    room: {
+      ...scene.room,
+      footprint: scene.room.footprint ? scene.room.footprint.map((p) => [...p] as [number, number]) : undefined,
+      walls: scene.room.walls ? scene.room.walls.map((w) => ({
+        ...w,
+        startPoint: [...w.startPoint] as [number, number],
+        endPoint: [...w.endPoint] as [number, number],
+      })) : undefined,
+      openings: scene.room.openings ? scene.room.openings.map((op) => ({ ...op })) : undefined,
+    },
     objects: scene.objects.map((obj) => ({
       ...obj,
       dimensions: [...obj.dimensions] as Vector3Tuple,
@@ -215,6 +255,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   scene: initialScene,
   selectedId: 'initial-sofa',
   hoveredId: null,
+  selectedWallId: null,
+  hoveredWallId: null,
+  selectedOpeningId: null,
+  hoveredOpeningId: null,
   cameraResetNonce: 0,
   viewMode: 'perspective',
   gridSnap: true,
@@ -517,6 +561,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectObject: (id) =>
     set((state) => ({
       selectedId: id,
+      selectedWallId: id !== null ? null : state.selectedWallId,
+      selectedOpeningId: id !== null ? null : state.selectedOpeningId,
       activeSnapGuides: id === null ? [] : state.activeSnapGuides,
       snapStateTracker: id === null ? {} : state.snapStateTracker,
       activeSocketCandidate: id === null ? null : state.activeSocketCandidate,
@@ -870,11 +916,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ...pushSnapshot(state),
       scene: {
         ...state.scene,
+        room: {
+          ...state.scene.room,
+          openings: [],
+        },
         objects: [],
         relationships: [],
       },
       spatialValidations: {},
       selectedId: null,
+      selectedWallId: null,
+      hoveredWallId: null,
+      selectedOpeningId: null,
+      hoveredOpeningId: null,
       currentDesignId: null,
       activeSnapGuides: [],
       activeSocketCandidate: null,
@@ -975,6 +1029,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       scene: purgedScene,
       spatialValidations: computeSceneValidations(purgedScene),
       selectedId: purgedScene.objects.length > 0 ? purgedScene.objects[0].id : null,
+      selectedWallId: null,
+      selectedOpeningId: null,
+      hoveredWallId: null,
+      hoveredOpeningId: null,
     }));
   },
 
@@ -1151,10 +1209,255 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
+  selectWall: (wallId) =>
+    set(() => ({
+      selectedWallId: wallId,
+      selectedOpeningId: null,
+      selectedId: null,
+      activeSnapGuides: [],
+      activeSocketCandidate: null,
+    })),
+
+  hoverWall: (wallId) => set({ hoveredWallId: wallId }),
+
+  selectOpening: (openingId) =>
+    set((state) => {
+      if (!openingId) {
+        return { selectedOpeningId: null };
+      }
+      const canonicalRoom = getCanonicalRoomGeometry(state.scene.room);
+      const openings = canonicalRoom.openings || [];
+      const op = openings.find((o) => o.id === openingId);
+      return {
+        selectedOpeningId: openingId,
+        selectedWallId: op ? op.wallId : state.selectedWallId,
+        selectedId: null,
+        activeSnapGuides: [],
+        activeSocketCandidate: null,
+      };
+    }),
+
+  hoverOpening: (openingId) => set({ hoveredOpeningId: openingId }),
+
+  clearArchitecturalSelection: () =>
+    set({
+      selectedWallId: null,
+      selectedOpeningId: null,
+      hoveredWallId: null,
+      hoveredOpeningId: null,
+    }),
+
+  addWallOpening: (wallId, type, params) => {
+    let resultOpeningId = '';
+    let success = false;
+    let errorMessage: string | undefined;
+
+    set((state) => {
+      const canonicalRoom = getCanonicalRoomGeometry(state.scene.room);
+      const hostWall = canonicalRoom.walls.find((w) => w.id === wallId);
+      if (!hostWall) {
+        errorMessage = `Host wall '${wallId}' does not exist.`;
+        return state;
+      }
+
+      const derived = deriveWallProperties(hostWall, canonicalRoom.height);
+      const width = params?.width ?? (type === 'door' ? 0.9 : 1.2);
+      const height = params?.height ?? (type === 'door' ? 2.1 : 1.2);
+      const sillHeight = params?.sillHeight ?? (type === 'door' ? 0.0 : 0.9);
+      const swing = params?.swing ?? (type === 'door' ? 'inward-left' : 'none');
+
+      if (width > derived.length - 0.05) {
+        errorMessage = `Opening width (${width}m) exceeds available wall length (${derived.length}m).`;
+        return state;
+      }
+      if (sillHeight + height > derived.height + 1e-3) {
+        errorMessage = `Opening vertical extent (${sillHeight + height}m) exceeds wall height (${derived.height}m).`;
+        return state;
+      }
+
+      let candDist = params?.distanceAlongWall;
+      const existingOpenings = (canonicalRoom.openings || []).filter((op) => op.wallId === wallId);
+
+      if (candDist === undefined) {
+        if (existingOpenings.length === 0) {
+          candDist = Math.max(0.1, (derived.length - width) / 2);
+        } else {
+          const sorted = [...existingOpenings].sort((a, b) => a.distanceAlongWall - b.distanceAlongWall);
+          if (sorted[0].distanceAlongWall >= width + 0.2) {
+            candDist = 0.1;
+          } else {
+            let foundSlot = false;
+            for (let i = 0; i < sorted.length - 1; i++) {
+              const gapStart = sorted[i].distanceAlongWall + sorted[i].width;
+              const gapEnd = sorted[i + 1].distanceAlongWall;
+              if (gapEnd - gapStart >= width + 0.2) {
+                candDist = gapStart + 0.1;
+                foundSlot = true;
+                break;
+              }
+            }
+            if (!foundSlot) {
+              const lastEnd = sorted[sorted.length - 1].distanceAlongWall + sorted[sorted.length - 1].width;
+              if (derived.length - lastEnd >= width + 0.2) {
+                candDist = lastEnd + 0.1;
+                foundSlot = true;
+              }
+            }
+            if (!foundSlot) {
+              errorMessage = `No non-overlapping space available on wall '${wallId}' for opening of width ${width}m.`;
+              return state;
+            }
+          }
+        }
+      }
+
+      const openingId = params?.id || `${type}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const finalDist = candDist !== undefined ? candDist : 0.1;
+      const newOpening: WallOpening = {
+        id: openingId,
+        wallId,
+        type,
+        distanceAlongWall: Number(finalDist.toFixed(4)),
+        width: Number(width.toFixed(4)),
+        height: Number(height.toFixed(4)),
+        sillHeight: Number(sillHeight.toFixed(4)),
+        swing,
+      };
+
+      const candidateOpenings = [...(canonicalRoom.openings || []), newOpening];
+      const validation = validateWallOpenings(candidateOpenings, canonicalRoom.walls);
+      if (!validation.valid) {
+        errorMessage = validation.errors.join(' ');
+        return state;
+      }
+
+      const historyUpdate = pushSnapshot(state);
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        room: {
+          ...state.scene.room,
+          footprint: canonicalRoom.footprint,
+          walls: canonicalRoom.walls,
+          openings: candidateOpenings,
+          isParametric: true,
+        },
+      };
+
+      resultOpeningId = openingId;
+      success = true;
+      recordEdit();
+
+      return {
+        ...historyUpdate,
+        scene: nextScene,
+        selectedOpeningId: openingId,
+        selectedWallId: wallId,
+        selectedId: null,
+      };
+    });
+
+    return { success, openingId: resultOpeningId, error: errorMessage };
+  },
+
+  updateWallOpening: (openingId, updates) => {
+    let success = false;
+    let errorMessage: string | undefined;
+
+    set((state) => {
+      const canonicalRoom = getCanonicalRoomGeometry(state.scene.room);
+      const currentOpenings = canonicalRoom.openings || [];
+      const opIndex = currentOpenings.findIndex((o) => o.id === openingId);
+      if (opIndex === -1) {
+        errorMessage = `Opening '${openingId}' does not exist.`;
+        return state;
+      }
+
+      const targetOp = currentOpenings[opIndex];
+      const candidateOp: WallOpening = {
+        ...targetOp,
+        ...updates,
+      };
+
+      const candidateOpenings = [...currentOpenings];
+      candidateOpenings[opIndex] = candidateOp;
+
+      const validation = validateWallOpenings(candidateOpenings, canonicalRoom.walls);
+      if (!validation.valid) {
+        errorMessage = validation.errors.join(' ');
+        return state;
+      }
+
+      const historyUpdate = pushSnapshot(state);
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        room: {
+          ...state.scene.room,
+          footprint: canonicalRoom.footprint,
+          walls: canonicalRoom.walls,
+          openings: candidateOpenings,
+          isParametric: true,
+        },
+      };
+
+      success = true;
+      recordEdit();
+
+      return {
+        ...historyUpdate,
+        scene: nextScene,
+      };
+    });
+
+    return { success, error: errorMessage };
+  },
+
+  moveWallOpening: (openingId, newDistanceAlongWall) => {
+    return get().updateWallOpening(openingId, { distanceAlongWall: newDistanceAlongWall });
+  },
+
+  deleteWallOpening: (openingId) => {
+    let success = false;
+    let errorMessage: string | undefined;
+
+    set((state) => {
+      const currentOpenings = state.scene.room.openings || [];
+      const opIndex = currentOpenings.findIndex((o) => o.id === openingId);
+      if (opIndex === -1) {
+        errorMessage = `Opening '${openingId}' does not exist.`;
+        return state;
+      }
+
+      const historyUpdate = pushSnapshot(state);
+      const candidateOpenings = currentOpenings.filter((o) => o.id !== openingId);
+
+      const nextScene: CanonicalScene = {
+        ...state.scene,
+        room: {
+          ...state.scene.room,
+          openings: candidateOpenings,
+        },
+      };
+
+      success = true;
+      recordEdit();
+
+      return {
+        ...historyUpdate,
+        scene: nextScene,
+        selectedOpeningId: state.selectedOpeningId === openingId ? null : state.selectedOpeningId,
+      };
+    });
+
+    return { success, error: errorMessage };
+  },
+
   canUndo: () => get().history.length > 0,
   canRedo: () => get().future.length > 0,
 }));
 
-if (typeof window !== 'undefined') {
+if (
+  typeof window !== 'undefined' &&
+  (import.meta.env.DEV || import.meta.env.MODE === 'test')
+) {
   (window as unknown as { __editorStore?: typeof useEditorStore }).__editorStore = useEditorStore;
 }

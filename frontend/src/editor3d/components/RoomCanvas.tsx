@@ -23,11 +23,20 @@ export const RoomCanvas: React.FC = () => {
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        deleteSelected();
+        const storeState = useEditorStore.getState();
+        if (storeState.selectedOpeningId) {
+          storeState.deleteWallOpening(storeState.selectedOpeningId);
+        } else {
+          deleteSelected();
+        }
       } else if (e.key === 'Escape') {
         const storeState = useEditorStore.getState();
         if (storeState.activeGestureSnapshot) {
           storeState.cancelInteraction();
+        } else if (storeState.selectedOpeningId) {
+          storeState.selectOpening(null);
+        } else if (storeState.selectedWallId) {
+          storeState.selectWall(null);
         } else {
           selectObject(null);
         }

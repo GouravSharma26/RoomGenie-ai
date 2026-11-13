@@ -14,7 +14,15 @@ export interface WallSegment {
 }
 
 export type WallOpeningType = 'door' | 'window';
-export type DoorSwingType = 'inward' | 'outward' | 'sliding' | 'none';
+export type DoorSwingType = 
+  | 'inward-left' 
+  | 'inward-right' 
+  | 'outward-left' 
+  | 'outward-right' 
+  | 'inward' 
+  | 'outward' 
+  | 'sliding' 
+  | 'none';
 
 export interface WallOpening {
   id: string;
