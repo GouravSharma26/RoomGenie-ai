@@ -3,6 +3,9 @@ export interface HealthResponse {
   service: string;
   version: string;
   database: 'connected' | 'disconnected' | 'unknown';
+  timestamp?: string;
+  request_id?: string;
+  // Optional operational diagnostics populated exclusively for authenticated staff
   db_latency_ms?: number;
   db_engine?: string;
   uptime_seconds?: number;
@@ -13,10 +16,10 @@ export interface HealthResponse {
   gemini_model?: string;
   gemini_fallback_models?: string[];
   gemini_ready?: boolean;
-  timestamp?: string;
-  request_id?: string;
 }
+
 import { API_BASE_URL } from './apiConfig';
+import { getAuthToken } from './designApi';
 
 export async function checkBackendHealth(): Promise<HealthResponse> {
   try {
@@ -28,6 +31,15 @@ export async function checkBackendHealth(): Promise<HealthResponse> {
     });
 
     if (!response.ok) {
+      // 503 from backend when DB is disconnected
+      try {
+        const errorData = await response.json();
+        if (errorData && typeof errorData === 'object') {
+          return errorData as HealthResponse;
+        }
+      } catch {
+        // Fallback below
+      }
       throw new Error(`Health check returned status HTTP ${response.status}`);
     }
 
@@ -39,6 +51,29 @@ export async function checkBackendHealth(): Promise<HealthResponse> {
       version: '0.1.0',
       database: 'disconnected',
     };
+  }
+}
+
+export async function fetchHealthDiagnostics(): Promise<Partial<HealthResponse> | null> {
+  const token = getAuthToken();
+  if (!token) return null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/health/diagnostics/`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Token ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch {
+    return null;
   }
 }
 

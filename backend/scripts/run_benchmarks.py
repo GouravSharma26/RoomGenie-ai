@@ -1,14 +1,18 @@
 """
-RoomGenie AI — Production Performance & Reliability Benchmark Runner (Phase 8.3)
+RoomGenie AI — Production Performance & Reliability Benchmark Runner (Phase 8.3 & 8.3.1)
 
 Executes repeatable, empirical latency and reliability benchmarks for:
 1. Health endpoint (/api/v1/health/)
-2. Furniture catalogue API (/api/v1/furniture/catalog/)
+2. Furniture catalogue API (/api/v1/furniture/)
 3. Design persistence (save & retrieve roundtrips)
 4. AI layout candidate generator (generation, simulation, ranking)
 5. Spatial layout optimization engine (rectangular, L-shaped, concave layouts)
 
-Outputs JSON and Markdown tables with P50, P95, min, max, mean, and validity rates.
+Methodology:
+- Discards at least 1 unrecorded warmup iteration before sample collection to eliminate cold-start bias.
+- Uses linearly interpolated percentiles (NIST / NumPy type 7) for accurate P50 and P95 on small sample sizes.
+- Captures environment metadata: database engine, AI provider mode, and test constraints.
+- Clearly distinguishes local SQLite/in-process mock timings from cloud PostgreSQL/live Gemini API network timings.
 """
 
 import os
@@ -29,6 +33,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from django.test import Client
+from django.conf import settings
+from django.db import connection
 from django.contrib.auth import get_user_model
 from apps.ai_agent.candidate_generator import CandidateGenerator
 from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
@@ -38,23 +44,42 @@ from apps.ai_agent.candidate_types import LayoutCandidate, ScoreBreakdown
 User = get_user_model()
 
 
+def percentile_interpolated(sorted_data: List[float], p: float) -> float:
+    """
+    Computes linearly interpolated percentile for percentile p in [0.0, 1.0].
+    Correctly handles small sample sizes using standard linear interpolation (NIST / NumPy type 7).
+    """
+    if not sorted_data:
+        return 0.0
+    n = len(sorted_data)
+    if n == 1:
+        return round(sorted_data[0], 2)
+    rank = p * (n - 1)
+    lower_idx = int(rank)
+    upper_idx = min(lower_idx + 1, n - 1)
+    weight = rank - lower_idx
+    interpolated = sorted_data[lower_idx] * (1.0 - weight) + sorted_data[upper_idx] * weight
+    return round(interpolated, 2)
+
+
 def calculate_percentiles(latencies: List[float]) -> Dict[str, float]:
+    """Calculates min, max, mean, and linearly interpolated P50 and P95 latencies."""
     if not latencies:
         return {'min': 0.0, 'p50': 0.0, 'p95': 0.0, 'max': 0.0, 'mean': 0.0}
     sorted_l = sorted(latencies)
-    n = len(sorted_l)
-    p50_idx = int(n * 0.50)
-    p95_idx = min(int(n * 0.95), n - 1)
     return {
         'min': round(sorted_l[0], 2),
-        'p50': round(sorted_l[p50_idx], 2),
-        'p95': round(sorted_l[p95_idx], 2),
+        'p50': percentile_interpolated(sorted_l, 0.50),
+        'p95': percentile_interpolated(sorted_l, 0.95),
         'max': round(sorted_l[-1], 2),
         'mean': round(statistics.mean(latencies), 2),
     }
 
 
 def benchmark_health_api(client: Client, iterations: int = 50) -> Dict[str, Any]:
+    # Unrecorded warmup iteration to eliminate cold-start bias
+    client.get('/api/v1/health/')
+
     latencies = []
     status_codes = []
     for _ in range(iterations):
@@ -66,12 +91,16 @@ def benchmark_health_api(client: Client, iterations: int = 50) -> Dict[str, Any]
 
     return {
         'iterations': iterations,
+        'warmup_iterations': 1,
         'success_rate': round(sum(1 for s in status_codes if s == 200) / iterations * 100.0, 1),
         'latency_ms': calculate_percentiles(latencies),
     }
 
 
 def benchmark_catalogue_api(client: Client, iterations: int = 30) -> Dict[str, Any]:
+    # Unrecorded warmup iteration
+    client.get('/api/v1/furniture/')
+
     latencies = []
     status_codes = []
     for _ in range(iterations):
@@ -83,6 +112,7 @@ def benchmark_catalogue_api(client: Client, iterations: int = 30) -> Dict[str, A
 
     return {
         'iterations': iterations,
+        'warmup_iterations': 1,
         'success_rate': round(sum(1 for s in status_codes if s == 200) / iterations * 100.0, 1),
         'latency_ms': calculate_percentiles(latencies),
     }
@@ -118,6 +148,16 @@ def benchmark_design_persistence(client: Client, iterations: int = 15) -> Dict[s
         ],
     }
 
+    # Unrecorded warmup cycle
+    w_res = client.post(
+        '/api/v1/designs/',
+        data=json.dumps({'title': 'Warmup Design', 'scene_json': scene_payload}),
+        content_type='application/json',
+    )
+    if w_res.status_code in (200, 201) and w_res.json().get('id'):
+        wid = w_res.json()['id']
+        client.get(f'/api/v1/designs/{wid}/')
+
     for i in range(iterations):
         t0 = time.perf_counter()
         res_save = client.post(
@@ -127,13 +167,13 @@ def benchmark_design_persistence(client: Client, iterations: int = 15) -> Dict[s
         )
         t1 = time.perf_counter()
         save_latencies.append((t1 - t0) * 1000.0)
-        
+
         if res_save.status_code in (200, 201):
             did = res_save.json().get('id')
             if did:
                 design_ids.append(did)
                 t2 = time.perf_counter()
-                res_load = client.get(f'/api/v1/designs/{did}/')
+                client.get(f'/api/v1/designs/{did}/')
                 t3 = time.perf_counter()
                 load_latencies.append((t3 - t2) * 1000.0)
 
@@ -141,6 +181,7 @@ def benchmark_design_persistence(client: Client, iterations: int = 15) -> Dict[s
 
     return {
         'iterations': iterations,
+        'warmup_iterations': 1,
         'save_success_rate': round(len(design_ids) / iterations * 100.0, 1),
         'save_latency_ms': calculate_percentiles(save_latencies),
         'load_latency_ms': calculate_percentiles(load_latencies),
@@ -159,6 +200,14 @@ def benchmark_candidate_generation(iterations: int = 15) -> Dict[str, Any]:
         "objects": [],
         "relationships": [],
     }
+
+    # Unrecorded warmup generation
+    generator.generate_candidates(
+        user_prompt="Warmup living room arrangement",
+        current_scene=test_scene,
+        candidate_count=1,
+    )
+
     latencies = []
     valid_rates = []
 
@@ -176,14 +225,16 @@ def benchmark_candidate_generation(iterations: int = 15) -> Dict[str, Any]:
 
     return {
         'iterations': iterations,
+        'warmup_iterations': 1,
         'latency_ms': calculate_percentiles(latencies),
         'average_validity_pct': round(statistics.mean(valid_rates) * 100.0, 1),
+        'adapter': 'MockDesignLLMAdapter (Deterministic Offline)',
     }
 
 
 def benchmark_spatial_optimizer() -> List[Dict[str, Any]]:
     runner = OptimizationRunner()
-    
+
     scenarios = [
         {
             'name': 'Rectangular (5x4m, 4 items)',
@@ -267,7 +318,11 @@ def benchmark_spatial_optimizer() -> List[Dict[str, Any]]:
             budget_diff=None,
         )
 
+        # Unrecorded warmup pass
+        runner.optimize_candidate(cand)
+
         durations = []
+        optimized = None
         for _ in range(5):
             t0 = time.perf_counter()
             optimized = runner.optimize_candidate(cand)
@@ -277,20 +332,25 @@ def benchmark_spatial_optimizer() -> List[Dict[str, Any]]:
         results.append({
             'scenario': sc['name'],
             'item_count': len(sc['scene']['objects']),
+            'iterations': 5,
+            'warmup_iterations': 1,
             'latency_ms': calculate_percentiles(durations),
-            'final_valid': optimized.is_valid,
-            'optimization_meta': optimized.optimization_metadata,
+            'final_valid': optimized.is_valid if optimized else True,
+            'optimization_meta': optimized.optimization_metadata if optimized else {},
         })
 
     return results
 
 
 def main():
-    print("=" * 60)
-    print("RoomGenie AI — Performance & Reliability Benchmarks")
-    print("=" * 60)
+    print("=" * 70)
+    print("RoomGenie AI — Performance & Reliability Benchmarks (Phase 8.3 & 8.3.1)")
+    print("=" * 70)
 
     client = Client()
+    db_engine = getattr(connection, 'vendor', 'unknown')
+    ai_mode = getattr(settings, 'AI_PROVIDER_MODE', 'mock')
+    print(f"Environment: DB={db_engine} | AI_MODE={ai_mode} | Percentile=Interpolated (NIST/NumPy)")
 
     print("\n[1/5] Benchmarking Health API (/api/v1/health/)...")
     health_res = benchmark_health_api(client, iterations=50)
@@ -316,7 +376,18 @@ def main():
         print(f"  {item['scenario']}: P50 {item['latency_ms']['p50']}ms | P95 {item['latency_ms']['p95']}ms | Valid: {item['final_valid']}")
 
     output = {
-        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
+        'metadata': {
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
+            'database_engine': db_engine,
+            'ai_provider_mode': ai_mode,
+            'candidate_generator_adapter': 'MockDesignLLMAdapter (Deterministic Offline Mock)',
+            'percentile_method': 'Linearly interpolated (NIST / NumPy type 7)',
+            'warmup_iterations_per_suite': 1,
+            'disclaimer': (
+                'Local benchmarks measure pure computational and local database transaction latency. '
+                'They do NOT reflect cloud network TLS overhead (Render/Vercel) or external live Google Gemini API latency (~800-2500ms).'
+            ),
+        },
         'health_api': health_res,
         'catalogue_api': catalogue_res,
         'design_persistence': design_res,

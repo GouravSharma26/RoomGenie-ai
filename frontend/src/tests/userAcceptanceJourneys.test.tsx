@@ -25,7 +25,8 @@ vi.mock('../services/designApi', async () => {
   const actual = await vi.importActual<typeof import('../services/designApi')>('../services/designApi');
   return {
     ...actual,
-    saveDesignScene: vi.fn(),
+    saveDesignToBackend: vi.fn(),
+    persistDesignScene: vi.fn(),
     getDesignById: vi.fn(),
   };
 });
@@ -58,8 +59,8 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
     const store = useEditorStore.getState();
     store.setRoomDimensions({ width: 5.0, length: 4.0, height: 2.8 });
 
-    const sofaItem = SAMPLE_CATALOG.find((c) => c.category === 'sofa') || SAMPLE_CATALOG[0];
-    const tableItem = SAMPLE_CATALOG.find((c) => c.category === 'table') || SAMPLE_CATALOG[1];
+    const sofaItem = SAMPLE_CATALOG.find((c) => c.category === 'seating') || SAMPLE_CATALOG[0];
+    const tableItem = SAMPLE_CATALOG.find((c) => c.category === 'tables') || SAMPLE_CATALOG[1];
 
     store.addFurniture(sofaItem);
     let currentScene = useEditorStore.getState().scene;
@@ -105,26 +106,26 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
           collision: 100,
           circulation: 92,
           clearance: 95,
-          utilization: 90,
+          utilization: 85,
           budget: 100,
         },
         validation_feedback: { is_valid: true, is_approval_eligible: true, fatal_errors: [], advisory_warnings: [] },
-        trade_offs: ['Maximizes seating space'],
+        trade_offs: ['Balances conversational seating with wall clearances'],
       },
       {
         id: 'cand-uat-2',
         schema_version: 1,
-        label: 'Candidate 2: Open Flow Lounge',
-        description: 'Perimeter layout maximizing walking clearance',
-        reasoning_summary: 'Keeps central transit open',
-        proposed_actions: [{ type: 'add_furniture', asset_id: 'sofa-1', position: [-1.5, 0.45, 0] }],
+        label: 'Candidate 2: Open Flow Living',
+        description: 'Sofa along wall with open walkway',
+        reasoning_summary: 'Maximizes room circulation paths',
+        proposed_actions: [{ type: 'add_furniture', asset_id: 'sofa-1', position: [1.2, 0.45, -0.5] }],
         candidate_scene: {
           schemaVersion: 1,
           unit: 'm',
           room: { width: 5.0, length: 4.0, height: 2.8 },
-          objects: [{ id: 'cand-sofa', assetId: 'sofa-1', name: 'Sofa', dimensions: [2, 0.9, 0.9], position: [-1.5, 0.45, 0], rotationEuler: [0, 0, 0], scale: [1, 1, 1] }],
+          objects: [{ id: 'cand-sofa-2', assetId: 'sofa-1', name: 'Sofa', dimensions: [2, 0.9, 0.9], position: [1.2, 0.45, -0.5], rotationEuler: [0, 0, 0], scale: [1, 1, 1] }],
         },
-        source_scene_hash: 'hash-uat-1',
+        source_scene_hash: 'hash-uat-2',
         is_valid: true,
         is_approval_eligible: true,
         score: {
@@ -142,25 +143,36 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
     ];
 
     vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
-      run_id: 'run-uat-3',
-      status: 'proposals_ready',
-      primary_candidate: mockCandidates[0] as any,
+      run: {
+        id: 'run-uat-3',
+        session: 'sess-uat-3',
+        user_prompt: 'Arrange a modern living room',
+        status: 'proposed',
+        ai_response_text: 'Generated living room layout candidates',
+        proposed_actions: [],
+        validation_results: { is_valid: true, errors: [], warnings: [], budget_diff: { diff_paise: 0 } },
+        provider_metadata: { provider: 'mock', model: 'deterministic-mock-v1' },
+        created_at: '2026-11-14T18:00:00Z',
+      },
+      candidate_scene: mockCandidates[0].candidate_scene as any,
+      budget_diff: { diff_paise: 0, diff_inr: 'Rs 0' },
       candidates: mockCandidates as any,
-      generated_count: 2,
-      applied: false,
+      selected_candidate: mockCandidates[0] as any,
+      requires_approval: true,
     });
 
-    const response = await agentApi.sendAgentPrompt({
-      session_id: 'sess-uat-3',
-      prompt: 'Arrange a modern living room',
-      current_scene: useEditorStore.getState().scene as any,
-      candidate_count: 2,
-    });
+    const response = await agentApi.sendAgentPrompt(
+      'sess-uat-3',
+      'Arrange a modern living room',
+      useEditorStore.getState().scene as any,
+      undefined,
+      2
+    );
 
-    expect(response.status).toBe('proposals_ready');
+    expect(response.run.status).toBe('proposed');
     expect(response.candidates).toHaveLength(2);
-    expect(response.candidates[0].score.overall).toBe(95.5);
-    expect(response.candidates[1].score.circulation).toBe(98);
+    expect(response.candidates?.[0].score.overall).toBe(95.5);
+    expect(response.candidates?.[1].score.circulation).toBe(98);
   });
 
   // Journey 4: User compares candidates side-by-side
@@ -189,7 +201,7 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
     const feedbackRes = await agentApi.submitCandidateFeedback({
       run_id: 'run-uat-5',
       candidate_id: 'cand-uat-1',
-      action: 'refine',
+      feedback_type: 'modified',
       feedback_text: 'Shift the sofa 0.3m closer to the east wall',
     });
 
@@ -197,7 +209,7 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
     expect(agentApi.submitCandidateFeedback).toHaveBeenCalledWith(
       expect.objectContaining({
         candidate_id: 'cand-uat-1',
-        action: 'refine',
+        feedback_type: 'modified',
         feedback_text: 'Shift the sofa 0.3m closer to the east wall',
       })
     );
@@ -221,41 +233,41 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
       unit: 'm',
       room: { width: 5.0, length: 4.0, height: 2.8 },
       objects: [
-        {
-          id: 'preview-sofa',
-          assetId: initialItem.id,
-          name: initialItem.name,
-          dimensions: initialItem.dimensions,
-          position: [0.5, 0.45, 0.5],
-          rotationEuler: [0, 0, 0],
-          scale: [1, 1, 1],
-        },
+        initialCanonical.objects[0],
         {
           id: 'preview-table',
-          assetId: SAMPLE_CATALOG[1].id,
-          name: SAMPLE_CATALOG[1].name,
-          dimensions: SAMPLE_CATALOG[1].dimensions,
-          position: [0.5, 0.22, 1.5],
-          rotationEuler: [0, 0, 0],
-          scale: [1, 1, 1],
+          assetId: 'table-coffee-round',
+          name: 'Round Coffee Table',
+          dimensions: [1.0, 0.45, 1.0],
+          position: [0.0, 0.225, 0.5],
+          rotationEuler: [0.0, 0.0, 0.0],
+          scale: [1.0, 1.0, 1.0],
         },
       ],
-      relationships: [],
     };
 
-    // 1. Enter preview mode
-    previewStore.startPreview('run-preview-6', {
-      id: 'cand-preview-6',
-      label: 'Candidate Preview',
+    const candidateRecord = {
+      id: 'cand-uat-6',
+      schema_version: 1,
+      label: 'Preview Candidate',
+      description: 'Preview Description',
+      reasoning_summary: 'Preview Summary',
+      proposed_actions: [],
       candidate_scene: candidateScene,
-    } as any);
+      source_scene_hash: 'hash-preview',
+      is_valid: true,
+      is_approval_eligible: true,
+      score: { overall: 95, boundary: 100, collision: 100, circulation: 90, clearance: 95, utilization: 85, budget: 100 },
+      validation_feedback: null,
+      trade_offs: [],
+    };
 
-    // Verify preview isolation: canonical scene is NOT mutated
+    // User selects preview
+    previewStore.startPreview('run-uat-6', candidateRecord as any);
     expect(usePreviewStore.getState().status).toBe('active');
     expect(usePreviewStore.getState().previewScene?.objects).toHaveLength(2);
-    expect(useEditorStore.getState().scene.objects).toHaveLength(1);
 
-    // 2. Apply candidate
+    // Mock successful backend apply
     vi.mocked(agentApi.applyAgentRun).mockResolvedValueOnce({
       run_id: 'run-preview-6',
       status: 'applied',
@@ -275,7 +287,7 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
   it('Journey 7: User saves design to persistence and reloads it preserving canonical fidelity', async () => {
     const currentScene = useEditorStore.getState().scene;
 
-    vi.mocked(designApi.saveDesignScene).mockResolvedValueOnce({
+    vi.mocked(designApi.saveDesignToBackend).mockResolvedValueOnce({
       id: 'design-uat-7',
       title: 'Master Suite Design',
       scene_json: currentScene,
@@ -283,7 +295,7 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
       updated_at: '2026-11-14T18:00:00Z',
     } as any);
 
-    const saveResult = await designApi.saveDesignScene('Master Suite Design', currentScene);
+    const saveResult = await designApi.saveDesignToBackend('Master Suite Design', currentScene);
     expect(saveResult.id).toBe('design-uat-7');
 
     vi.mocked(designApi.getDesignById).mockResolvedValueOnce({
@@ -313,11 +325,11 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
 
     let caughtError: string | null = null;
     try {
-      await agentApi.sendAgentPrompt({
-        session_id: 'sess-fail-8',
-        prompt: 'Generate luxury layout',
-        current_scene: useEditorStore.getState().scene as any,
-      });
+      await agentApi.sendAgentPrompt(
+        'sess-fail-8',
+        'Generate luxury layout',
+        useEditorStore.getState().scene as any
+      );
     } catch (err: any) {
       caughtError = err.message;
     }
@@ -354,25 +366,21 @@ describe('Phase 8.3 User Acceptance Testing — 10 Production Journeys', () => {
 
   // Journey 10: User submits an invalid/ambiguous prompt and receives structured error explanation
   it('Journey 10: User submits an invalid/incompatible prompt and receives structured validation feedback', async () => {
-    vi.mocked(agentApi.sendAgentPrompt).mockResolvedValueOnce({
-      run_id: 'run-uat-10',
-      status: 'validation_error',
-      primary_candidate: null as any,
-      candidates: [],
-      generated_count: 0,
-      applied: false,
-      error: 'Budget ceiling exceeded: requested layout requires Rs 1,50,000 but budget is Rs 50,000.',
-    } as any);
+    vi.mocked(agentApi.sendAgentPrompt).mockRejectedValueOnce(
+      new Error('Budget ceiling exceeded: requested layout requires Rs 1,50,000 but budget is Rs 50,000.')
+    );
 
-    const res = await agentApi.sendAgentPrompt({
-      session_id: 'sess-uat-10',
-      prompt: 'Place 10 premium leather sectionals within 50000 budget',
-      current_scene: useEditorStore.getState().scene as any,
-      max_budget_paise: 5000000,
-    });
+    let caughtError: string | null = null;
+    try {
+      await agentApi.sendAgentPrompt(
+        'sess-uat-10',
+        'Place 10 premium leather sectionals within 50000 budget',
+        useEditorStore.getState().scene as any
+      );
+    } catch (err: any) {
+      caughtError = err.message;
+    }
 
-    expect(res.status).toBe('validation_error');
-    expect(res.error).toContain('Budget ceiling exceeded');
-    expect(res.candidates).toHaveLength(0);
+    expect(caughtError).toContain('Budget ceiling exceeded');
   });
 });

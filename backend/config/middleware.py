@@ -1,39 +1,45 @@
 """
-RoomGenie AI — Correlation and Request Tracking Middleware (Phase 8.3).
-Provides per-request correlation IDs across HTTP lifecycle and structured logging.
+RoomGenie AI — Correlation and Request Tracking Middleware (Phase 8.3 & 8.3.1).
+Provides async-safe per-request correlation IDs using contextvars.ContextVar across HTTP lifecycle and structured logging.
 """
-import threading
+import contextvars
 import uuid
-from typing import Callable
+from typing import Callable, Optional
 from django.http import HttpRequest, HttpResponse
 
-_thread_locals = threading.local()
+# ContextVar for async-safe request correlation tracking across concurrent coroutines and threads
+_correlation_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar('correlation_id', default='')
 
 
 def get_current_request_id() -> str:
-    """Returns the correlation request ID for the current thread, or empty string."""
-    return getattr(_thread_locals, 'request_id', '')
+    """Returns the correlation request ID for the current context, or empty string."""
+    return _correlation_id_ctx.get()
 
 
 # Convenient alias
 get_correlation_id = get_current_request_id
 
 
-def set_current_request_id(request_id: str) -> None:
-    """Sets the correlation request ID for the current thread."""
-    _thread_locals.request_id = request_id
+def set_current_request_id(request_id: str) -> contextvars.Token:
+    """Sets the correlation request ID for the current context and returns the contextvars Token."""
+    return _correlation_id_ctx.set(request_id)
 
 
-def clear_current_request_id() -> None:
-    """Cleans up the thread-local request ID."""
-    if hasattr(_thread_locals, 'request_id'):
-        delattr(_thread_locals, 'request_id')
+def clear_current_request_id(token: Optional[contextvars.Token] = None) -> None:
+    """Cleans up the context-local request ID using reset token if provided, or resets to default."""
+    if token is not None:
+        try:
+            _correlation_id_ctx.reset(token)
+            return
+        except (ValueError, RuntimeError):
+            pass
+    _correlation_id_ctx.set('')
 
 
 class CorrelationIdMiddleware:
     """
     Middleware that captures or generates a unique correlation request ID for every HTTP request.
-    Injects request_id into thread-local storage for log formatters, attaches request.request_id,
+    Injects request_id into contextvars storage for log formatters, attaches request.request_id,
     and returns X-Request-ID in HTTP response headers.
     """
 
@@ -60,12 +66,12 @@ class CorrelationIdMiddleware:
 
         request.request_id = request_id
         request.correlation_id = request_id
-        set_current_request_id(request_id)
+        token = set_current_request_id(request_id)
 
         try:
             response = self.get_response(request)
         finally:
-            clear_current_request_id()
+            clear_current_request_id(token)
 
         # Attach to outgoing response headers
         response['X-Request-ID'] = request_id

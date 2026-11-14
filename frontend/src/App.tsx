@@ -12,7 +12,7 @@ import {
   ChevronRight,
   Maximize2
 } from 'lucide-react';
-import { checkBackendHealth, type HealthResponse } from './services/api';
+import { checkBackendHealth, fetchHealthDiagnostics, type HealthResponse } from './services/api';
 import { RoomCanvas } from './editor3d/components/RoomCanvas';
 import { EditorHeader } from './components/editor/EditorHeader';
 import { FurniturePalette } from './components/editor/FurniturePalette';
@@ -51,8 +51,15 @@ export default function App() {
 
   const fetchHealth = async () => {
     setLoading(true);
-    const result = await checkBackendHealth();
-    setHealth(result);
+    const publicResult = await checkBackendHealth();
+    let merged = { ...publicResult };
+    if (user?.is_staff) {
+      const diagResult = await fetchHealthDiagnostics();
+      if (diagResult) {
+        merged = { ...merged, ...diagResult };
+      }
+    }
+    setHealth(merged);
     setLastChecked(new Date());
     setLoading(false);
   };
@@ -63,13 +70,22 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
-    checkBackendHealth().then((result) => {
+    void (async () => {
+      const publicResult = await checkBackendHealth();
+      if (!isMounted) return;
+      let merged = { ...publicResult };
+      if (useAuthStore.getState().user?.is_staff) {
+        const diagResult = await fetchHealthDiagnostics();
+        if (diagResult && isMounted) {
+          merged = { ...merged, ...diagResult };
+        }
+      }
       if (isMounted) {
-        setHealth(result);
+        setHealth(merged);
         setLastChecked(new Date());
         setLoading(false);
       }
-    });
+    })();
 
     // Initialize/resume evaluation telemetry heartbeat if trial is active
     initEvaluationTelemetry(() => useEditorStore.getState().scene);
