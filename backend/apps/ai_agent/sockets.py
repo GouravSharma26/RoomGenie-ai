@@ -102,6 +102,7 @@ CANONICAL_SOCKET_DEFINITIONS: list[dict[str, Any]] = [
     },
 ]
 
+
 # Fast lookup index by (anchor_asset_id, socket_id)
 SOCKET_REGISTRY: dict[tuple[str, str], dict[str, Any]] = {
     (s['anchor_asset_id'], s['id']): s for s in CANONICAL_SOCKET_DEFINITIONS
@@ -120,6 +121,8 @@ def get_socket_definition(anchor_asset_id: str, socket_id: str) -> dict[str, Any
         if s['id'] == socket_id and s['anchor_asset_id'] == anchor_asset_id:
             return s
     return None
+
+
 
 
 def is_compatible_with_socket(
@@ -482,13 +485,12 @@ def check_doorway_landing_clearance(
 ) -> list[str]:
     """
     Validates that furniture placement does not intrude into architectural doorway landing zones.
+    If architectural openings are defined, validates against each door.
+    If room is rectangular without openings, falls back to protecting the standard south entrance.
     """
     violations = []
     openings = room.get('openings', [])
     walls = {w.get('id'): w for w in room.get('walls', []) if isinstance(w, dict) and 'id' in w}
-
-    if not openings:
-        return violations
 
     pos = placement.get('position', [0.0, 0.0, 0.0])
     dims = placement.get('dimensions', [1.0, 1.0, 1.0])
@@ -497,6 +499,20 @@ def check_doorway_landing_clearance(
     yaw = rot[1] if len(rot) > 1 else 0.0
 
     corners = get_furniture_corners_2d(pos, dims, scale, yaw)
+
+    if not openings:
+        # Fallback for rectangular room: standard South wall entrance [0, length/2]
+        room_l = float(room.get('length', 4.0))
+        door_cx = 0.0
+        door_cz = room_l / 2.0
+        landing_cz = door_cz - (landing_depth_meters / 2.0)
+        landing_radius = (0.90 + landing_depth_meters) / 2.0
+        for cx, cz in corners:
+            if math.hypot(cx - door_cx, cz - landing_cz) < landing_radius:
+                violations.append("intrudes into default south entrance landing zone")
+                break
+        return violations
+
 
     for op in openings:
         if not isinstance(op, dict) or op.get('type') != 'door':

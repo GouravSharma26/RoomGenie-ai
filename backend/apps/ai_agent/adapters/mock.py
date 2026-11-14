@@ -463,3 +463,726 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             latency_ms=max(1, latency),
             raw_metadata={'mock_rule_matched': True, 'action_count': len(actions)},
         )
+
+    def generate_candidate_variants(
+        self,
+        user_prompt: str,
+        current_scene: dict[str, Any],
+        candidate_count: int = 3,
+        conversation_history: list[dict[str, str]] | None = None,
+        catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
+        user_requirements: dict[str, Any] | None = None,
+    ) -> list[DesignProposalResult]:
+        """
+        Generates multiple distinct candidate layout proposals for Phase 6.3.
+        Supports all 12 deterministic test and demonstration scenarios offline.
+        """
+        prompt_lower = user_prompt.lower()
+        room = current_scene.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}) if isinstance(current_scene, dict) else {'width': 5.0, 'length': 4.0, 'height': 2.8}
+        room_w = float(room.get('width', 5.0))
+        room_l = float(room.get('length', 4.0))
+
+        from apps.furniture.models import FurnitureAsset
+
+        def pick_asset_id(canonical_id: str, fallback_id: str, category: str = '') -> str:
+            if FurnitureAsset.objects.filter(id=canonical_id).exists():  # pyrefly: ignore[missing-attribute]
+                return canonical_id
+            if FurnitureAsset.objects.filter(id=fallback_id).exists():  # pyrefly: ignore[missing-attribute]
+                return fallback_id
+            if category:
+                matched = FurnitureAsset.objects.filter(category=category, is_active=True).first()  # pyrefly: ignore[missing-attribute]
+                if matched:
+                    return matched.id
+            any_asset = FurnitureAsset.objects.filter(is_active=True).first()  # pyrefly: ignore[missing-attribute]
+            if any_asset:
+                return any_asset.id
+            return fallback_id
+
+        variants: list[DesignProposalResult] = []
+
+        # -------------------------------------------------------------
+        # Single Armchair Request (e.g. "Add an armchair")
+        # -------------------------------------------------------------
+        if any(w in prompt_lower for w in ('armchair', 'reading', 'cozy chair')) and not any(w in prompt_lower for w in ('sofa', 'workspace', 'boundary', 'collision', 'clearance', 'budget')):
+            armchair_id = pick_asset_id('armchair-accent-nordic', 'chair-accent-armchair', category='seating')
+            cand_a = DesignProposalResult(
+                text_response="Option A adds an armchair in a cozy reading corner with a 45° angle to the room.",
+                proposed_actions=[{
+                    'type': 'add_furniture',
+                    'asset_id': armchair_id,
+                    'position': [-1.2, 0.44, 0.6],
+                    'rotation_euler': [0.0, 0.78, 0.0],
+                    'color': '#4f46e5',
+                }],
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Cozy Reading Corner",
+                description="Angled armchair positioned in a quiet room quadrant.",
+                trade_offs=["Corner placement", "Dedicated reading nook"],
+            )
+            cand_b = DesignProposalResult(
+                text_response="Option B places the armchair along the side perimeter to maximize natural lighting.",
+                proposed_actions=[{
+                    'type': 'add_furniture',
+                    'asset_id': armchair_id,
+                    'position': [1.2, 0.44, -0.6],
+                    'rotation_euler': [0.0, -0.78, 0.0],
+                    'color': '#4f46e5',
+                }],
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option B: Daylight Perimeter Seating",
+                description="Armchair placed to capture natural side illumination.",
+                trade_offs=["Perimeter placement", "Good lighting"],
+            )
+            cand_c = DesignProposalResult(
+                text_response="Option C positions the armchair as a welcoming focal seat.",
+                proposed_actions=[{
+                    'type': 'add_furniture',
+                    'asset_id': armchair_id,
+                    'position': [0.0, 0.44, 0.8],
+                    'rotation_euler': [0.0, 3.14159, 0.0],
+                    'color': '#4f46e5',
+                }],
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option C: Focal Accent Chair",
+                description="Centered accent chair facing the room interior.",
+                trade_offs=["Central visibility", "Direct room access"],
+            )
+            return [cand_a, cand_b, cand_c][:candidate_count]
+
+
+        # -------------------------------------------------------------
+        # Scenario 3: Boundary Violation Candidate
+        # -------------------------------------------------------------
+        if 'boundary violation' in prompt_lower or 'out of bounds candidate' in prompt_lower:
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-oob-sofa',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [room_w + 3.0, 0.45, room_l + 3.0],  # Way out of bounds
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Placing sofa outside room boundary to test hard boundary constraint.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Out-of-Bounds Layout",
+                description="Intentionally places furniture beyond the exterior walls.",
+                trade_offs=["Violates room perimeter containment"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 4: Collision Candidate
+        # -------------------------------------------------------------
+        if 'collision candidate' in prompt_lower or 'overlapping' in prompt_lower:
+            actions = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-coll-sofa-1',
+                    'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                    'position': [0.0, 0.45, 0.0],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-coll-sofa-2',
+                    'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                    'position': [0.0, 0.45, 0.0],  # Overlaps completely
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+            ]
+            return [DesignProposalResult(
+                text_response="Placing overlapping furniture items to test hard OBB collision constraint.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Colliding Layout",
+                description="Contains overlapping bounding boxes between items.",
+                trade_offs=["Direct physical collision between furniture"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 5: Hard Clearance / Doorway Landing Obstruction
+        # -------------------------------------------------------------
+        if 'clearance violation' in prompt_lower or 'door blocked' in prompt_lower:
+            # Door landing is on south wall at [0.0, 0.0, length/2]
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-door-blocker',
+                'asset_id': pick_asset_id('storage-bookshelf-tall', 'bookshelf-wood-tall'),
+                'position': [0.0, 0.9, (room_l / 2.0) - 0.2],  # Directly in door swing landing
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Placing bookshelf directly in door circulation landing zone.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Doorway Obstruction Layout",
+                description="Blocks the primary doorway landing zone.",
+                trade_offs=["Blocks room entry and exit"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 6: Advisory-only Warnings
+        # -------------------------------------------------------------
+        if 'advisory' in prompt_lower or 'spacing warning' in prompt_lower:
+            # Place armchair very close to wall (e.g. 2cm margin)
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-tight-chair',
+                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                'position': [(room_w / 2.0) - 0.45, 0.425, 0.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Placing armchair close to room perimeter to trigger advisory spacing note.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Perimeter Layout",
+                description="Valid placement with advisory edge proximity.",
+                trade_offs=["Tight perimeter clearance", "Compact footprint"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 7: Budget-Cap Violation Candidate
+        # -------------------------------------------------------------
+        if 'budget violation' in prompt_lower or 'expensive candidate' in prompt_lower:
+            actions = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-lux-sofa',
+                    'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                    'position': [0.0, 0.45, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-lux-bed',
+                    'asset_id': pick_asset_id('bed-queen-platform', 'bed-queen-nordic-wood'),
+                    'position': [1.2, 0.475, 0.5],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-lux-desk',
+                    'asset_id': pick_asset_id('desk-executive-wood', 'desk-modern-wood'),
+                    'position': [-1.2, 0.375, 0.5],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+            ]
+            return [DesignProposalResult(
+                text_response="Adding multiple luxury items that exceed the user's allocated budget ceiling.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Premium Fixtures",
+                description="Exceeds current budget ceiling with luxury items.",
+                trade_offs=["Budget limit exceeded", "Premium furniture selection"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 8: Candidate that Succeeds after One Refinement
+        # -------------------------------------------------------------
+        if 'succeed after refinement' in prompt_lower or 'refinement success' in prompt_lower:
+            # Initially slightly out of bounds on X
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-refine-sofa',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [(room_w / 2.0) + 0.3, 0.45, 0.0],  # 0.3m out of bounds
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Initially flawed placement: sofa placed slightly beyond wall boundary.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Seating (Needs Refinement)",
+                description="Initially extends beyond boundary; refined on pass 1.",
+                trade_offs=["Boundary breach before refinement"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 9: Candidate that Remains Invalid after Two Refinements
+        # -------------------------------------------------------------
+        if 'remain invalid' in prompt_lower or 'refinement failure' in prompt_lower:
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-persist-fail-sofa',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [room_w + 5.0, 0.45, room_l + 5.0],  # Severely out of bounds
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Severely invalid placement that cannot be reconciled in two refinements.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Unresolvable Placement",
+                description="Permanently out of bounds across all refinement passes.",
+                trade_offs=["Invalid placement"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 11: Insufficient Room for All Requested Furniture
+        # -------------------------------------------------------------
+        if 'insufficient room' in prompt_lower or 'overcrowded' in prompt_lower:
+            # Try to place sofa, bed, desk, and table in a tiny room
+            actions = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-tiny-sofa',
+                    'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                    'position': [0.0, 0.45, -0.5],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-tiny-bed',
+                    'asset_id': pick_asset_id('bed-queen-platform', 'bed-queen-nordic-wood'),
+                    'position': [0.0, 0.475, 0.5],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-tiny-table',
+                    'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
+                    'position': [0.0, 0.225, 0.0],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+            ]
+            return [DesignProposalResult(
+                text_response="Room dimensions cannot accommodate all requested furniture without severe collisions.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Overcrowded Layout",
+                description="Too many large pieces for the available square footage.",
+                trade_offs=["Severe crowding and collisions"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 12: Constrained Room - Cannot Produce 3 Distinct Alternatives
+        # -------------------------------------------------------------
+        if 'constrained room' in prompt_lower or 'single alternative' in prompt_lower or 'narrow room' in prompt_lower:
+            # Return only 1 valid alternative with explanation
+            actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-narrow-desk',
+                'asset_id': pick_asset_id('desk-executive-wood', 'desk-modern-wood'),
+                'position': [0.0, 0.375, 0.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return [DesignProposalResult(
+                text_response="Due to narrow room width, only one viable furniture orientation is geometrically possible.",
+                proposed_actions=actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Sole Viable Orientation",
+                description="Aligns along the long axis; secondary alternatives are constrained by narrow clearance.",
+                trade_offs=["Single linear layout", "Constrained circulation"],
+            )]
+
+        # -------------------------------------------------------------
+        # Scenario 2: Three Valid Workspace Alternatives
+        # -------------------------------------------------------------
+        if any(w in prompt_lower for w in ('workspace', 'desk', 'office', 'study')):
+            # Candidate A: Daylight-focused (desk near perimeter wall/window)
+            actions_a = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-desk-a',
+                    'asset_id': pick_asset_id('desk-workspace-study', 'desk-executive-wood'),
+                    'position': [-1.2, 0.375, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-a',
+                    'asset_id': pick_asset_id('chair-ergonomic-office', 'office-chair-mesh'),
+                    'position': [-1.2, 0.45, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-desk-a',
+                    'child_object_id': 'mock-chair-a',
+                    'socket_id': 'desk-knee-well-chair',
+                    'gap_meters': 0.15,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-book-a',
+                    'asset_id': pick_asset_id('storage-bookshelf-tall', 'bookshelf-wood-tall'),
+                    'position': [-1.2, 0.9, 0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'workspace',
+                    'intent': 'Daylight-oriented productive home office',
+                    'requirements': {'preserve_existing_furniture': True},
+                },
+            ]
+            cand_a = DesignProposalResult(
+                text_response="Option A positions the desk along the side wall to capture natural daylight with attached ergonomic chair and reference storage.",
+                proposed_actions=actions_a,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Daylight-Focused Workspace",
+                description="Desk positioned to capture natural window illumination with adjacent storage.",
+                trade_offs=["Optimal ambient lighting", "Slightly further from primary entrance"],
+            )
+
+            # Candidate B: Open-circulation workspace (desk against back wall)
+            actions_b = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-desk-b',
+                    'asset_id': pick_asset_id('desk-workspace-study', 'desk-executive-wood'),
+                    'position': [0.0, 0.375, -1.2],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-b',
+                    'asset_id': pick_asset_id('chair-ergonomic-office', 'office-chair-mesh'),
+                    'position': [0.0, 0.45, -1.2],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-desk-b',
+                    'child_object_id': 'mock-chair-b',
+                    'socket_id': 'desk-knee-well-chair',
+                    'gap_meters': 0.15,
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'workspace',
+                    'intent': 'Circulation-optimized executive workspace',
+                    'requirements': {'preserve_existing_furniture': True},
+                },
+            ]
+            cand_b = DesignProposalResult(
+                text_response="Option B centers the desk along the back wall to maximize open walking paths and room circulation.",
+                proposed_actions=actions_b,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option B: Circulation-Optimized Workspace",
+                description="Maximizes central room passage and walking clearance with back-wall desk placement.",
+                trade_offs=["Clear direct walking routes", "Reduced secondary storage footprint"],
+            )
+
+            # Candidate C: Storage-prioritized workspace (desk with dual bookshelves)
+            actions_c = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-desk-c',
+                    'asset_id': pick_asset_id('desk-workspace-study', 'desk-executive-wood'),
+                    'position': [0.8, 0.375, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-c',
+                    'asset_id': pick_asset_id('chair-ergonomic-office', 'office-chair-mesh'),
+                    'position': [0.8, 0.45, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-desk-c',
+                    'child_object_id': 'mock-chair-c',
+                    'socket_id': 'desk-knee-well-chair',
+                    'gap_meters': 0.15,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-book-c1',
+                    'asset_id': pick_asset_id('storage-bookshelf-tall', 'bookshelf-wood-tall'),
+                    'position': [-1.2, 0.9, -0.8],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-book-c2',
+                    'asset_id': pick_asset_id('storage-bookshelf-tall', 'bookshelf-wood-tall'),
+                    'position': [-1.2, 0.9, 0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'workspace',
+                    'intent': 'Storage-prioritized study and research workspace',
+                    'requirements': {'preserve_existing_furniture': True},
+                },
+            ]
+            cand_c = DesignProposalResult(
+                text_response="Option C incorporates dual storage towers for intensive document, book, and equipment organization.",
+                proposed_actions=actions_c,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option C: Storage-Prioritized Setup",
+                description="Includes dual storage units for books, documents, and reference materials.",
+                trade_offs=["Maximum organization and storage", "Higher floor utilization"],
+            )
+
+            all_ws = [cand_a, cand_b, cand_c]
+            return all_ws[:candidate_count]
+
+        # -------------------------------------------------------------
+        # Scenario 1: Three Valid Living Room Alternatives (Default)
+        # -------------------------------------------------------------
+        # Candidate A: Conversational Seating Arrangement
+        actions_a = [
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-sofa-a',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [0.0, 0.45, -0.8],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-table-a',
+                'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
+                'position': [0.0, 0.225, -0.8],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'mock-sofa-a',
+                'child_object_id': 'mock-table-a',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.40,
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-chair-left-a',
+                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                'position': [0.0, 0.425, -0.8],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'mock-sofa-a',
+                'child_object_id': 'mock-chair-left-a',
+                'socket_id': 'sofa-left-accent',
+                'gap_meters': 0.60,
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-chair-right-a',
+                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                'position': [0.0, 0.425, -0.8],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'mock-sofa-a',
+                'child_object_id': 'mock-chair-right-a',
+                'socket_id': 'sofa-right-accent',
+                'gap_meters': 0.60,
+            },
+            {
+                'type': 'propose_zone_arrangement',
+                'zone_type': 'living',
+                'intent': 'Conversational seating arrangement with sofa, coffee table, and angled armchairs',
+                'requirements': {'preserve_existing_furniture': True},
+            },
+        ]
+        cand_a = DesignProposalResult(
+            text_response="Option A creates a social conversational circle around a central coffee table with angled armchairs.",
+            proposed_actions=actions_a,
+            provider='mock',
+            model='deterministic-mock-v1',
+            candidate_label="Option A: Conversational Seating Arrangement",
+            description="A focused conversational arrangement with sofa, coffee table, and angled armchairs.",
+            trade_offs=["Prioritizes social interaction", "Requires central floor area"],
+        )
+
+        # Candidate B: Open-Circulation Arrangement
+        actions_b = [
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-sofa-b',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [0.0, 0.45, -1.3],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-table-b',
+                'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
+                'position': [0.0, 0.225, -1.3],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'mock-sofa-b',
+                'child_object_id': 'mock-table-b',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.45,
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-chair-b',
+                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                'position': [-1.4, 0.425, -0.4],
+                'rotation_euler': [0.0, 0.5, 0.0],
+            },
+            {
+                'type': 'propose_zone_arrangement',
+                'zone_type': 'living',
+                'intent': 'Open circulation living area maximizing floor space',
+                'requirements': {'preserve_existing_furniture': True},
+            },
+        ]
+        cand_b = DesignProposalResult(
+            text_response="Option B shifts the seating against the perimeter wall to open wide, unhindered pathways across the room.",
+            proposed_actions=actions_b,
+            provider='mock',
+            model='deterministic-mock-v1',
+            candidate_label="Option B: Open-Circulation Layout",
+            description="Positions seating along perimeter walls to maximize open walking paths.",
+            trade_offs=["Maximizes open walking routes", "Less intimate conversational distance"],
+        )
+
+        # Candidate C: Media & Entertainment Arrangement
+        actions_c = [
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-sofa-c',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [0.0, 0.45, 0.2],
+                'rotation_euler': [0.0, 3.14159, 0.0],  # Facing north wall
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'mock-table-c',
+                'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
+                'position': [0.0, 0.225, 0.2],
+                'rotation_euler': [0.0, 3.14159, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'mock-sofa-c',
+                'child_object_id': 'mock-table-c',
+                'socket_id': 'sofa-front-table',
+                'gap_meters': 0.45,
+            },
+            {
+                'type': 'propose_zone_arrangement',
+                'zone_type': 'living',
+                'intent': 'Media entertainment living space oriented toward focal wall',
+                'requirements': {'preserve_existing_furniture': True},
+            },
+        ]
+        cand_c = DesignProposalResult(
+            text_response="Option C centers the sofa facing the focal wall with clear sightlines for home entertainment.",
+            proposed_actions=actions_c,
+            provider='mock',
+            model='deterministic-mock-v1',
+            candidate_label="Option C: Media & Entertainment Setup",
+            description="Oriented toward a focal media wall with unobstructed sightlines.",
+            trade_offs=["Optimized for media viewing", "Asymmetric seating layout"],
+        )
+
+        all_living = [cand_a, cand_b, cand_c]
+        return all_living[:candidate_count]
+
+    def refine_candidate_proposal(
+        self,
+        user_prompt: str,
+        current_scene: dict[str, Any],
+        failed_proposal: DesignProposalResult,
+        validation_feedback: dict[str, Any],
+        catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
+        attempt: int = 1,
+    ) -> DesignProposalResult:
+        """
+        Attempts to correct a candidate proposal that failed deterministic spatial validation.
+        Simulates refinement deterministically offline.
+        """
+        prompt_lower = user_prompt.lower()
+        room = current_scene.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}) if isinstance(current_scene, dict) else {'width': 5.0, 'length': 4.0, 'height': 2.8}
+
+        # Scenario 8: succeeds on attempt 1
+        if 'succeed after refinement' in prompt_lower or 'refinement success' in prompt_lower:
+            from apps.furniture.models import FurnitureAsset
+            def pick_asset_id(canonical_id: str, fallback_id: str) -> str:
+                if FurnitureAsset.objects.filter(id=canonical_id).exists():  # pyrefly: ignore[missing-attribute]
+                    return canonical_id
+                return fallback_id
+
+            # Correct position from out-of-bounds to safe center-right coordinate
+            corrected_actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-refine-sofa',
+                'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
+                'position': [1.0, 0.45, 0.0],  # Valid coordinate inside 5x4m room
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return DesignProposalResult(
+                text_response="Refined sofa placement by pulling it inward 1.8m away from room perimeter to ensure full room containment.",
+                proposed_actions=corrected_actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Seating (Refined)",
+                description="Position corrected to satisfy room containment.",
+                trade_offs=["Inward offset for safety"],
+            )
+
+        # Scenario 9: remains invalid across all refinement attempts
+        if 'remain invalid' in prompt_lower or 'refinement failure' in prompt_lower:
+            # Shift slightly but stay out of bounds
+            bad_actions = [{
+                'type': 'add_furniture',
+                'object_id': 'mock-persist-fail-sofa',
+                'asset_id': 'sofa-modern-3seater',
+                'position': [float(room.get('width', 5.0)) + 4.0, 0.45, float(room.get('length', 4.0)) + 4.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            }]
+            return DesignProposalResult(
+                text_response=f"Refinement attempt {attempt} failed: cannot fit item inside room boundary.",
+                proposed_actions=bad_actions,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Unresolvable Placement",
+                description=f"Attempt {attempt} remains out of bounds.",
+                trade_offs=["Persistent boundary violation"],
+            )
+
+        # Generic safe refinement fallback:
+        # If any action had an out-of-bounds position, clamp it towards room center
+        refined_actions = []
+        for act in failed_proposal.proposed_actions:
+            cloned = dict(act)
+            if cloned.get('type') == 'add_furniture' and 'position' in cloned:
+                pos = list(cloned['position'])
+                half_w = float(room.get('width', 5.0)) / 2.0 - 0.5
+                half_l = float(room.get('length', 4.0)) / 2.0 - 0.5
+                pos[0] = max(-half_w, min(half_w, pos[0]))
+                pos[2] = max(-half_l, min(half_l, pos[2]))
+                cloned['position'] = pos
+            refined_actions.append(cloned)
+
+        return DesignProposalResult(
+            text_response=f"Adjusted furniture placement on refinement attempt {attempt} based on spatial feedback.",
+            proposed_actions=refined_actions,
+            provider='mock',
+            model='deterministic-mock-v1',
+            candidate_label=failed_proposal.candidate_label,
+            description=failed_proposal.description,
+            trade_offs=failed_proposal.trade_offs,
+        )
+

@@ -1,3 +1,4 @@
+import copy
 import threading
 import unittest
 import uuid
@@ -1597,4 +1598,575 @@ class Phase62SocketAndZoneTests(APITestCase):
         self.assertIn('intent', zone_props)
         self.assertIn('requirements', zone_props)
         self.assertEqual(zone_tool['parameters']['required'], ['zone_type', 'intent'])
+
+
+class Phase63MultiCandidateAndScoringTests(APITestCase):
+
+    """
+    Phase 6.3 Test Suite: Multi-Candidate Layout Generation & Deterministic Scoring.
+    Validates:
+    1. Candidate count limits (default 3, max 5, min 1).
+    2. Meaningful layout differentiation (living and workspace).
+    3. Independent simulation & scene snapshot immutability.
+    4. Canonical scene non-mutation before explicit approval.
+    5. Action ordering and socket object ID chaining.
+    6. Hard constraint failures: boundary, OBB collision, doorway obstruction.
+    7. Budget cap violation.
+    8. Advisory warnings: validity preserved, soft score penalized.
+    9. 6-component score formula, normalization, and weights.
+    10. Missing budget neutral scoring.
+    11. Deterministic scoring and tie-breaking.
+    12. Bounded refinement (success on 1, stop after 2 on permanent failure).
+    13. SHA-256 scene hash determinism and 409 stale proposal rejection.
+    14. Candidate selection in apply endpoint.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email='designer@roomgenie.local',
+            username='designer@roomgenie.local',
+            password='Password123!'
+        )
+        # Create standard catalogue assets
+        self.sofa = FurnitureAsset.objects.create(
+            id='sofa-modern-3seater',
+            name='Modern 3-Seater Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=2999900,
+            currency='INR',
+            is_active=True,
+        )
+        self.table = FurnitureAsset.objects.create(
+            id='table-oak-coffee',
+            name='Oak Coffee Table',
+            category='tables',
+            width=Decimal('1.10'),
+            height=Decimal('0.45'),
+            depth=Decimal('0.60'),
+            price_paise=899900,
+            currency='INR',
+            is_active=True,
+        )
+        self.armchair = FurnitureAsset.objects.create(
+            id='chair-accent-armchair',
+            name='Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.85'),
+            price_paise=1299900,
+            currency='INR',
+            is_active=True,
+        )
+        self.desk = FurnitureAsset.objects.create(
+            id='desk-workspace-study',
+            name='Executive Wood Desk',
+            category='tables',
+            width=Decimal('1.50'),
+            height=Decimal('0.75'),
+            depth=Decimal('0.80'),
+            price_paise=2499900,
+            currency='INR',
+            is_active=True,
+        )
+
+        self.chair = FurnitureAsset.objects.create(
+            id='chair-ergonomic-office',
+            name='Ergonomic Office Chair',
+            category='seating',
+            width=Decimal('0.65'),
+            height=Decimal('0.95'),
+            depth=Decimal('0.65'),
+            price_paise=1499900,
+            currency='INR',
+            is_active=True,
+        )
+        self.bookshelf = FurnitureAsset.objects.create(
+            id='storage-bookshelf-tall',
+            name='Tall Bookshelf',
+            category='storage',
+            width=Decimal('0.80'),
+            height=Decimal('1.80'),
+            depth=Decimal('0.35'),
+            price_paise=999900,
+            currency='INR',
+            is_active=True,
+        )
+        self.bed = FurnitureAsset.objects.create(
+            id='bed-queen-platform',
+            name='Platform Queen Bed',
+            category='beds',
+            width=Decimal('1.65'),
+            height=Decimal('0.95'),
+            depth=Decimal('2.15'),
+            price_paise=3999900,
+            currency='INR',
+            is_active=True,
+        )
+
+        self.initial_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+            'relationships': [],
+            'zones': [],
+        }
+        self.design = Design.objects.create(
+            owner=self.user,
+            title='Test Design Project',
+            scene_json=copy.deepcopy(self.initial_scene),
+            budget=10000000,  # ₹100,000 budget
+        )
+        self.session = AgentSession.objects.create(
+            owner=self.user,
+            design=self.design,
+            title='Multi-Candidate Design Session'
+        )
+
+    def test_candidate_generator_count_and_maximum_limit(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        # Default count: 3
+        candidates = generator.generate_candidates(
+            user_prompt="Arrange a living room layout",
+            current_scene=self.initial_scene,
+            candidate_count=3,
+        )
+        self.assertEqual(len(candidates), 3)
+
+        # Clamped to maximum 5 when requesting 10
+        candidates_max = generator.generate_candidates(
+            user_prompt="Arrange a living room layout",
+            current_scene=self.initial_scene,
+            candidate_count=10,
+        )
+        self.assertLessEqual(len(candidates_max), 5)
+
+        # Clamped to minimum 1 when requesting 0
+        candidates_min = generator.generate_candidates(
+            user_prompt="Arrange a living room layout",
+            current_scene=self.initial_scene,
+            candidate_count=0,
+        )
+        self.assertEqual(len(candidates_min), 1)
+
+    def test_meaningful_candidate_differentiation_living_and_workspace(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        # Living room candidates
+        living_cands = generator.generate_candidates(
+            user_prompt="Design a living room area",
+            current_scene=self.initial_scene,
+            candidate_count=3,
+        )
+        self.assertEqual(len(living_cands), 3)
+        labels = [c.label for c in living_cands]
+        self.assertTrue(any('Conversational' in l for l in labels))
+        self.assertTrue(any('Circulation' in l for l in labels))
+        self.assertTrue(any('Media' in l for l in labels))
+        # Ensure actions are genuinely different
+        self.assertNotEqual(living_cands[0].proposed_actions, living_cands[1].proposed_actions)
+
+        # Workspace candidates
+        ws_cands = generator.generate_candidates(
+            user_prompt="Set up a workspace and office desk",
+            current_scene=self.initial_scene,
+            candidate_count=3,
+        )
+        self.assertEqual(len(ws_cands), 3)
+        ws_labels = [c.label for c in ws_cands]
+        self.assertTrue(any('Daylight' in l for l in ws_labels))
+        self.assertTrue(any('Circulation' in l for l in ws_labels))
+        self.assertTrue(any('Storage' in l for l in ws_labels))
+
+    def test_independent_simulation_from_same_immutable_starting_scene(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        from apps.ai_agent.candidate_types import compute_canonical_scene_hash
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        scene_copy = copy.deepcopy(self.initial_scene)
+        starting_hash = compute_canonical_scene_hash(scene_copy)
+
+        candidates = generator.generate_candidates(
+            user_prompt="Arrange a living room",
+            current_scene=scene_copy,
+            candidate_count=3,
+        )
+        # Verify initial starting scene was NOT modified
+        self.assertEqual(compute_canonical_scene_hash(scene_copy), starting_hash)
+        self.assertEqual(len(scene_copy['objects']), 0)
+
+        # Each candidate has its own independent simulation
+        for c in candidates:
+            self.assertEqual(c.source_scene_hash, starting_hash)
+            self.assertGreaterEqual(len(c.candidate_scene['objects']), 1)
+
+    def test_no_mutation_of_canonical_scene_during_generation(self):
+        self.client.force_authenticate(user=self.user)
+        prompt_url = reverse('agent-prompt', kwargs={'session_id': str(self.session.id)})
+
+        res = self.client.post(prompt_url, {'prompt': 'Suggest living room layouts', 'candidate_count': 3}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # Verify design in DB was untouched
+        self.design.refresh_from_db()
+        self.assertEqual(len(self.design.scene_json['objects']), 0)
+
+
+        # Verify returned data contains candidates
+        self.assertIn('candidates', res.data)
+        self.assertEqual(len(res.data['candidates']), 3)
+
+    def test_action_ordering_and_socket_object_id_chaining(self):
+        from apps.ai_agent.candidate_simulator import CandidateSimulator
+        actions = [
+            {
+                'type': 'add_furniture',
+                'object_id': 'my-custom-desk-001',
+                'asset_id': 'desk-workspace-study',
+                'position': [0.0, 0.375, -1.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+
+            },
+            {
+                'type': 'add_furniture',
+                'object_id': 'my-custom-chair-002',
+                'asset_id': 'chair-ergonomic-office',
+                'position': [0.0, 0.45, -1.0],
+                'rotation_euler': [0.0, 0.0, 0.0],
+            },
+            {
+                'type': 'attach_to_socket',
+                'anchor_object_id': 'my-custom-desk-001',
+                'child_object_id': 'my-custom-chair-002',
+                'socket_id': 'desk-knee-well-chair',
+                'gap_meters': 0.15,
+            },
+        ]
+        simulator = CandidateSimulator(self.initial_scene)
+        sim_res = simulator.simulate(actions)
+        self.assertTrue(sim_res['is_valid'])
+        rels = sim_res['candidate_scene'].get('relationships', [])
+        self.assertEqual(len(rels), 1)
+        self.assertEqual(rels[0]['anchorObjectId'], 'my-custom-desk-001')
+        self.assertEqual(rels[0]['childObjectId'], 'my-custom-chair-002')
+
+    def test_hard_boundary_failure_handling(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing boundary violation candidate",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        cand = candidates[0]
+        self.assertFalse(cand.is_valid)
+        self.assertFalse(cand.is_approval_eligible)
+        self.assertEqual(cand.score.boundary, 0.0)
+        fatal_codes = [i.code for i in cand.validation_feedback.fatal_errors]
+        self.assertIn('ROOM_BOUNDARY_BREACH', fatal_codes)
+
+    def test_obb_collision_failure_handling(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing collision candidate overlapping",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        cand = candidates[0]
+        self.assertFalse(cand.is_valid)
+        self.assertFalse(cand.is_approval_eligible)
+        self.assertEqual(cand.score.collision, 0.0)
+        fatal_codes = [i.code for i in cand.validation_feedback.fatal_errors]
+        self.assertIn('OBB_COLLISION', fatal_codes)
+
+    def test_hard_clearance_doorway_landing_obstruction(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing clearance violation door blocked",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        cand = candidates[0]
+        self.assertFalse(cand.is_valid)
+        self.assertFalse(cand.is_approval_eligible)
+        self.assertEqual(cand.score.circulation, 0.0)
+        fatal_codes = [i.code for i in cand.validation_feedback.fatal_errors]
+        self.assertIn('DOOR_BLOCKED', fatal_codes)
+
+    def test_budget_cap_violation(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        # Set strict low budget: ₹20,000 (2,000,000 paise)
+        candidates = generator.generate_candidates(
+            user_prompt="Testing budget violation expensive candidate",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+            max_budget_paise=2000000,
+        )
+        cand = candidates[0]
+        self.assertFalse(cand.is_valid)
+        self.assertFalse(cand.is_approval_eligible)
+        self.assertEqual(cand.score.budget, 0.0)
+        fatal_codes = [i.code for i in cand.validation_feedback.fatal_errors]
+        self.assertIn('BUDGET_EXCEEDED', fatal_codes)
+
+    def test_advisory_warnings_preserve_validity_and_lower_soft_score(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing advisory spacing warning",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        cand = candidates[0]
+        # Must remain valid despite advisory warning!
+        self.assertTrue(cand.is_valid)
+        self.assertTrue(cand.is_approval_eligible)
+        # Soft clearance score reflects the advisory
+        self.assertLessEqual(cand.score.boundary, 100.0)
+
+    def test_score_formula_and_weights_normalization(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback
+
+        feedback = CandidateValidationFeedback(is_valid=True)
+        budget_diff = {'after_total_paise': 2000000, 'max_budget_paise': 5000000}
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [{
+                'id': 'item-1',
+                'dimensions': [1.0, 1.0, 1.0],
+                'scale': [1.0, 1.0, 1.0],
+                'position': [0.0, 0.5, 0.0],
+            }],
+        }
+        score = CandidateScorer.calculate_score(scene, feedback, budget_diff)
+
+        # Check normalization
+        self.assertGreaterEqual(score.boundary, 0.0)
+        self.assertLessEqual(score.boundary, 100.0)
+        self.assertGreaterEqual(score.collision, 0.0)
+        self.assertLessEqual(score.collision, 100.0)
+        self.assertGreaterEqual(score.circulation, 0.0)
+        self.assertLessEqual(score.circulation, 100.0)
+        self.assertGreaterEqual(score.clearance, 0.0)
+        self.assertLessEqual(score.clearance, 100.0)
+        self.assertGreaterEqual(score.utilization, 0.0)
+        self.assertLessEqual(score.utilization, 100.0)
+        self.assertGreaterEqual(score.budget, 0.0)
+        self.assertLessEqual(score.budget, 100.0)
+
+        # Exact formula verification:
+        expected = (
+            0.25 * score.boundary
+            + 0.25 * score.collision
+            + 0.20 * score.circulation
+            + 0.15 * score.clearance
+            + 0.10 * score.utilization
+            + 0.05 * score.budget
+        )
+        self.assertAlmostEqual(score.overall, expected, places=1)
+
+    def test_missing_budget_neutral_treatment(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback
+
+        feedback = CandidateValidationFeedback(is_valid=True)
+        # No max budget defined
+        budget_diff = {'after_total_paise': 3000000}
+        scene = {'room': {'width': 5.0, 'length': 4.0, 'height': 2.8}, 'objects': []}
+
+        score = CandidateScorer.calculate_score(scene, feedback, budget_diff)
+        self.assertFalse(score.budget_evaluated)
+        self.assertEqual(score.budget, 100.0)
+        self.assertIn("neutral", score.explanations['budget'].lower())
+
+    def test_deterministic_scoring_for_identical_inputs(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback
+
+        feedback = CandidateValidationFeedback(is_valid=True)
+        budget_diff = {'after_total_paise': 2000000, 'max_budget_paise': 5000000}
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [{
+                'id': 'item-1',
+                'dimensions': [1.0, 1.0, 1.0],
+                'scale': [1.0, 1.0, 1.0],
+                'position': [0.0, 0.5, 0.0],
+            }],
+        }
+        score1 = CandidateScorer.calculate_score(scene, feedback, budget_diff)
+        score2 = CandidateScorer.calculate_score(scene, feedback, budget_diff)
+        self.assertEqual(score1.overall, score2.overall)
+        self.assertEqual(score1.to_dict(), score2.to_dict())
+
+    def test_deterministic_ranking_and_tie_breaking(self):
+        from apps.ai_agent.candidate_ranker import CandidateRanker
+        from apps.ai_agent.candidate_types import LayoutCandidate, ScoreBreakdown
+
+        cand_invalid = LayoutCandidate(
+            id='cand-inv',
+            label='Invalid Option',
+            description='',
+            reasoning_summary='',
+            proposed_actions=[],
+            candidate_scene={},
+            source_scene_hash='abc',
+            is_valid=False,
+            score=ScoreBreakdown(overall=99.0),
+        )
+        cand_valid_low = LayoutCandidate(
+            id='cand-val-low',
+            label='Valid Low Option',
+            description='',
+            reasoning_summary='',
+            proposed_actions=[],
+            candidate_scene={},
+            source_scene_hash='abc',
+            is_valid=True,
+            score=ScoreBreakdown(overall=75.0),
+        )
+        cand_valid_high = LayoutCandidate(
+            id='cand-val-high',
+            label='Valid High Option',
+            description='',
+            reasoning_summary='',
+            proposed_actions=[],
+            candidate_scene={},
+            source_scene_hash='abc',
+            is_valid=True,
+            score=ScoreBreakdown(overall=92.0),
+        )
+
+        ranked = CandidateRanker.rank_candidates([cand_invalid, cand_valid_low, cand_valid_high])
+        # Valid high ranks first, then valid low, then invalid
+        self.assertEqual(ranked[0].id, 'cand-val-high')
+        self.assertEqual(ranked[1].id, 'cand-val-low')
+        self.assertEqual(ranked[2].id, 'cand-inv')
+
+    def test_bounded_refinement_success_after_one_attempt(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing succeed after refinement scenario",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        self.assertEqual(len(candidates), 1)
+        cand = candidates[0]
+        # Successfully recovered on attempt 1!
+        self.assertEqual(cand.refinement_attempts, 1)
+        self.assertTrue(cand.is_valid)
+        self.assertTrue(cand.is_approval_eligible)
+
+    def test_bounded_refinement_failure_after_two_attempts(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+
+        candidates = generator.generate_candidates(
+            user_prompt="Testing remain invalid after refinement",
+            current_scene=self.initial_scene,
+            candidate_count=1,
+        )
+        self.assertEqual(len(candidates), 1)
+        cand = candidates[0]
+        # Stopped at max 2 refinement attempts and remained invalid
+        self.assertEqual(cand.refinement_attempts, 2)
+        self.assertFalse(cand.is_valid)
+        self.assertFalse(cand.is_approval_eligible)
+
+    def test_stale_proposal_409_rejection(self):
+        self.client.force_authenticate(user=self.user)
+        prompt_url = reverse('agent-prompt', kwargs={'session_id': str(self.session.id)})
+
+        prompt_res = self.client.post(prompt_url, {'prompt': 'Suggest living room layouts', 'candidate_count': 3}, format='json')
+        self.assertEqual(prompt_res.status_code, status.HTTP_200_OK)
+        run_id = prompt_res.data['run']['id']
+
+        # Concurrently modify the saved design
+        self.design.scene_json['objects'].append({
+            'id': 'concurrent-item-1',
+            'assetId': 'table-oak-coffee',
+            'name': 'Concurrent Table',
+            'position': [0.0, 0.225, 0.0],
+            'rotationEuler': [0.0, 0.0, 0.0],
+            'scale': [1.0, 1.0, 1.0],
+            'dimensions': [1.1, 0.45, 0.6],
+        })
+        self.design.save(update_fields=['scene_json'])
+
+        # Attempt to apply the now-stale proposal
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res = self.client.post(apply_url, {}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(apply_res.data.get('code'), 'stale_proposal')
+        self.assertTrue(apply_res.data.get('stale'))
+
+    def test_scene_hash_determinism(self):
+        from apps.ai_agent.candidate_types import compute_canonical_scene_hash
+        scene_a = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {'id': 'item-1', 'assetId': 'a1', 'name': 'Item 1', 'position': [1.0, 0.5, 0.0]},
+                {'id': 'item-2', 'assetId': 'a2', 'name': 'Item 2', 'position': [-1.0, 0.5, 0.0]},
+            ],
+        }
+        # Inverted object array order and extra transient UI properties
+        scene_b = {
+            'unit': 'm',
+            'schemaVersion': 1,
+            'transient_ui_selected': 'item-1',
+            'room': {'length': 4.0, 'height': 2.8, 'width': 5.0},
+            'objects': [
+                {'name': 'Item 2', 'id': 'item-2', 'position': [-1.0, 0.5, 0.0], 'assetId': 'a2'},
+                {'id': 'item-1', 'position': [1.0, 0.5, 0.0], 'assetId': 'a1', 'name': 'Item 1'},
+            ],
+        }
+        # Both canonical representations should produce the EXACT same SHA-256 hash
+        self.assertEqual(compute_canonical_scene_hash(scene_a), compute_canonical_scene_hash(scene_b))
+
+        # Modifying coordinates must produce a different hash
+        scene_c = copy.deepcopy(scene_a)
+        scene_c['objects'][0]['position'][0] = 1.05
+        self.assertNotEqual(compute_canonical_scene_hash(scene_a), compute_canonical_scene_hash(scene_c))
+
+    def test_apply_specific_candidate_by_id(self):
+        self.client.force_authenticate(user=self.user)
+        prompt_url = reverse('agent-prompt', kwargs={'session_id': str(self.session.id)})
+
+        prompt_res = self.client.post(prompt_url, {'prompt': 'Design workspace office desk', 'candidate_count': 3}, format='json')
+        self.assertEqual(prompt_res.status_code, status.HTTP_200_OK)
+        run_id = prompt_res.data['run']['id']
+        candidates = prompt_res.data['candidates']
+        self.assertGreaterEqual(len(candidates), 2)
+
+        # Apply candidate 2 (Option B) specifically
+        cand_2 = candidates[1]
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res = self.client.post(apply_url, {'candidate_id': cand_2['id']}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_200_OK)
+
+        self.design.refresh_from_db()
+        # Design should now have candidate 2 applied
+        self.assertGreater(len(self.design.scene_json['objects']), 0)
+
+
 

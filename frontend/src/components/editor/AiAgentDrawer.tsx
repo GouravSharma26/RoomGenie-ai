@@ -28,7 +28,8 @@ import {
   type AgentSessionRecord, 
   type AgentRunRecord, 
   type ProposedAction,
-  type BudgetDiff 
+  type BudgetDiff,
+  type LayoutCandidateRecord
 } from '../../services/agentApi';
 import type { CanonicalScene } from '../../types/scene';
 import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
@@ -60,7 +61,10 @@ interface MessageItem {
   run?: AgentRunRecord;
   candidateScene?: CanonicalScene;
   budgetDiff?: BudgetDiff;
+  candidates?: LayoutCandidateRecord[];
+  selectedCandidateId?: string;
 }
+
 
 const QUICK_PROMPTS = [
   'Add an armchair and create a cozy reading corner',
@@ -158,17 +162,23 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     try {
       const walkabilityAnalysis = useEditorStore.getState().walkabilityAnalysis;
       const spatialContext = buildSpatialContext(scene, walkabilityAnalysis);
-      const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext);
+      const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext, 3);
+      const candidatesList = response.candidates || response.run?.validation_results?.candidates || [];
+      const selectedId = response.selected_candidate?.id || candidatesList[0]?.id;
+
       const assistantMsg: MessageItem = {
         id: response.run.id,
         sender: 'assistant',
-        text: response.run.ai_response_text || 'Here is my proposed design modification:',
+        text: response.run.ai_response_text || 'Here are my proposed design alternatives:',
         timestamp: getFormattedTime(),
         run: response.run,
         candidateScene: response.candidate_scene,
         budgetDiff: response.budget_diff,
+        candidates: candidatesList,
+        selectedCandidateId: selectedId,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
 
       // Telemetry: record AI proposal multi-tier validity & explicit room-containment violations
       const budgetDiff = response.budget_diff || response.run?.validation_results?.budget_diff;
@@ -251,15 +261,26 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     }
   }, [session, isLoading, scene]);
 
-  const handleApplyProposal = useCallback(async (msg: MessageItem) => {
+  const handleSelectCandidate = useCallback((msgId: string, candId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, selectedCandidateId: candId } : m
+      )
+    );
+  }, []);
+
+  const handleApplyProposal = useCallback(async (msg: MessageItem, candidateId?: string) => {
     if (!msg.run || msg.run.status !== 'proposed') return;
 
     const targetRunId = msg.run.id;
+    const targetCandidateId = candidateId || msg.selectedCandidateId;
     setActionInProgressId(targetRunId);
     setErrorMsg(null);
 
     try {
-      const appliedResult = await applyAgentRun(targetRunId, scene);
+      const appliedResult = targetCandidateId
+        ? await applyAgentRun(targetRunId, scene, targetCandidateId)
+        : await applyAgentRun(targetRunId, scene);
       
       // Update editor 3D store
       loadScene(appliedResult.applied_scene);
@@ -284,6 +305,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       setActionInProgressId(null);
     }
   }, [scene, loadScene, onSceneApplied]);
+
 
   const handleRejectProposal = useCallback(async (msg: MessageItem) => {
     if (!msg.run || msg.run.status !== 'proposed') return;
@@ -456,136 +478,305 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                   </div>
                 )}
 
-                {/* Actions List */}
-                <div className="space-y-1.5">
-                  {msg.run.proposed_actions.map((act: ProposedAction, idx: number) => (
-                    <div
-                      key={idx}
-                      className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 text-[11px] flex flex-wrap items-center justify-between gap-2"
-                      data-testid={`proposed-action-${idx}`}
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-[200px]">
-                        {act.name === 'add_furniture' && <PlusCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                        {act.name === 'set_material' && <Palette className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-                        {act.name === 'clear_room' && <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
-                        {act.name === 'attach_to_socket' && <Link2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
-                        {act.name === 'propose_zone_arrangement' && <LayoutGrid className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                        {act.name !== 'add_furniture' && act.name !== 'set_material' && act.name !== 'clear_room' && act.name !== 'attach_to_socket' && act.name !== 'propose_zone_arrangement' && (
-                          <RefreshCw className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        )}
-                        <span className="font-mono text-indigo-300 font-medium shrink-0">{act.name}</span>
-                        <span className="text-slate-400 truncate">
-                          {act.name === 'attach_to_socket' ? (
-                            `${act.parameters?.child_object_id || 'child'} → ${act.parameters?.anchor_object_id || 'anchor'} (${act.parameters?.socket_id || 'socket'})`
-                          ) : act.name === 'propose_zone_arrangement' ? (
-                            `[${act.parameters?.zone_type?.toUpperCase() || 'ZONE'}] ${act.parameters?.intent || ''}`
-                          ) : (
-                            act.parameters?.asset_id || act.parameters?.color || act.parameters?.object_id || ''
-                          )}
-                        </span>
-                      </div>
-                      {act.name === 'attach_to_socket' && typeof act.parameters?.gap_meters === 'number' && (
-                        <span className="text-[10px] text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
-                          {act.parameters.gap_meters.toFixed(2)}m gap
-                        </span>
-                      )}
-                      {act.name === 'propose_zone_arrangement' && act.parameters?.requirements?.preserve_existing_furniture && (
-                        <span className="text-[10px] text-amber-300 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
-                          Preserve items
-                        </span>
-                      )}
-                      {Array.isArray(act.parameters?.position) && (
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                          [{act.parameters.position.map((n: number) => n.toFixed(1)).join(', ')}]
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {/* Candidate Selection Tabs (Phase 6.3) */}
+                {(() => {
+                  const candidates = msg.candidates || [];
+                  const hasCandidates = candidates.length > 0;
+                  const activeCand = hasCandidates
+                    ? candidates.find((c) => c.id === msg.selectedCandidateId) || candidates[0]
+                    : null;
+                  const displayedActions = activeCand ? activeCand.proposed_actions : msg.run.proposed_actions;
+                  const displayedBudgetDiff = activeCand?.budget_diff || msg.budgetDiff;
+                  const fatalIssues = activeCand
+                    ? (activeCand.validation_feedback?.fatal_errors || activeCand.issues?.filter((i) => i.severity === 'fatal') || [])
+                    : (msg.run.validation_results?.errors || []).map((e: string) => ({ code: 'error', severity: 'fatal' as const, message: e }));
+                  const advisoryIssues = activeCand
+                    ? (activeCand.validation_feedback?.advisory_warnings || activeCand.issues?.filter((i) => i.severity === 'warning' || i.severity === 'info') || [])
+                    : (msg.run.validation_results?.warnings || []).map((w: string) => ({ code: 'warning', severity: 'warning' as const, message: w }));
+                  const isApprovalEligible = activeCand
+                    ? (activeCand.is_valid && activeCand.is_approval_eligible)
+                    : (msg.run.validation_results?.is_valid !== false);
 
-                {/* Authoritative Budget Diff */}
-                {msg.budgetDiff && (() => {
-                  const beforePaise = msg.budgetDiff.before_total_paise ?? msg.budgetDiff.before_paise ?? 0;
-                  const afterPaise = msg.budgetDiff.after_total_paise ?? msg.budgetDiff.after_paise ?? 0;
-                  const diffPaise = msg.budgetDiff.diff_paise ?? (afterPaise - beforePaise);
                   return (
-                    <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-300 font-medium">
-                        <Coins className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Budget Impact:</span>
+                    <>
+                      {hasCandidates && (
+                        <div className="space-y-1.5" data-testid="candidate-selection-section">
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                            <span>Layout Candidates ({candidates.length})</span>
+                            <span className="text-[10px] text-slate-500 font-mono">Ranked by Quality</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5" data-testid="candidate-selector-tabs">
+                            {candidates.map((cand, candIdx) => {
+                              const isSelected = cand.id === activeCand?.id;
+                              const rankDisplay = cand.rank ?? (candIdx + 1);
+                              return (
+                                <button
+                                  key={cand.id}
+                                  type="button"
+                                  onClick={() => handleSelectCandidate(msg.id, cand.id)}
+                                  data-testid={`candidate-tab-${cand.id}`}
+                                  className={`p-2 rounded-lg border text-left transition relative flex flex-col justify-between ${
+                                    isSelected
+                                      ? 'bg-indigo-950/80 border-indigo-500 text-white shadow-md'
+                                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/80'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="font-bold text-xs truncate">{cand.label}</span>
+                                    <span
+                                      className={`w-2 h-2 rounded-full ${
+                                        cand.is_valid ? 'bg-emerald-400' : 'bg-rose-400'
+                                      }`}
+                                      title={cand.is_valid ? 'Valid candidate' : 'Hard failure'}
+                                    />
+                                  </div>
+                                  <div className="mt-1 flex items-baseline justify-between w-full text-[10px]">
+                                    <span className="text-slate-400">Rank #{rankDisplay}</span>
+                                    <span className={`font-mono font-semibold ${
+                                      cand.is_valid ? (cand.score.overall >= 80 ? 'text-emerald-400' : 'text-indigo-300') : 'text-rose-400'
+                                    }`}>
+                                      {cand.score.overall.toFixed(1)}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Active Candidate Detail Card & 6-Dimension Score Breakdown */}
+                      {activeCand && (
+                        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2.5" data-testid="active-candidate-card">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-xs text-white">{activeCand.label}{activeCand.intent ? `: ${activeCand.intent}` : ''}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-0.5">{activeCand.description}</p>
+                            </div>
+                            <div className="flex flex-col items-end shrink-0" data-testid="active-candidate-score">
+                              <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold font-mono border ${
+                                activeCand.is_valid
+                                  ? (activeCand.score.overall >= 80 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30')
+                                  : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                              }`}>
+                                {activeCand.score.overall.toFixed(1)} / 100
+                              </div>
+                              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mt-0.5">
+                                {activeCand.is_valid ? 'Quality Score' : 'Hard Failure'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 6-Component Score Breakdown Grid */}
+                          <div className="pt-1.5 border-t border-slate-800/80">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                              Deterministic Score Breakdown
+                            </span>
+                            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Boundary (25%)</span>
+                                <span className={`font-mono font-medium ${activeCand.score.boundary === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                  {activeCand.score.boundary.toFixed(0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Collision (25%)</span>
+                                <span className={`font-mono font-medium ${activeCand.score.collision === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                  {activeCand.score.collision.toFixed(0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Circulation (20%)</span>
+                                <span className={`font-mono font-medium ${activeCand.score.circulation >= 80 ? 'text-emerald-400' : 'text-indigo-300'}`}>
+                                  {activeCand.score.circulation.toFixed(0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Clearances (15%)</span>
+                                <span className={`font-mono font-medium ${activeCand.score.clearance >= 80 ? 'text-emerald-400' : 'text-indigo-300'}`}>
+                                  {activeCand.score.clearance.toFixed(0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Utilization (10%)</span>
+                                <span className="font-mono font-medium text-indigo-300">
+                                  {activeCand.score.utilization.toFixed(0)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="text-slate-400">Budget (5%)</span>
+                                <span className={`font-mono font-medium ${activeCand.score.budget >= 80 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {activeCand.score.budget.toFixed(0)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Identified Trade-offs */}
+                          {activeCand.trade_offs && activeCand.trade_offs.length > 0 && (
+                            <div className="pt-1 border-t border-slate-800/80">
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                                Identified Trade-offs
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {activeCand.trade_offs.map((t, idx) => (
+                                  <span key={idx} className="text-[10px] bg-slate-950/80 text-slate-300 border border-slate-800 px-2 py-0.5 rounded-full">
+                                    • {t}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Refinement Badge if attempts > 1 */}
+                          {typeof activeCand.refinement_attempts === 'number' && activeCand.refinement_attempts > 1 && (
+                            <div className="text-[10px] text-cyan-300/90 italic flex items-center gap-1">
+                              <RefreshCw className="w-3 h-3 text-cyan-400 shrink-0" />
+                              <span>Refined over {activeCand.refinement_attempts} attempts using automated feedback</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Actions List */}
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                          {activeCand ? `${activeCand.label} Actions (${displayedActions.length})` : 'Proposed Actions'}
+                        </div>
+                        {displayedActions.map((act: ProposedAction, idx: number) => (
+                          <div
+                            key={idx}
+                            className="bg-slate-900/90 border border-slate-800 rounded-lg p-2 text-[11px] flex flex-wrap items-center justify-between gap-2"
+                            data-testid={`proposed-action-${idx}`}
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-[200px]">
+                              {act.name === 'add_furniture' && <PlusCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                              {act.name === 'set_material' && <Palette className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                              {act.name === 'clear_room' && <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                              {act.name === 'attach_to_socket' && <Link2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                              {act.name === 'propose_zone_arrangement' && <LayoutGrid className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                              {act.name !== 'add_furniture' && act.name !== 'set_material' && act.name !== 'clear_room' && act.name !== 'attach_to_socket' && act.name !== 'propose_zone_arrangement' && (
+                                <RefreshCw className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              )}
+                              <span className="font-mono text-indigo-300 font-medium shrink-0">{act.name}</span>
+                              <span className="text-slate-400 truncate">
+                                {act.name === 'attach_to_socket' ? (
+                                  `${act.parameters?.child_object_id || 'child'} → ${act.parameters?.anchor_object_id || 'anchor'} (${act.parameters?.socket_id || 'socket'})`
+                                ) : act.name === 'propose_zone_arrangement' ? (
+                                  `[${act.parameters?.zone_type?.toUpperCase() || 'ZONE'}] ${act.parameters?.intent || ''}`
+                                ) : (
+                                  act.parameters?.asset_id || act.parameters?.color || act.parameters?.object_id || ''
+                                )}
+                              </span>
+                            </div>
+                            {act.name === 'attach_to_socket' && typeof act.parameters?.gap_meters === 'number' && (
+                              <span className="text-[10px] text-cyan-300 bg-cyan-950/60 border border-cyan-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
+                                {act.parameters.gap_meters.toFixed(2)}m gap
+                              </span>
+                            )}
+                            {act.name === 'propose_zone_arrangement' && act.parameters?.requirements?.preserve_existing_furniture && (
+                              <span className="text-[10px] text-amber-300 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono shrink-0">
+                                Preserve items
+                              </span>
+                            )}
+                            {Array.isArray(act.parameters?.position) && (
+                              <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                                [{act.parameters.position.map((n: number) => n.toFixed(1)).join(', ')}]
+                              </span>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex items-center gap-2 font-mono">
-                        <span className="text-slate-400 line-through text-[11px]">
-                          ₹{(beforePaise / 100).toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-white font-bold">
-                          ₹{(afterPaise / 100).toLocaleString('en-IN')}
-                        </span>
-                        <span
-                          className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
-                            diffPaise > 0
-                              ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                              : diffPaise < 0
-                              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {diffPaise > 0 ? '+' : ''}₹
-                          {(diffPaise / 100).toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    </div>
+
+                      {/* Authoritative Budget Diff */}
+                      {displayedBudgetDiff && (() => {
+                        const beforePaise = displayedBudgetDiff.before_total_paise ?? displayedBudgetDiff.before_paise ?? 0;
+                        const afterPaise = displayedBudgetDiff.after_total_paise ?? displayedBudgetDiff.after_paise ?? 0;
+                        const diffPaise = displayedBudgetDiff.diff_paise ?? (afterPaise - beforePaise);
+                        return (
+                          <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5 text-slate-300 font-medium">
+                              <Coins className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Budget Impact:</span>
+                            </div>
+                            <div className="flex items-center gap-2 font-mono">
+                              <span className="text-slate-400 line-through text-[11px]">
+                                ₹{(beforePaise / 100).toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-white font-bold">
+                                ₹{(afterPaise / 100).toLocaleString('en-IN')}
+                              </span>
+                              <span
+                                className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                                  diffPaise > 0
+                                    ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                                    : diffPaise < 0
+                                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {diffPaise > 0 ? '+' : ''}₹
+                                {(diffPaise / 100).toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Validation Warnings/Errors: Hard Blocking Errors vs Soft Advisory Warnings */}
+                      {fatalIssues.length > 0 && (
+                        <div className="text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/50 rounded p-2 space-y-1" data-testid="fatal-issues-block">
+                          <div className="flex items-center gap-1 font-semibold text-rose-400">
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            <span>Hard Constraint Failures (Blocking Approval):</span>
+                          </div>
+                          {fatalIssues.map((e: { message: string }, idx: number) => (
+                            <div key={idx} className="pl-4">• {e.message}</div>
+                          ))}
+                        </div>
+                      )}
+                      {advisoryIssues.length > 0 && (
+                        <div className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded p-2 space-y-1" data-testid="advisory-issues-block">
+                          <div className="flex items-center gap-1 font-semibold text-amber-400">
+                            <Sparkles className="w-3 h-3 shrink-0" />
+                            <span>Advisory Spacing &amp; Orientation Warnings:</span>
+                          </div>
+                          {advisoryIssues.map((w: { message: string }, idx: number) => (
+                            <div key={idx} className="pl-4">• {w.message}</div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 2-Phase Approval Controls */}
+                      {msg.run.status === 'proposed' && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => handleApplyProposal(msg, activeCand?.id)}
+                            disabled={actionInProgressId === msg.run.id || !isApprovalEligible}
+                            data-testid="apply-proposal-btn"
+                            className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                          >
+                            {actionInProgressId === msg.run.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                            <span>{activeCand ? `Approve ${activeCand.label}` : 'Approve & Apply to 3D Scene'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleRejectProposal(msg)}
+                            disabled={actionInProgressId === msg.run.id}
+                            className="py-2 px-3 rounded-lg bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-slate-300 font-medium text-xs border border-slate-700 transition active:scale-95 disabled:opacity-50"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
-
-                {/* Validation Warnings/Errors: Hard Blocking Errors vs Soft Advisory Warnings */}
-                {msg.run.validation_results?.errors?.length > 0 && (
-                  <div className="text-[10px] text-rose-300 bg-rose-950/40 border border-rose-900/50 rounded p-2 space-y-1">
-                    <div className="flex items-center gap-1 font-semibold text-rose-400">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>Hard Constraint Failures:</span>
-                    </div>
-                    {msg.run.validation_results.errors.map((e, idx) => (
-                      <div key={idx} className="pl-4">• {e}</div>
-                    ))}
-                  </div>
-                )}
-                {msg.run.validation_results?.warnings?.length > 0 && (
-                  <div className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded p-2 space-y-1">
-                    <div className="flex items-center gap-1 font-semibold text-amber-400">
-                      <Sparkles className="w-3 h-3 shrink-0" />
-                      <span>Advisory Spacing &amp; Orientation Warnings:</span>
-                    </div>
-                    {msg.run.validation_results.warnings.map((w, idx) => (
-                      <div key={idx} className="pl-4">• {w}</div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 2-Phase Approval Controls */}
-                {msg.run.status === 'proposed' && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleApplyProposal(msg)}
-                      disabled={actionInProgressId === msg.run.id || msg.run.validation_results?.is_valid === false}
-                      className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow-md shadow-emerald-600/20 disabled:opacity-50"
-                    >
-                      {actionInProgressId === msg.run.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5" />
-                      )}
-                      <span>Approve &amp; Apply to 3D Scene</span>
-                    </button>
-                    <button
-                      onClick={() => handleRejectProposal(msg)}
-                      disabled={actionInProgressId === msg.run.id}
-                      className="py-2 px-3 rounded-lg bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-slate-300 font-medium text-xs border border-slate-700 transition active:scale-95 disabled:opacity-50"
-                    >
-                      Discard
-                    </button>
-                  </div>
-                )}
               </div>
             )}
           </div>

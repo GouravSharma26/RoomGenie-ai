@@ -253,3 +253,117 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             latency_ms=latency_ms,
             raw_metadata=metadata,
         )
+
+    def generate_candidate_variants(
+        self,
+        user_prompt: str,
+        current_scene: dict[str, Any],
+        candidate_count: int = 3,
+        conversation_history: list[dict[str, str]] | None = None,
+        catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
+        user_requirements: dict[str, Any] | None = None,
+    ) -> list[DesignProposalResult]:
+        """
+        Generates multiple distinct candidate layout proposals.
+        If live Gemini API key is unavailable or encounters errors, falls back to MockDesignLLMAdapter.
+        """
+        if not self.api_key:
+            return self.mock_fallback.generate_candidate_variants(
+                user_prompt=user_prompt,
+                current_scene=current_scene,
+                candidate_count=candidate_count,
+                conversation_history=conversation_history,
+                catalogue_context=catalogue_context,
+                spatial_context=spatial_context,
+                user_requirements=user_requirements,
+            )
+
+        # Diverse stylistic/spatial directions for multi-candidate generation
+        directions = [
+            ("Option A: Balanced & Functional", "Focus on optimal ergonomic spacing and functional convenience."),
+            ("Option B: Open Circulation", "Focus on maximizing open floor space and wide transit routes."),
+            ("Option C: Focused & Cozy", "Focus on an intimate, defined zone arrangement."),
+        ]
+
+        variants: list[DesignProposalResult] = []
+        for i in range(min(candidate_count, len(directions))):
+            label, intent_hint = directions[i]
+            augmented_prompt = f"{user_prompt}\nDesign directive for this variant: {intent_hint}"
+            try:
+                proposal = self.generate_design_proposal(
+                    user_prompt=augmented_prompt,
+                    current_scene=current_scene,
+                    conversation_history=conversation_history,
+                    catalogue_context=catalogue_context,
+                    spatial_context=spatial_context,
+                )
+                proposal.candidate_label = label
+                proposal.description = f"{label}: {intent_hint}"
+                variants.append(proposal)
+            except Exception as exc:
+                logger.warning("Failed to generate Gemini variant %d: %s", i + 1, exc)
+
+        if not variants:
+            return self.mock_fallback.generate_candidate_variants(
+                user_prompt=user_prompt,
+                current_scene=current_scene,
+                candidate_count=candidate_count,
+                conversation_history=conversation_history,
+                catalogue_context=catalogue_context,
+                spatial_context=spatial_context,
+                user_requirements=user_requirements,
+            )
+
+        return variants
+
+    def refine_candidate_proposal(
+        self,
+        user_prompt: str,
+        current_scene: dict[str, Any],
+        failed_proposal: DesignProposalResult,
+        validation_feedback: dict[str, Any],
+        catalogue_context: list[dict[str, Any]] | None = None,
+        spatial_context: dict[str, Any] | None = None,
+        attempt: int = 1,
+    ) -> DesignProposalResult:
+        """
+        Refines a proposal using live Gemini instructions or falls back to mock.
+        """
+        if not self.api_key:
+            return self.mock_fallback.refine_candidate_proposal(
+                user_prompt=user_prompt,
+                current_scene=current_scene,
+                failed_proposal=failed_proposal,
+                validation_feedback=validation_feedback,
+                catalogue_context=catalogue_context,
+                spatial_context=spatial_context,
+                attempt=attempt,
+            )
+
+        errors_summary = "; ".join(validation_feedback.get('errors', []))
+        refinement_prompt = (
+            f"{user_prompt}\n"
+            f"PREVIOUS ATTEMPT FAILED VALIDATION (Attempt {attempt}): {errors_summary}.\n"
+            f"Please revise your tool calls to fix these physical collisions, boundary breaches, or clearance issues."
+        )
+        try:
+            refined = self.generate_design_proposal(
+                user_prompt=refinement_prompt,
+                current_scene=current_scene,
+                catalogue_context=catalogue_context,
+                spatial_context=spatial_context,
+            )
+            refined.candidate_label = failed_proposal.candidate_label
+            return refined
+        except Exception:
+            return self.mock_fallback.refine_candidate_proposal(
+                user_prompt=user_prompt,
+                current_scene=current_scene,
+                failed_proposal=failed_proposal,
+                validation_feedback=validation_feedback,
+                catalogue_context=catalogue_context,
+                spatial_context=spatial_context,
+                attempt=attempt,
+            )
+

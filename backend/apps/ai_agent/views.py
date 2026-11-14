@@ -11,9 +11,12 @@ from apps.ai_agent.serializers import (
 )
 from apps.ai_agent.adapters import get_design_llm_adapter
 from apps.ai_agent.tools import validate_and_simulate_actions
+from apps.ai_agent.candidate_types import compute_canonical_scene_hash
+from apps.ai_agent.candidate_generator import CandidateGenerator
 from apps.designs.models import Design
 from apps.designs.validators import validate_canonical_scene
 from apps.furniture.models import FurnitureAsset
+
 
 
 class AgentSessionViewSet(viewsets.ModelViewSet):
@@ -83,63 +86,97 @@ class AgentPromptView(APIView):
             for i, r in enumerate(session.runs.order_by('created_at')[:6])
         ]
 
-        # Call adapter
+        # Extract candidate parameters
+        candidate_count = serializer.validated_data.get('candidate_count', 3)
+        user_requirements = serializer.validated_data.get('user_requirements')
+        max_budget = session.design.budget if (session.design and session.design.budget) else None
+
+        # Call CandidateGenerator orchestrator
         adapter = get_design_llm_adapter()
-        proposal = adapter.generate_design_proposal(
+        generator = CandidateGenerator(adapter=adapter)
+        candidates = generator.generate_candidates(
             user_prompt=prompt,
             current_scene=current_scene,
+            candidate_count=candidate_count,
+            max_budget_paise=max_budget,
+            user_requirements=user_requirements,
             conversation_history=history,
             catalogue_context=catalogue_items,
             spatial_context=spatial_context,
         )
 
-        # Determine budget limit if session attached to design with budget
-        max_budget = session.design.budget if (session.design and session.design.budget) else None
+        source_scene_hash = compute_canonical_scene_hash(current_scene)
 
-        # Deterministically simulate and validate proposed actions
-        sim_result = validate_and_simulate_actions(current_scene, proposal.proposed_actions, max_budget_paise=max_budget)
+        # Primary candidate (top-ranked candidate or fallback)
+        primary_candidate = candidates[0] if candidates else None
+        proposed_actions = primary_candidate.proposed_actions if primary_candidate else []
+        candidate_scene = primary_candidate.candidate_scene if primary_candidate else current_scene
+        ai_response_text = primary_candidate.reasoning_summary if primary_candidate else "No candidates generated."
+        budget_diff = primary_candidate.budget_diff if primary_candidate else {}
+        is_valid = primary_candidate.is_valid if primary_candidate else False
+        schema_valid = primary_candidate.schema_valid if primary_candidate else True
+        reference_valid = primary_candidate.reference_valid if primary_candidate else True
+        domain_valid = primary_candidate.domain_valid if primary_candidate else is_valid
+        budget_valid = primary_candidate.budget_valid if primary_candidate else True
+        schema_errors = primary_candidate.schema_errors if primary_candidate else []
+        reference_errors = primary_candidate.reference_errors if primary_candidate else []
+        domain_errors = primary_candidate.domain_errors if primary_candidate else []
+        budget_errors = primary_candidate.budget_errors if primary_candidate else []
+        errors = [e.message for e in primary_candidate.validation_feedback.fatal_errors] if primary_candidate else []
+        warnings = [w.message for w in primary_candidate.validation_feedback.advisory_warnings] if primary_candidate else []
+
+        candidates_data = [c.to_dict() for c in candidates]
 
         # Persist AgentRun with base and candidate snapshots
         run = AgentRun.objects.create(  # pyrefly: ignore[missing-attribute]
             session=session,
             user_prompt=prompt,
             status=AgentRun.STATUS_PROPOSED,
-            ai_response_text=proposal.text_response,
-            proposed_actions=proposal.proposed_actions,
+            ai_response_text=ai_response_text,
+            proposed_actions=proposed_actions,
             validation_results={
-                'is_valid': sim_result['is_valid'],
-                'schema_valid': sim_result['schema_valid'],
-                'reference_valid': sim_result['reference_valid'],
-                'domain_valid': sim_result['domain_valid'],
-                'budget_valid': sim_result['budget_valid'],
-                'schema_errors': sim_result.get('schema_errors', []),
-                'reference_errors': sim_result.get('reference_errors', []),
-                'domain_errors': sim_result.get('domain_errors', []),
-                'budget_errors': sim_result.get('budget_errors', []),
-                'errors': sim_result['errors'],
-                'warnings': sim_result['warnings'],
-                'budget_diff': sim_result['budget_diff'],
+                'is_valid': is_valid,
+                'schema_valid': schema_valid,
+                'reference_valid': reference_valid,
+                'domain_valid': domain_valid,
+                'budget_valid': budget_valid,
+                'schema_errors': schema_errors,
+                'reference_errors': reference_errors,
+                'domain_errors': domain_errors,
+                'budget_errors': budget_errors,
+                'errors': errors,
+                'warnings': warnings,
+                'budget_diff': budget_diff,
+                'candidates': candidates_data,
+                'candidates_count': len(candidates),
+                'valid_candidates_count': sum(1 for c in candidates if c.is_valid),
+                'selected_candidate_id': primary_candidate.id if primary_candidate else None,
+                'source_scene_hash': source_scene_hash,
             },
             provider_metadata={
-                'provider': proposal.provider,
-                'model': proposal.model,
-                'latency_ms': proposal.latency_ms,
-                'raw_metadata': proposal.raw_metadata,
+                'provider': getattr(adapter, 'provider_name', 'mock' if not getattr(adapter, 'api_key', None) else 'gemini'),
+                'model': getattr(adapter, 'model_name', 'deterministic-mock-v1'),
+                'candidates_generated': len(candidates),
+                'source_scene_hash': source_scene_hash,
             },
             base_scene_snapshot=current_scene,
-            candidate_scene_snapshot=sim_result['candidate_scene'],
+            candidate_scene_snapshot=candidate_scene,
         )
 
         return Response({
             'run': AgentRunSerializer(run).data,
-            'candidate_scene': sim_result['candidate_scene'],
-            'budget_diff': sim_result['budget_diff'],
-            'schema_valid': sim_result['schema_valid'],
-            'reference_valid': sim_result['reference_valid'],
-            'domain_valid': sim_result['domain_valid'],
-            'budget_valid': sim_result['budget_valid'],
+            'candidates': candidates_data,
+            'selected_candidate': primary_candidate.to_dict() if primary_candidate else None,
+            'source_scene_hash': source_scene_hash,
+            'candidate_scene': candidate_scene,
+            'budget_diff': budget_diff,
+            'schema_valid': schema_valid,
+            'reference_valid': reference_valid,
+            'domain_valid': domain_valid,
+            'budget_valid': budget_valid,
             'requires_approval': True,
         }, status=status.HTTP_200_OK)
+
 
 
 class AgentApplyRunView(APIView):
@@ -148,6 +185,8 @@ class AgentApplyRunView(APIView):
     Applies the proposed agent actions into the design scene after explicit user approval.
     Executes inside transaction.atomic() with select_for_update() row locks on AgentRun
     and Design to guarantee atomicity and eliminate race conditions on concurrent apply requests.
+    Supports selecting an explicit candidate_id from a multi-candidate run.
+    Enforces deterministic SHA-256 stale proposal rejection.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -185,19 +224,8 @@ class AgentApplyRunView(APIView):
                 )
 
             # For sessions attached to saved designs, use the authoritative locked saved scene as the apply base.
-            # Any client-supplied scene_json in the apply request is ignored.
             if design:
                 base_scene = design.scene_json
-                # Recheck snapshot against locked design row to reject stale proposals when design changed concurrently
-                if run.base_scene_snapshot is not None and base_scene != run.base_scene_snapshot:
-                    return Response(
-                        {
-                            "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
-                            "code": "stale_proposal",
-                            "stale": True,
-                        },
-                        status=status.HTTP_409_CONFLICT,
-                    )
             else:
                 base_scene = run.base_scene_snapshot or {
                     'schemaVersion': 1,
@@ -206,13 +234,62 @@ class AgentApplyRunView(APIView):
                     'objects': [],
                 }
 
+            # Check Stale Proposal Protection: Compare SHA-256 hashes
+            current_scene_hash = compute_canonical_scene_hash(base_scene)
+            saved_scene_hash = None
+            if isinstance(run.validation_results, dict):
+                saved_scene_hash = run.validation_results.get('source_scene_hash')
+            if not saved_scene_hash and run.base_scene_snapshot is not None:
+                saved_scene_hash = compute_canonical_scene_hash(run.base_scene_snapshot)
+
+            if saved_scene_hash and current_scene_hash != saved_scene_hash:
+                return Response(
+                    {
+                        "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
+                        "code": "stale_proposal",
+                        "stale": True,
+                        "current_scene_hash": current_scene_hash,
+                        "source_scene_hash": saved_scene_hash,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # Fallback direct equality check against base_scene_snapshot
+            if run.base_scene_snapshot is not None and base_scene != run.base_scene_snapshot:
+                return Response(
+                    {
+                        "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
+                        "code": "stale_proposal",
+                        "stale": True,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # Resolve candidate actions (supporting candidate selection)
+            selected_cand_id = request.data.get('candidate_id')
+            candidate_actions = run.proposed_actions
+            if selected_cand_id and isinstance(run.validation_results, dict):
+                candidates_list = run.validation_results.get('candidates', [])
+                matched_cand = next((c for c in candidates_list if c.get('id') == selected_cand_id), None)
+                if matched_cand:
+                    if not matched_cand.get('is_valid', True) or not matched_cand.get('is_approval_eligible', True):
+                        return Response(
+                            {
+                                "detail": "Cannot apply invalid or ineligible candidate.",
+                                "errors": matched_cand.get('validation_feedback', {}).get('errors', []),
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    candidate_actions = matched_cand.get('proposed_actions', candidate_actions)
+
             max_budget = design.budget if (design and design.budget) else None
-            sim_result = validate_and_simulate_actions(base_scene, run.proposed_actions, max_budget_paise=max_budget)
+            sim_result = validate_and_simulate_actions(base_scene, candidate_actions, max_budget_paise=max_budget)
             if not sim_result['is_valid']:
                 return Response(
                     {"detail": "Cannot apply invalid actions.", "errors": sim_result['errors']},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
 
             applied_scene = sim_result['candidate_scene']
 

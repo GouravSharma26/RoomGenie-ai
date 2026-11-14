@@ -91,3 +91,16 @@ class AgentPromptRequestSerializer(serializers.Serializer):
         default=None,
         help_text="Optional versioned SpatialContext representation."
     )
+    candidate_count = serializers.IntegerField(
+        required=False,
+        default=3,
+        min_value=1,
+        max_value=5,
+        help_text="Number of candidate layout alternatives to generate (1 to 5, default 3)."
+    )
+    user_requirements = serializers.DictField(
+        required=False,
+        default=None,
+        help_text="Optional user constraints, e.g. required_categories, budget_paise."
+    )
+

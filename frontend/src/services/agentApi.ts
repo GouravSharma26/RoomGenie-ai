@@ -30,6 +30,60 @@ export interface BudgetDiff {
   room_violations?: string[];
 }
 
+export interface CandidateScore {
+  boundary: number;
+  collision: number;
+  circulation: number;
+  clearance: number;
+  utilization: number;
+  budget: number;
+  overall: number;
+  weights: Record<string, number>;
+  explanations?: Record<string, string>;
+  budget_evaluated?: boolean;
+}
+
+export interface CandidateIssue {
+  code: string;
+  message: string;
+  severity: 'fatal' | 'warning' | 'info';
+  object_ids?: string[];
+}
+
+export interface LayoutCandidateRecord {
+  id: string;
+  schema_version: number;
+  label: string;
+  description: string;
+  reasoning_summary: string;
+  intent?: string;
+  rank?: number;
+  proposed_actions: ProposedAction[];
+  intended_relationships?: any[];
+  candidate_scene: CanonicalScene;
+  is_valid: boolean;
+  is_approval_eligible: boolean;
+  score: CandidateScore;
+  validation_feedback: {
+    is_valid: boolean;
+    is_approval_eligible: boolean;
+    has_collisions: boolean;
+    has_boundary_breaches: boolean;
+    is_budget_compliant: boolean;
+    is_room_passable: boolean;
+    fatal_errors: CandidateIssue[];
+    advisory_warnings: CandidateIssue[];
+    errors: string[];
+    warnings: string[];
+  };
+  trade_offs?: string[];
+  issues?: CandidateIssue[];
+  refinement_attempts?: number;
+  source_scene_hash?: string;
+  created_at_ms?: number;
+  budget_diff?: BudgetDiff;
+}
+
 export interface ValidationResults {
   is_valid: boolean;
   schema_valid?: boolean;
@@ -43,6 +97,11 @@ export interface ValidationResults {
   errors: string[];
   warnings: string[];
   budget_diff: BudgetDiff;
+  candidates?: LayoutCandidateRecord[];
+  candidates_count?: number;
+  valid_candidates_count?: number;
+  selected_candidate_id?: string;
+  source_scene_hash?: string;
 }
 
 export interface AgentRunRecord {
@@ -76,12 +135,16 @@ export interface PromptProposalResponse {
   run: AgentRunRecord;
   candidate_scene: CanonicalScene;
   budget_diff: BudgetDiff;
+  candidates?: LayoutCandidateRecord[];
+  selected_candidate?: LayoutCandidateRecord;
+  source_scene_hash?: string;
   schema_valid?: boolean;
   reference_valid?: boolean;
   domain_valid?: boolean;
   budget_valid?: boolean;
   requires_approval: boolean;
 }
+
 
 export interface ApplyProposalResponse {
   detail: string;
@@ -137,7 +200,9 @@ export async function sendAgentPrompt(
   sessionId: string,
   prompt: string,
   sceneJson?: CanonicalScene,
-  spatialContext?: SpatialContext
+  spatialContext?: SpatialContext,
+  candidateCount: number = 3,
+  userRequirements?: Record<string, any>
 ): Promise<PromptProposalResponse> {
   const token = await ensureAuthenticated();
   const res = await fetch(`${API_BASE_URL}/api/v1/agent/sessions/${sessionId}/prompt/`, {
@@ -147,6 +212,8 @@ export async function sendAgentPrompt(
       prompt,
       scene_json: sceneJson,
       spatial_context: spatialContext,
+      candidate_count: candidateCount,
+      user_requirements: userRequirements,
     }),
   });
 
@@ -166,7 +233,8 @@ export async function sendAgentPrompt(
 
 export async function applyAgentRun(
   runId: string,
-  sceneJson?: CanonicalScene
+  sceneJson?: CanonicalScene,
+  candidateId?: string
 ): Promise<ApplyProposalResponse> {
   const token = await ensureAuthenticated();
   const res = await fetch(`${API_BASE_URL}/api/v1/agent/runs/${runId}/apply/`, {
@@ -174,8 +242,10 @@ export async function applyAgentRun(
     headers: getAuthHeaders(token),
     body: JSON.stringify({
       scene_json: sceneJson,
+      candidate_id: candidateId,
     }),
   });
+
 
   if (!res.ok) {
     let errorMsg = `HTTP ${res.status}`;
