@@ -11,6 +11,7 @@ from apps.accounts.serializers import (
     UserProfileSerializer,
     UserRegistrationSerializer,
 )
+from apps.ai_agent.observability import OperationalLogger
 
 
 @api_view(['POST'])
@@ -54,6 +55,7 @@ def login_user(request):
             },
             status=status.HTTP_200_OK,
         )
+    OperationalLogger.log_auth_failure(endpoint='/api/v1/auth/login/', reason='Invalid credentials or user not found')
     return Response(
         {'detail': 'Authentication failed.', 'errors': serializer.errors},
         status=status.HTTP_400_BAD_REQUEST,

@@ -1,3 +1,5 @@
+import time
+from django.conf import settings
 from rest_framework import exceptions, permissions, serializers, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,6 +20,7 @@ from apps.ai_agent.preference_engine import normalize_preferences
 from apps.designs.models import Design
 from apps.designs.validators import validate_canonical_scene
 from apps.furniture.models import FurnitureAsset
+from apps.ai_agent.observability import OperationalLogger
 
 
 
@@ -139,18 +142,51 @@ class AgentPromptView(APIView):
         # Call CandidateGenerator orchestrator
         adapter = get_design_llm_adapter()
         generator = CandidateGenerator(adapter=adapter)
-        candidates = generator.generate_candidates(
+        gen_start_time = time.time()
+
+        OperationalLogger.log_ai_generation_request(
             user_prompt=prompt,
-            current_scene=current_scene,
+            room_summary={
+                'object_count': len(current_scene.get('objects', [])),
+                'approx_area': current_scene.get('room', {}).get('width', 5.0) * current_scene.get('room', {}).get('length', 4.0),
+            },
+            provider=getattr(adapter, 'provider_name', 'gemini' if getattr(adapter, 'api_key', None) else 'mock'),
+            model=getattr(adapter, 'model_name', 'gemini-3.8-flash'),
             candidate_count=candidate_count,
-            max_budget_paise=max_budget,
-            user_requirements=user_requirements,
-            conversation_history=history,
-            catalogue_context=catalogue_items,
-            spatial_context=spatial_context,
-            preferences=norm_prefs,
         )
 
+        try:
+            candidates = generator.generate_candidates(
+                user_prompt=prompt,
+                current_scene=current_scene,
+                candidate_count=candidate_count,
+                max_budget_paise=max_budget,
+                user_requirements=user_requirements,
+                conversation_history=history,
+                catalogue_context=catalogue_items,
+                spatial_context=spatial_context,
+                preferences=norm_prefs,
+            )
+        except Exception as exc:
+            gen_duration = int((time.time() - gen_start_time) * 1000)
+            OperationalLogger.log_ai_generation_failure(
+                duration_ms=gen_duration,
+                error_code='ERR_GENERATION_EXCEPTION',
+                error_message=str(exc),
+                provider=getattr(adapter, 'provider_name', 'mock'),
+                model=getattr(adapter, 'model_name', 'unknown'),
+            )
+            return Response(
+                {
+                    'detail': 'AI layout generation encountered an unexpected service error. The current room design was preserved.',
+                    'error_type': 'provider_temporary_failure',
+                    'code': 'generation_failed',
+                    'candidate_scene': current_scene,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        gen_duration = int((time.time() - gen_start_time) * 1000)
         source_scene_hash = compute_canonical_scene_hash(current_scene)
 
         # Primary candidate (top-ranked candidate or fallback)
@@ -172,6 +208,26 @@ class AgentPromptView(APIView):
         warnings = [w.message for w in primary_candidate.validation_feedback.advisory_warnings] if primary_candidate else []
 
         candidates_data = [c.to_dict() for c in candidates]
+
+        # Determine actual provider and model safely
+        is_gemini_configured = bool(getattr(settings, 'GEMINI_API_KEY', ''))
+        actual_provider = getattr(primary_candidate, 'provider', None) or ('gemini' if is_gemini_configured else 'mock')
+        actual_model = getattr(primary_candidate, 'model', None) or (getattr(settings, 'GEMINI_MODEL', 'gemini-3.8-flash') if is_gemini_configured else 'deterministic-mock-v1')
+        fallback_active = bool(getattr(primary_candidate, 'fallback_triggered', False) or (actual_provider == 'mock' and is_gemini_configured))
+        fallback_reason = str(getattr(primary_candidate, 'fallback_reason', '') or '')
+
+        top_score_val = None
+        if primary_candidate and getattr(primary_candidate, 'score', None):
+            top_score_val = getattr(primary_candidate.score, 'overall', None)
+
+        OperationalLogger.log_ai_generation_success(
+            duration_ms=gen_duration,
+            candidates_count=len(candidates),
+            valid_candidates_count=sum(1 for c in candidates if c.is_valid),
+            provider=actual_provider,
+            model=actual_model,
+            top_score=top_score_val,
+        )
 
         # Persist AgentRun with base and candidate snapshots
         run = AgentRun.objects.create(  # pyrefly: ignore[missing-attribute]
@@ -200,8 +256,10 @@ class AgentPromptView(APIView):
                 'source_scene_hash': source_scene_hash,
             },
             provider_metadata={
-                'provider': getattr(adapter, 'provider_name', 'mock' if not getattr(adapter, 'api_key', None) else 'gemini'),
-                'model': getattr(adapter, 'model_name', 'deterministic-mock-v1'),
+                'provider': actual_provider,
+                'model': actual_model,
+                'fallback_triggered': fallback_active,
+                'fallback_reason': fallback_reason,
                 'candidates_generated': len(candidates),
                 'source_scene_hash': source_scene_hash,
             },
@@ -302,6 +360,11 @@ class AgentApplyRunView(APIView):
                 saved_scene_hash = compute_canonical_scene_hash(run.base_scene_snapshot)
 
             if saved_scene_hash and current_scene_hash != saved_scene_hash:
+                OperationalLogger.log_stale_proposal_conflict(
+                    design_id=run.session.design_id,
+                    expected_hash=saved_scene_hash,
+                    actual_hash=current_scene_hash,
+                )
                 return Response(
                     {
                         "detail": "The saved design has been modified since this proposal was generated. Proposal is stale.",
@@ -348,11 +411,15 @@ class AgentApplyRunView(APIView):
             max_budget = design.budget if (design and design.budget) else None
             sim_result = validate_and_simulate_actions(base_scene, candidate_actions, max_budget_paise=max_budget)
             if not sim_result['is_valid']:
+                OperationalLogger.log_persistence_failure(
+                    design_id=run.session.design_id,
+                    error_code='ERR_SIMULATION_INVALID',
+                    error_reason='; '.join(sim_result.get('errors', []))
+                )
                 return Response(
                     {"detail": "Cannot apply invalid actions.", "errors": sim_result['errors']},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
 
             applied_scene = sim_result['candidate_scene']
 
@@ -360,6 +427,11 @@ class AgentApplyRunView(APIView):
             try:
                 validate_canonical_scene(applied_scene)
             except serializers.ValidationError as exc:
+                OperationalLogger.log_persistence_failure(
+                    design_id=run.session.design_id,
+                    error_code='ERR_CANONICAL_VALIDATION_FAILED',
+                    error_reason=str(exc.detail)
+                )
                 return Response(
                     {
                         "detail": "Candidate scene failed canonical scene validation.",

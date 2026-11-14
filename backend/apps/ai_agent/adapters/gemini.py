@@ -10,6 +10,7 @@ from apps.ai_agent.adapters.base import BaseDesignLLMAdapter, DesignProposalResu
 from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
 from apps.ai_agent.tools import get_available_tool_definitions
 from apps.ai_agent.spatial_context import format_spatial_context_for_prompt
+from apps.ai_agent.observability import OperationalLogger
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,12 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 )
 
             except Exception as exc:
+                model_dur = int((time.time() - model_start) * 1000)
+                if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
+                    OperationalLogger.log_gemini_rate_limit(model=model_candidate)
+                elif isinstance(exc, (TimeoutError, urllib.error.URLError)) and ('timed out' in str(exc).lower() or isinstance(getattr(exc, 'reason', None), TimeoutError)):
+                    OperationalLogger.log_gemini_timeout(duration_ms=model_dur, model=model_candidate, timeout_seconds=8)
+
                 clean_exc = sanitize_sensitive_text(str(exc), self.api_key)
                 err_msg = f"{model_candidate}: {clean_exc}"
                 errors_encountered.append(err_msg)
@@ -184,9 +191,17 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
             "All Gemini API model candidates failed (%s). Falling back to mock adapter.",
             sanitized_summary
         )
+        OperationalLogger.log_fallback_activated(
+            reason=sanitized_summary,
+            original_provider='gemini',
+            fallback_provider='mock'
+        )
         fallback_res = self.mock_fallback.generate_design_proposal(
             user_prompt, current_scene, conversation_history, catalogue_context, spatial_context=spatial_context
         )
+        fallback_res.provider = 'mock'
+        fallback_res.model = 'deterministic-mock-v1'
+        fallback_res.raw_metadata['fallback_triggered'] = True
         fallback_res.raw_metadata['fallback_reason'] = f"gemini_error: {sanitized_summary}"
         return fallback_res
 
@@ -307,7 +322,12 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 logger.warning("Failed to generate Gemini variant %d: %s", i + 1, exc)
 
         if not variants:
-            return self.mock_fallback.generate_candidate_variants(
+            OperationalLogger.log_fallback_activated(
+                reason="all_gemini_candidate_variants_failed",
+                original_provider='gemini',
+                fallback_provider='mock'
+            )
+            mock_variants = self.mock_fallback.generate_candidate_variants(
                 user_prompt=user_prompt,
                 current_scene=current_scene,
                 candidate_count=candidate_count,
@@ -317,6 +337,14 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 user_requirements=user_requirements,
                 preferences=preferences,
             )
+            for mv in mock_variants:
+                mv.provider = 'mock'
+                mv.model = 'deterministic-mock-v1'
+                if not mv.raw_metadata:
+                    mv.raw_metadata = {}
+                mv.raw_metadata['fallback_triggered'] = True
+                mv.raw_metadata['fallback_reason'] = 'gemini_variants_failed'
+            return mock_variants
 
         return variants
 

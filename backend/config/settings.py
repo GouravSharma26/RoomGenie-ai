@@ -60,6 +60,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'config.middleware.CorrelationIdMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
 ]
@@ -289,4 +290,51 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('FILE_UPLOAD_MAX_MEMORY_SIZE', str(1
 # Evaluation Telemetry Persistence Settings (Phase 8)
 # Evaluation logging is strictly disabled by default and enabled explicitly in study environment.
 ENABLE_EVALUATION_TELEMETRY = os.getenv('ENABLE_EVALUATION_TELEMETRY', 'False').lower() in ('true', '1', 'yes')
+
+# Production Structured Logging & Observability (Phase 8.3)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'correlation_id': {
+            '()': 'config.logging.CorrelationIdFilter',
+        },
+    },
+    'formatters': {
+        'structured': {
+            '()': 'config.logging.StructuredLogFormatter',
+            'format': '%(asctime)s [%(levelname)s] [req=%(request_id)s] [%(name)s]: %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'structured',
+            'filters': ['correlation_id'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps.ai_agent': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
 

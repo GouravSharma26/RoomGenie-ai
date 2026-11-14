@@ -265,16 +265,34 @@ export default function App() {
                   <h3 className="font-semibold text-white text-base">Django REST API</h3>
                   <p className="text-xs text-slate-400 mt-1">Endpoint: <code className="text-indigo-300">/api/v1/health/</code></p>
                 </div>
-                <div className="pt-2">
+                <div className="pt-2 space-y-2">
                   {loading ? (
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <Activity className="w-4 h-4 animate-spin text-indigo-400" />
                       Checking API status...
                     </div>
                   ) : health && health.status === 'ok' ? (
-                    <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-3 py-2 rounded-lg">
-                      <CheckCircle2 className="w-4 h-4 shrink-0" />
-                      <span>API Online ({health.service} v{health.version})</span>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-3 py-2 rounded-lg">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <span>API Online ({health.service} v{health.version})</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 bg-slate-800/30 p-2.5 rounded-lg border border-slate-700/30 space-y-1 font-mono">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Uptime:</span>
+                          <span className="text-slate-300">
+                            {health.uptime_seconds !== undefined
+                              ? `${Math.floor(health.uptime_seconds / 60)}m ${Math.floor(health.uptime_seconds % 60)}s`
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Request ID:</span>
+                          <span className="text-indigo-300" title={health.request_id || ''}>
+                            {health.request_id ? `${health.request_id.slice(0, 8)}...` : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-950/40 border border-amber-800/40 px-3 py-2 rounded-lg">
@@ -301,13 +319,13 @@ export default function App() {
                   <h3 className="font-semibold text-white text-base">PostgreSQL 17</h3>
                   <p className="text-xs text-slate-400 mt-1">Authoritative persistence & scene storage</p>
                 </div>
-                <div className="text-xs text-slate-300 space-y-2 bg-slate-800/40 p-3 rounded-lg border border-slate-700/40">
+                <div className="text-xs text-slate-300 space-y-2 bg-slate-800/40 p-3 rounded-lg border border-slate-700/40 font-mono">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Database Engine:</span>
-                    <span className="font-mono text-purple-300">PostgreSQL</span>
+                    <span className="text-slate-400 font-sans">Engine:</span>
+                    <span className="text-purple-300">{health?.db_engine || 'PostgreSQL'}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400">Connectivity:</span>
+                    <span className="text-slate-400 font-sans">Connectivity:</span>
                     {loading ? (
                       <span className="text-slate-400 font-medium flex items-center gap-1">
                         <Activity className="w-3 h-3 animate-spin text-indigo-400" />
@@ -318,23 +336,35 @@ export default function App() {
                         Backend Unreachable
                       </span>
                     ) : health?.database === 'connected' ? (
-                      <span className="text-emerald-400 font-medium bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40 text-[11px] flex items-center gap-1">
+                      <span className="text-emerald-400 font-medium bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40 text-[11px] flex items-center gap-1 font-sans">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                         Connected
                       </span>
                     ) : health?.database === 'disconnected' ? (
-                      <span className="text-rose-400 font-medium bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40 text-[11px] flex items-center gap-1">
+                      <span className="text-rose-400 font-medium bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40 text-[11px] flex items-center gap-1 font-sans">
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
                         Disconnected
                       </span>
                     ) : (
-                      <span className="text-slate-400 font-medium text-[11px]">Unknown</span>
+                      <span className="text-slate-400 font-medium text-[11px] font-sans">Unknown</span>
                     )}
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">Query Latency:</span>
+                    <span className="text-slate-300">
+                      {health?.db_latency_ms !== undefined ? `${health.db_latency_ms.toFixed(2)} ms` : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">Migrations:</span>
+                    <span className={health?.migrations_synced ? 'text-emerald-300' : 'text-amber-300'}>
+                      {health?.migrations_synced ? 'Synced' : health?.migrations_synced === false ? 'Pending' : 'N/A'}
+                    </span>
                   </div>
                 </div>
               </div>
               <p className="text-[10px] text-slate-500 mt-4 pt-4 border-t border-slate-800">
-                Docker Compose bound to 127.0.0.1 loopback
+                Authoritative transaction boundary & scene storage
               </p>
             </div>
 
@@ -348,14 +378,24 @@ export default function App() {
                   <h3 className="font-semibold text-white text-base">Model Providers & Cost Gate</h3>
                   <p className="text-xs text-slate-400 mt-1">Zero-cost deterministic development</p>
                 </div>
-                <div className="text-xs text-slate-300 space-y-1 bg-slate-800/40 p-3 rounded-lg border border-slate-700/40">
+                <div className="text-xs text-slate-300 space-y-1.5 bg-slate-800/40 p-3 rounded-lg border border-slate-700/40 font-mono">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">LLM Provider:</span>
-                    <span className="text-amber-300 font-medium">Mock Mode (Gemini 3.8 Ready)</span>
+                    <span className="text-slate-400 font-sans">LLM Provider:</span>
+                    <span className={health?.gemini_ready ? 'text-emerald-300 font-sans' : 'text-amber-300 font-sans'}>
+                      {health?.gemini_ready ? 'Gemini 3.8 (Live)' : 'Mock Mode (Active)'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">3D Provider:</span>
-                    <span className="text-amber-300 font-medium">Mock Mode (Tripo v3.1 Gated)</span>
+                    <span className="text-slate-400 font-sans">Fallback Pool:</span>
+                    <span className="text-slate-300 text-[11px]">
+                      {health?.gemini_fallback_models && health.gemini_fallback_models.length > 0
+                        ? health.gemini_fallback_models.slice(0, 2).join(', ')
+                        : 'mock'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">3D Provider:</span>
+                    <span className="text-amber-300 font-sans">Mock (Tripo Gated)</span>
                   </div>
                 </div>
               </div>

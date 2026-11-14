@@ -3,7 +3,18 @@ export interface HealthResponse {
   service: string;
   version: string;
   database: 'connected' | 'disconnected' | 'unknown';
+  db_latency_ms?: number;
+  db_engine?: string;
+  uptime_seconds?: number;
+  migrations_synced?: boolean;
+  unapplied_migrations_count?: number;
+  ai_provider_mode?: string;
+  has_gemini_key?: boolean;
+  gemini_model?: string;
+  gemini_fallback_models?: string[];
+  gemini_ready?: boolean;
   timestamp?: string;
+  request_id?: string;
 }
 import { API_BASE_URL } from './apiConfig';
 

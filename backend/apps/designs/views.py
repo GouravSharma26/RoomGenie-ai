@@ -4,6 +4,7 @@ from rest_framework.response import Response
 
 from apps.designs.models import Design
 from apps.designs.serializers import DesignSerializer
+from apps.ai_agent.observability import OperationalLogger
 
 
 class DesignViewSet(viewsets.ModelViewSet):
@@ -38,6 +39,11 @@ class DesignViewSet(viewsets.ModelViewSet):
                     parsed = timezone.make_naive(parsed)
                 time_diff = abs((instance.updated_at - parsed).total_seconds())
                 if time_diff > 0.001:
+                    OperationalLogger.log_persistence_failure(
+                        design_id=instance.id,
+                        error_code='ERR_STALE_CONCURRENCY',
+                        error_reason=f'Concurrent update mismatch: diff={time_diff:.3f}s'
+                    )
                     return Response(
                         {
                             "detail": "Design has been modified concurrently by another session. Please reload.",

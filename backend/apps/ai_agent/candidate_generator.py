@@ -19,6 +19,7 @@ from apps.ai_agent.candidate_scorer import CandidateScorer
 from apps.ai_agent.candidate_ranker import CandidateRanker
 from apps.ai_agent.adapters import get_design_llm_adapter
 from apps.ai_agent.adapters.base import BaseDesignLLMAdapter, DesignProposalResult
+from apps.ai_agent.observability import OperationalLogger
 
 
 class CandidateGenerator:
@@ -165,6 +166,17 @@ class CandidateGenerator:
             user_requirements=user_requirements,
             max_budget_paise=max_budget_paise,
         )
+
+        for oc in optimized_candidates:
+            opt_m = getattr(oc, 'optimization_metadata', None) or {}
+            if opt_m:
+                cand_score = oc.score.overall if getattr(oc, 'score', None) else 0.0
+                OperationalLogger.log_optimization_completed(
+                    iterations=opt_m.get('iterations', 0),
+                    duration_ms=opt_m.get('durationMs', 0.0),
+                    initial_score=opt_m.get('initialScore', cand_score),
+                    final_score=opt_m.get('finalScore', cand_score),
+                )
 
         # 6. Deterministic Ranking
         ranked_candidates = CandidateRanker.rank_candidates(optimized_candidates)
