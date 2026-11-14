@@ -324,6 +324,7 @@ class LayoutCandidate:
     reference_errors: List[str] = field(default_factory=list)
     domain_errors: List[str] = field(default_factory=list)
     budget_errors: List[str] = field(default_factory=list)
+    optimization_metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -352,5 +353,6 @@ class LayoutCandidate:
             'reference_errors': self.reference_errors,
             'domain_errors': self.domain_errors,
             'budget_errors': self.budget_errors,
+            'optimization_metadata': self.optimization_metadata,
         }
 

@@ -511,6 +511,20 @@ def check_doorway_landing_clearance(
             if math.hypot(cx - door_cx, cz - landing_cz) < landing_radius:
                 violations.append("intrudes into default south entrance landing zone")
                 break
+        if not violations:
+            for k in range(len(corners)):
+                p1 = corners[k]
+                p2 = corners[(k + 1) % len(corners)]
+                seg_dx = p2[0] - p1[0]
+                seg_dz = p2[1] - p1[1]
+                seg_len_sq = seg_dx * seg_dx + seg_dz * seg_dz
+                if seg_len_sq > 1e-6:
+                    t = max(0.0, min(1.0, ((door_cx - p1[0]) * seg_dx + (landing_cz - p1[1]) * seg_dz) / seg_len_sq))
+                    proj_x = p1[0] + t * seg_dx
+                    proj_z = p1[1] + t * seg_dz
+                    if math.hypot(door_cx - proj_x, landing_cz - proj_z) < landing_radius * 0.75:
+                        violations.append("intrudes into default south entrance landing zone")
+                        break
         return violations
 
 
@@ -521,6 +535,33 @@ def check_doorway_landing_clearance(
         wall_id = op.get('wallId')
         wall = walls.get(wall_id)
         if not wall:
+            # Robust fallback when opening defines explicit center [cx, cz] without explicit walls array
+            if 'center' in op and isinstance(op['center'], (list, tuple)) and len(op['center']) >= 2:
+                d_cx = float(op['center'][0])
+                d_cz = float(op['center'][1])
+                d_w = float(op.get('width', op.get('widthMeters', 0.9)))
+                landing_radius = (d_w + landing_depth_meters) / 2.0
+                blocked = False
+                for cx, cz in corners:
+                    if math.hypot(cx - d_cx, cz - d_cz) < landing_radius:
+                        blocked = True
+                        break
+                if not blocked:
+                    for k in range(len(corners)):
+                        p1 = corners[k]
+                        p2 = corners[(k + 1) % len(corners)]
+                        seg_dx = p2[0] - p1[0]
+                        seg_dz = p2[1] - p1[1]
+                        seg_len_sq = seg_dx * seg_dx + seg_dz * seg_dz
+                        if seg_len_sq > 1e-6:
+                            t = max(0.0, min(1.0, ((d_cx - p1[0]) * seg_dx + (d_cz - p1[1]) * seg_dz) / seg_len_sq))
+                            proj_x = p1[0] + t * seg_dx
+                            proj_z = p1[1] + t * seg_dz
+                            if math.hypot(d_cx - proj_x, d_cz - proj_z) < landing_radius * 0.75:
+                                blocked = True
+                                break
+                if blocked:
+                    violations.append(f"intrudes into doorway landing zone of door '{op.get('id', 'door')}'")
             continue
 
         sp = wall.get('startPoint', [0.0, 0.0])

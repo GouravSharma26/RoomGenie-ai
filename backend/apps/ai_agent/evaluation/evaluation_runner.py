@@ -203,9 +203,19 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
             gate_failures.append(
                 f"Negative test case '{case.case_id}' unexpectedly produced approval-eligible candidate."
             )
+    else:
+        # Gate: Positive test case behavior (expected_hard_valid == True MUST produce >= 1 valid candidate)
+        valid_cands = [c for c in candidate_evals if c.is_valid]
+        if not valid_cands:
+            gate_failures.append(
+                f"Scenario '{case.case_id}' expected at least one physically valid candidate, but all {len(candidates)} candidates failed hard physical validation."
+            )
 
-    # Calculate diversity score across candidates in this run
-    diversity_score = calculate_candidate_diversity(candidate_evals)
+    # Calculate diversity score across candidates in this run using Phase 7.2 DiversityEngine
+    from apps.ai_agent.optimization.optimization_diversity import DiversityEngine
+    from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+    states = [CandidateSceneState(c.candidate_scene) for c in candidates if c.candidate_scene]
+    diversity_score = DiversityEngine.calculate_population_diversity(states)
 
     top_cand = candidate_evals[0] if candidate_evals else None
 
@@ -236,6 +246,21 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
     )
 
 
+def ensure_evaluation_assets() -> None:
+    """
+    Ensures that standard catalog assets are seeded in the database.
+    Essential for running offline evaluations inside isolated Django test databases.
+    """
+    from apps.furniture.models import FurnitureAsset
+    from apps.furniture.management.commands.seed_furniture import SEED_DATA
+
+    for item in SEED_DATA:
+        FurnitureAsset.objects.update_or_create(
+            id=item['id'],
+            defaults=item,
+        )
+
+
 def run_spatial_evaluation(
     scenarios: Optional[List[EvaluationCase]] = None,
     category_filter: Optional[str] = None,
@@ -243,6 +268,7 @@ def run_spatial_evaluation(
     """
     Executes the spatial evaluation dataset and computes aggregate summary metrics.
     """
+    ensure_evaluation_assets()
     cases_to_run = scenarios or EVALUATION_DATASET
 
     if category_filter:

@@ -724,6 +724,11 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                                       {cand.score.overall.toFixed(1)}
                                     </span>
                                   </div>
+                                  {cand.optimization_metadata?.bestBadge && (
+                                    <div className="mt-0.5 text-[8px] font-semibold text-amber-300 truncate" title={cand.optimization_metadata.bestBadge}>
+                                      ⭐ {cand.optimization_metadata.bestBadge}
+                                    </div>
+                                  )}
                                 </button>
                               );
                             })}
@@ -740,6 +745,26 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                                 <span className="font-semibold text-xs text-white">{activeCand.label}{activeCand.intent ? `: ${activeCand.intent}` : ''}</span>
                               </div>
                               <p className="text-[11px] text-slate-400 mt-0.5">{activeCand.description}</p>
+                              {/* Optimization badges */}
+                              {activeCand.optimization_metadata && (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                  {activeCand.optimization_metadata.bestBadge && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-wide bg-amber-500/20 text-amber-300 border border-amber-500/40" data-testid="optimization-best-badge">
+                                      ⭐ {activeCand.optimization_metadata.bestBadge}
+                                    </span>
+                                  )}
+                                  {activeCand.optimization_metadata.repaired && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-wide bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" data-testid="optimization-repaired-badge">
+                                      ✓ Constraints Repaired
+                                    </span>
+                                  )}
+                                  {typeof activeCand.optimization_metadata.scoreDelta === 'number' && activeCand.optimization_metadata.scoreDelta > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40" data-testid="optimization-delta-badge">
+                                      +{activeCand.optimization_metadata.scoreDelta.toFixed(1)} pts
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <div className="flex flex-col items-end shrink-0" data-testid="active-candidate-score">
                               <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold font-mono border ${
@@ -834,6 +859,54 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                                   </span>
                                 ))}
                               </div>
+                            </div>
+                          )}
+
+                          {/* Phase 7.2 Optimization & Pareto Objectives Breakdown */}
+                          {activeCand.optimization_metadata && (
+                            <div className="pt-1.5 border-t border-slate-800/80" data-testid="optimization-telemetry-block">
+                              <div className="flex items-center justify-between text-[10px] mb-1">
+                                <span className="font-semibold text-slate-400 uppercase tracking-wider">Spatial Optimization (Phase 7.2)</span>
+                                <span className="text-[9px] text-slate-400 font-mono">
+                                  {activeCand.optimization_metadata.iterations} iters · {activeCand.optimization_metadata.durationMs.toFixed(0)}ms
+                                </span>
+                              </div>
+                              {activeCand.optimization_metadata.objectives && (
+                                <div className="grid grid-cols-4 gap-1 text-[9px]">
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Contain</span>
+                                    <span className="font-mono font-semibold text-emerald-400">{activeCand.optimization_metadata.objectives.containment.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Collision</span>
+                                    <span className="font-mono font-semibold text-emerald-400">{activeCand.optimization_metadata.objectives.collision.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Circulate</span>
+                                    <span className="font-mono font-semibold text-indigo-300">{activeCand.optimization_metadata.objectives.circulation.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Clearance</span>
+                                    <span className="font-mono font-semibold text-indigo-300">{activeCand.optimization_metadata.objectives.clearance.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Access</span>
+                                    <span className="font-mono font-semibold text-indigo-300">{activeCand.optimization_metadata.objectives.accessibility.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Open Space</span>
+                                    <span className="font-mono font-semibold text-indigo-300">{activeCand.optimization_metadata.objectives.utilization.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Preference</span>
+                                    <span className="font-mono font-semibold text-purple-300">{activeCand.optimization_metadata.objectives.preferences.toFixed(0)}</span>
+                                  </div>
+                                  <div className="bg-slate-950/70 p-1 rounded border border-slate-800/60 text-center">
+                                    <span className="text-slate-400 block text-[8px]">Sockets</span>
+                                    <span className="font-mono font-semibold text-cyan-300">{activeCand.optimization_metadata.objectives.relationships.toFixed(0)}</span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
 

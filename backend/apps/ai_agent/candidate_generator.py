@@ -155,6 +155,17 @@ class CandidateGenerator:
 
             candidates.append(candidate)
 
-        # 5. Deterministic Ranking
-        ranked_candidates = CandidateRanker.rank_candidates(candidates)
+        # 5. Active Constraint-Aware Spatial Layout Optimization (Phase 7.2)
+        from apps.ai_agent.optimization import OptimizationRunner
+        opt_runner = OptimizationRunner()
+        optimized_candidates = opt_runner.optimize_candidate_pool(
+            candidates=candidates,
+            preferences=preferences,
+            spatial_context=spatial_context,
+            user_requirements=user_requirements,
+            max_budget_paise=max_budget_paise,
+        )
+
+        # 6. Deterministic Ranking
+        ranked_candidates = CandidateRanker.rank_candidates(optimized_candidates)
         return ranked_candidates

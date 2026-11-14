@@ -483,6 +483,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         room = current_scene.get('room', {'width': 5.0, 'length': 4.0, 'height': 2.8}) if isinstance(current_scene, dict) else {'width': 5.0, 'length': 4.0, 'height': 2.8}
         room_w = float(room.get('width', 5.0))
         room_l = float(room.get('length', 4.0))
+        existing_objects = current_scene.get('objects', []) if isinstance(current_scene, dict) else []
 
         from apps.furniture.models import FurnitureAsset
 
@@ -491,8 +492,25 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 return canonical_id
             if FurnitureAsset.objects.filter(id=fallback_id).exists():  # pyrefly: ignore[missing-attribute]
                 return fallback_id
-            if category:
-                matched = FurnitureAsset.objects.filter(category=category, is_active=True).first()  # pyrefly: ignore[missing-attribute]
+            # Infer category from ID if not explicitly provided
+            inferred_cat = category
+            if not inferred_cat:
+                cid_lower = (canonical_id + " " + fallback_id).lower()
+                if 'chair' in cid_lower:
+                    inferred_cat = 'seating'
+                elif 'sofa' in cid_lower or 'couch' in cid_lower:
+                    inferred_cat = 'seating'
+                elif 'desk' in cid_lower or 'table' in cid_lower or 'nightstand' in cid_lower:
+                    inferred_cat = 'tables'
+                elif 'bed' in cid_lower:
+                    inferred_cat = 'beds'
+                elif 'storage' in cid_lower or 'shelf' in cid_lower or 'wardrobe' in cid_lower or 'book' in cid_lower:
+                    inferred_cat = 'storage'
+                elif 'plant' in cid_lower or 'decor' in cid_lower or 'vase' in cid_lower:
+                    inferred_cat = 'decor'
+
+            if inferred_cat:
+                matched = FurnitureAsset.objects.filter(category=inferred_cat, is_active=True).first()  # pyrefly: ignore[missing-attribute]
                 if matched:
                     return matched.id
             any_asset = FurnitureAsset.objects.filter(is_active=True).first()  # pyrefly: ignore[missing-attribute]
@@ -676,7 +694,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 'type': 'add_furniture',
                 'object_id': 'mock-tight-chair',
                 'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
-                'position': [(room_w / 2.0) - 0.45, 0.425, 0.0],
+                'position': [(room_w / 2.0) - 0.45, 0.44, 0.0],
                 'rotation_euler': [0.0, 0.0, 0.0],
             }]
             return [DesignProposalResult(
@@ -841,16 +859,27 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             is_cool = any(w in prompt_lower for w in ('cool', 'grey', 'gray', 'slate', 'steel', 'monochrome')) or 'cool_neutrals' in pref_colors
             cand_color = '#64748b' if is_cool else '#d97706'
 
+            # Detect existing bed in scene to attach nightstands without adding a colliding duplicate bed
+            existing_bed = next(
+                (o for o in existing_objects if 'bed' in str(o.get('assetId', '')).lower() or 'bed' in str(o.get('name', '')).lower()),
+                None
+            )
+            bed_anchor_id_a = existing_bed['id'] if existing_bed else 'mock-bed-a'
+            bed_anchor_id_b = existing_bed['id'] if existing_bed else 'mock-bed-b'
+            bed_anchor_id_c = existing_bed['id'] if existing_bed else 'mock-bed-c'
+
             # Candidate A: Functional Sleeping Zone with Symmetrical Dual Nightstands
-            actions_a = [
-                {
+            actions_a = []
+            if not existing_bed:
+                actions_a.append({
                     'type': 'add_furniture',
                     'object_id': 'mock-bed-a',
                     'asset_id': bed_asset,
                     'position': [0.0, 0.475, -0.6],
                     'rotation_euler': [0.0, 0.0, 0.0],
                     'color': cand_color,
-                },
+                })
+            actions_a.extend([
                 {
                     'type': 'add_furniture',
                     'object_id': 'mock-nightstand-left-a',
@@ -861,7 +890,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 },
                 {
                     'type': 'attach_to_socket',
-                    'anchor_object_id': 'mock-bed-a',
+                    'anchor_object_id': bed_anchor_id_a,
                     'child_object_id': 'mock-nightstand-left-a',
                     'socket_id': 'bed-left-nightstand',
                     'gap_meters': 0.08,
@@ -876,7 +905,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 },
                 {
                     'type': 'attach_to_socket',
-                    'anchor_object_id': 'mock-bed-a',
+                    'anchor_object_id': bed_anchor_id_a,
                     'child_object_id': 'mock-nightstand-right-a',
                     'socket_id': 'bed-right-nightstand',
                     'gap_meters': 0.08,
@@ -887,7 +916,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                     'intent': 'Symmetrical sleeping zone with bed and dual attached nightstands',
                     'requirements': {'required_categories': ['beds', 'tables'], 'preserve_existing_furniture': True},
                 },
-            ]
+            ])
             cand_a = DesignProposalResult(
                 text_response="Option A anchors a queen bed with dual nightstands attached symmetrically via sockets, preserving open circulation.",
                 proposed_actions=actions_a,
@@ -899,14 +928,16 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             )
 
             # Candidate B: Bedroom with Bed, Single Nightstand & Compact Wardrobe
-            actions_b = [
-                {
+            actions_b = []
+            if not existing_bed:
+                actions_b.append({
                     'type': 'add_furniture',
                     'object_id': 'mock-bed-b',
                     'asset_id': bed_asset,
                     'position': [-0.5, 0.475, -0.6],
                     'rotation_euler': [0.0, 0.0, 0.0],
-                },
+                })
+            actions_b.extend([
                 {
                     'type': 'add_furniture',
                     'object_id': 'mock-nightstand-b',
@@ -916,7 +947,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 },
                 {
                     'type': 'attach_to_socket',
-                    'anchor_object_id': 'mock-bed-b',
+                    'anchor_object_id': bed_anchor_id_b,
                     'child_object_id': 'mock-nightstand-b',
                     'socket_id': 'bed-left-nightstand',
                     'gap_meters': 0.08,
@@ -934,7 +965,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                     'intent': 'Sleeping zone with bedside storage and wardrobe',
                     'requirements': {'required_categories': ['beds', 'storage'], 'preserve_existing_furniture': True},
                 },
-            ]
+            ])
             cand_b = DesignProposalResult(
                 text_response="Option B pairs the bed and nightstand with a dedicated modular wardrobe for apparel storage.",
                 proposed_actions=actions_b,
@@ -946,14 +977,16 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             )
 
             # Candidate C: Minimalist Open Sleeping Zone
-            actions_c = [
-                {
+            actions_c = []
+            if not existing_bed:
+                actions_c.append({
                     'type': 'add_furniture',
                     'object_id': 'mock-bed-c',
                     'asset_id': bed_asset,
                     'position': [0.0, 0.475, -0.6],
                     'rotation_euler': [0.0, 0.0, 0.0],
-                },
+                })
+            actions_c.extend([
                 {
                     'type': 'add_furniture',
                     'object_id': 'mock-nightstand-right-c',
@@ -963,7 +996,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 },
                 {
                     'type': 'attach_to_socket',
-                    'anchor_object_id': 'mock-bed-c',
+                    'anchor_object_id': bed_anchor_id_c,
                     'child_object_id': 'mock-nightstand-right-c',
                     'socket_id': 'bed-right-nightstand',
                     'gap_meters': 0.08,
@@ -972,9 +1005,9 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                     'type': 'propose_zone_arrangement',
                     'zone_type': 'sleeping',
                     'intent': 'Minimalist open sleeping zone maximizing floor space',
-                    'requirements': {'required_categories': ['beds'], 'preserve_existing_furniture': True},
+                    'requirements': {'required_categories': ['beds', 'tables'], 'preserve_existing_furniture': True},
                 },
-            ]
+            ])
             cand_c = DesignProposalResult(
                 text_response="Option C maximizes open floor clearance with a streamlined bed and single nightstand layout.",
                 proposed_actions=actions_c,
@@ -1140,64 +1173,95 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         # -------------------------------------------------------------
         # Scenario 1: Three Valid Living Room Alternatives (Default)
         # -------------------------------------------------------------
+        existing_sofa = next(
+            (o for o in existing_objects if 'sofa' in str(o.get('assetId', '')).lower() or 'sofa' in str(o.get('name', '')).lower() or 'couch' in str(o.get('name', '')).lower()),
+            None
+        )
+        sofa_anchor_id_a = existing_sofa['id'] if existing_sofa else 'mock-sofa-a'
+        sofa_anchor_id_b = existing_sofa['id'] if existing_sofa else 'mock-sofa-b'
+        sofa_anchor_id_c = existing_sofa['id'] if existing_sofa else 'mock-sofa-c'
+        sofa_pos = existing_sofa.get('position', [0.0, 0.45, -0.8]) if existing_sofa else [0.0, 0.45, -0.8]
+
         # Candidate A: Conversational Seating Arrangement
-        actions_a = [
-            {
+        actions_a = []
+        if not existing_sofa:
+            actions_a.append({
                 'type': 'add_furniture',
                 'object_id': 'mock-sofa-a',
                 'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
                 'position': [0.0, 0.45, -0.8],
                 'rotation_euler': [0.0, 0.0, 0.0],
-            },
+            })
+        actions_a.extend([
             {
                 'type': 'add_furniture',
                 'object_id': 'mock-table-a',
                 'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
-                'position': [0.0, 0.225, -0.8],
+                'position': [sofa_pos[0], 0.225, sofa_pos[2] + 0.9],
                 'rotation_euler': [0.0, 0.0, 0.0],
             },
             {
                 'type': 'attach_to_socket',
-                'anchor_object_id': 'mock-sofa-a',
+                'anchor_object_id': sofa_anchor_id_a,
                 'child_object_id': 'mock-table-a',
                 'socket_id': 'sofa-front-table',
                 'gap_meters': 0.40,
             },
-            {
-                'type': 'add_furniture',
-                'object_id': 'mock-chair-left-a',
-                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
-                'position': [0.0, 0.425, -0.8],
-                'rotation_euler': [0.0, 0.0, 0.0],
-            },
-            {
-                'type': 'attach_to_socket',
-                'anchor_object_id': 'mock-sofa-a',
-                'child_object_id': 'mock-chair-left-a',
-                'socket_id': 'sofa-left-accent',
-                'gap_meters': 0.60,
-            },
-            {
-                'type': 'add_furniture',
-                'object_id': 'mock-chair-right-a',
-                'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
-                'position': [0.0, 0.425, -0.8],
-                'rotation_euler': [0.0, 0.0, 0.0],
-            },
-            {
-                'type': 'attach_to_socket',
-                'anchor_object_id': 'mock-sofa-a',
-                'child_object_id': 'mock-chair-right-a',
-                'socket_id': 'sofa-right-accent',
-                'gap_meters': 0.60,
-            },
-            {
-                'type': 'propose_zone_arrangement',
-                'zone_type': 'living',
-                'intent': 'Conversational seating arrangement with sofa, coffee table, and angled armchairs',
-                'requirements': {'preserve_existing_furniture': True},
-            },
-        ]
+        ])
+        if room_w >= 5.2:
+            actions_a.extend([
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-left-a',
+                    'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                    'position': [-1.6, 0.44, -0.4],
+                    'rotation_euler': [0.0, 0.7854, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': sofa_anchor_id_a,
+                    'child_object_id': 'mock-chair-left-a',
+                    'socket_id': 'sofa-left-accent',
+                    'gap_meters': 0.35,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-right-a',
+                    'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                    'position': [1.6, 0.44, -0.4],
+                    'rotation_euler': [0.0, -0.7854, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': sofa_anchor_id_a,
+                    'child_object_id': 'mock-chair-right-a',
+                    'socket_id': 'sofa-right-accent',
+                    'gap_meters': 0.35,
+                },
+            ])
+        else:
+            actions_a.extend([
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-left-a',
+                    'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                    'position': [-1.15, 0.44, 0.15],
+                    'rotation_euler': [0.0, 0.6, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-chair-right-a',
+                    'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
+                    'position': [1.15, 0.44, 0.15],
+                    'rotation_euler': [0.0, -0.6, 0.0],
+                },
+            ])
+        actions_a.append({
+            'type': 'propose_zone_arrangement',
+            'zone_type': 'living',
+            'intent': 'Conversational seating arrangement with sofa, coffee table, and angled armchairs',
+            'requirements': {'preserve_existing_furniture': True},
+        })
         cand_a = DesignProposalResult(
             text_response="Option A creates a social conversational circle around a central coffee table with angled armchairs.",
             proposed_actions=actions_a,
@@ -1209,24 +1273,26 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         )
 
         # Candidate B: Open-Circulation Arrangement
-        actions_b = [
-            {
+        actions_b = []
+        if not existing_sofa:
+            actions_b.append({
                 'type': 'add_furniture',
                 'object_id': 'mock-sofa-b',
                 'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
                 'position': [0.0, 0.45, -1.3],
                 'rotation_euler': [0.0, 0.0, 0.0],
-            },
+            })
+        actions_b.extend([
             {
                 'type': 'add_furniture',
                 'object_id': 'mock-table-b',
                 'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
-                'position': [0.0, 0.225, -1.3],
+                'position': [sofa_pos[0], 0.225, sofa_pos[2] + 0.9],
                 'rotation_euler': [0.0, 0.0, 0.0],
             },
             {
                 'type': 'attach_to_socket',
-                'anchor_object_id': 'mock-sofa-b',
+                'anchor_object_id': sofa_anchor_id_b,
                 'child_object_id': 'mock-table-b',
                 'socket_id': 'sofa-front-table',
                 'gap_meters': 0.45,
@@ -1235,7 +1301,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 'type': 'add_furniture',
                 'object_id': 'mock-chair-b',
                 'asset_id': pick_asset_id('chair-accent-armchair', 'armchair-accent-nordic'),
-                'position': [-1.4, 0.425, -0.4],
+                'position': [-1.4, 0.44, -0.4],
                 'rotation_euler': [0.0, 0.5, 0.0],
             },
             {
@@ -1244,7 +1310,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 'intent': 'Open circulation living area maximizing floor space',
                 'requirements': {'preserve_existing_furniture': True},
             },
-        ]
+        ])
         cand_b = DesignProposalResult(
             text_response="Option B shifts the seating against the perimeter wall to open wide, unhindered pathways across the room.",
             proposed_actions=actions_b,
@@ -1256,24 +1322,29 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         )
 
         # Candidate C: Media & Entertainment Arrangement
-        actions_c = [
-            {
+        actions_c = []
+        if not existing_sofa:
+            actions_c.append({
                 'type': 'add_furniture',
                 'object_id': 'mock-sofa-c',
                 'asset_id': pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern'),
                 'position': [0.0, 0.45, 0.2],
                 'rotation_euler': [0.0, 3.14159, 0.0],  # Facing north wall
-            },
+            })
+            c_table_pos = [0.0, 0.225, -0.6]
+        else:
+            c_table_pos = [sofa_pos[0], 0.225, sofa_pos[2] + 0.9]
+        actions_c.extend([
             {
                 'type': 'add_furniture',
                 'object_id': 'mock-table-c',
                 'asset_id': pick_asset_id('table-oak-coffee', 'coffee-table-minimal'),
-                'position': [0.0, 0.225, 0.2],
-                'rotation_euler': [0.0, 3.14159, 0.0],
+                'position': c_table_pos,
+                'rotation_euler': [0.0, 0.0, 0.0],
             },
             {
                 'type': 'attach_to_socket',
-                'anchor_object_id': 'mock-sofa-c',
+                'anchor_object_id': sofa_anchor_id_c,
                 'child_object_id': 'mock-table-c',
                 'socket_id': 'sofa-front-table',
                 'gap_meters': 0.45,
@@ -1284,7 +1355,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 'intent': 'Media entertainment living space oriented toward focal wall',
                 'requirements': {'preserve_existing_furniture': True},
             },
-        ]
+        ])
         cand_c = DesignProposalResult(
             text_response="Option C centers the sofa facing the focal wall with clear sightlines for home entertainment.",
             proposed_actions=actions_c,
@@ -1342,7 +1413,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             )
 
         # Scenario 9: remains invalid across all refinement attempts
-        if 'remain invalid' in prompt_lower or 'refinement failure' in prompt_lower:
+        if 'remain invalid' in prompt_lower or 'refinement failure' in prompt_lower or 'boundary violation' in prompt_lower:
             # Shift slightly but stay out of bounds
             bad_actions = [{
                 'type': 'add_furniture',

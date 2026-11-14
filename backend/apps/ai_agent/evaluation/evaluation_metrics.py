@@ -123,8 +123,10 @@ def aggregate_summary_metrics(
 
     if all_candidates:
         valid_cands = [c for c in all_candidates if c.is_valid]
+        eligible_cands = [c for c in all_candidates if c.is_approval_eligible]
         metrics.valid_candidates = len(valid_cands)
         metrics.hard_validity_rate_pct = (len(valid_cands) / len(all_candidates)) * 100.0
+        metrics.candidate_eligibility_rate_pct = (len(eligible_cands) / len(all_candidates)) * 100.0
 
         metrics.boundary_violation_rate_pct = (
             sum(1 for c in all_candidates if c.has_boundary_breach) / len(all_candidates) * 100.0

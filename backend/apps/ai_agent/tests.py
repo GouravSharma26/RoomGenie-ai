@@ -1,4 +1,6 @@
 import copy
+import math
+import random
 import threading
 import unittest
 import uuid
@@ -3077,6 +3079,386 @@ class Phase71PreferenceApiIntegrationTests(APITestCase):
         self.assertIn("preference_score", top_cand["score"])
         self.assertIn("base_score", top_cand["score"])
         self.assertIn("final_score", top_cand["score"])
+
+
+# =============================================================================
+# PHASE 7.2: ADVANCED CONSTRAINT-AWARE SPATIAL OPTIMIZATION TESTS
+# =============================================================================
+
+class Phase72OptimizationOperatorsTests(TestCase):
+    """
+    Tests the 10 deterministic spatial mutation and repair operators.
+    """
+
+    def setUp(self):
+        self.rng = random.Random(42)
+        self.base_scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern 3-Seater Sofa',
+                    'position': [0.0, 0.45, -0.8],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [2.2, 0.9, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                },
+                {
+                    'id': 'table-1',
+                    'assetId': 'table-oak-coffee',
+                    'name': 'Minimalist Coffee Table',
+                    'position': [0.0, 0.225, 0.2],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [1.1, 0.45, 0.6],
+                    'scale': [1.0, 1.0, 1.0],
+                },
+            ],
+            'relationships': [
+                {
+                    'id': 'rel-1',
+                    'anchorObjectId': 'sofa-1',
+                    'childObjectId': 'table-1',
+                    'socketId': 'sofa-front-table',
+                    'gapMeters': 0.40,
+                }
+            ],
+        }
+
+    def test_op_repair_boundary_pulls_penetrated_object_inside(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+        from apps.ai_agent.optimization.optimization_constraints import ConstraintEvaluator
+
+        # Place item penetrating boundary (X = 1.8m with 2.2m width breaches 2.5m wall)
+        scene = copy.deepcopy(self.base_scene)
+        scene['objects'][0]['position'] = [1.8, 0.45, 0.0]
+        state = CandidateSceneState(scene)
+
+        initial_eval = ConstraintEvaluator.evaluate_state(state)
+        self.assertFalse(initial_eval['is_valid'])
+
+        changed, msg = OptimizationOperators.op_repair_boundary(state, self.rng)
+        self.assertTrue(changed)
+
+        pos = state.get_object_position('sofa-1')
+        self.assertIsNotNone(pos)
+        self.assertLessEqual(pos[0], 2.5)
+
+    def test_op_repair_collision_separates_intersecting_items(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+        from apps.ai_agent.optimization.optimization_constraints import ConstraintEvaluator
+
+        scene = copy.deepcopy(self.base_scene)
+        # Place both items at the exact same location
+        scene['objects'][0]['position'] = [0.0, 0.45, 0.0]
+        scene['objects'][1]['position'] = [0.0, 0.45, 0.0]
+        scene['relationships'] = []  # unattached to trigger collision check
+
+        state = CandidateSceneState(scene)
+        eval_before = ConstraintEvaluator.evaluate_state(state)
+        self.assertGreaterEqual(len(eval_before['collisions']), 1)
+
+        changed, msg = OptimizationOperators.op_repair_collision(state, self.rng)
+        self.assertTrue(changed)
+
+        pos_a = state.get_object_position('sofa-1')
+        pos_b = state.get_object_position('table-1')
+        self.assertIsNotNone(pos_a)
+        self.assertIsNotNone(pos_b)
+        dist = math.hypot(pos_a[0] - pos_b[0], pos_a[2] - pos_b[2])
+        self.assertGreater(dist, 0.05)
+
+    def test_op_wall_alignment_snaps_yaw_to_wall(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+
+        state = CandidateSceneState(self.base_scene)
+        state.set_object_yaw('sofa-1', 0.35)  # non-cardinal angle
+
+        changed, msg = OptimizationOperators.op_wall_alignment(state, self.rng)
+        self.assertTrue(changed)
+
+        new_yaw = state.get_object_yaw('sofa-1')
+        # Should snap to cardinal orientation (0, pi/2, pi, -pi/2)
+        cardinal_yaws = [0.0, math.pi / 2.0, math.pi, -math.pi / 2.0]
+        self.assertTrue(any(abs((new_yaw - cy + math.pi) % (2 * math.pi) - math.pi) < 0.05 for cy in cardinal_yaws))
+
+    def test_op_group_translation_moves_cluster_cohesively(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+
+        state = CandidateSceneState(self.base_scene)
+        pos_sofa_before = state.get_object_position('sofa-1')
+        pos_table_before = state.get_object_position('table-1')
+
+        changed, msg = OptimizationOperators.op_group_translation(state, self.rng)
+        self.assertTrue(changed)
+
+        pos_sofa_after = state.get_object_position('sofa-1')
+        pos_table_after = state.get_object_position('table-1')
+
+        dx_sofa = pos_sofa_after[0] - pos_sofa_before[0]
+        dx_table = pos_table_after[0] - pos_table_before[0]
+        dz_sofa = pos_sofa_after[2] - pos_sofa_before[2]
+        dz_table = pos_table_after[2] - pos_table_before[2]
+
+        self.assertAlmostEqual(dx_sofa, dx_table, places=3)
+        self.assertAlmostEqual(dz_sofa, dz_table, places=3)
+
+    def test_op_socket_reassignment_updates_gap_within_bounds(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+        from apps.ai_agent.sockets import CANONICAL_SOCKET_DEFINITIONS
+
+        state = CandidateSceneState(self.base_scene)
+        sdef = next(s for s in CANONICAL_SOCKET_DEFINITIONS if s['id'] == 'sofa-front-table')
+
+        changed, msg = OptimizationOperators.op_socket_reassignment(state, self.rng)
+        self.assertTrue(changed)
+
+        updated_rel = state.relationships[0]
+        new_gap = float(updated_rel['gapMeters'])
+        self.assertGreaterEqual(new_gap, sdef['min_gap'] - 0.01)
+        self.assertLessEqual(new_gap, sdef['max_gap'] + 0.01)
+
+    def test_op_open_space_recovery_pushes_central_items_outward(self):
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+        from apps.ai_agent.optimization.optimization_operators import OptimizationOperators
+
+        scene = copy.deepcopy(self.base_scene)
+        # Place item near center of room (0.2, 0.2)
+        scene['objects'][0]['position'] = [0.2, 0.45, 0.2]
+        state = CandidateSceneState(scene)
+
+        dist_before = math.hypot(0.2, 0.2)
+        changed, msg = OptimizationOperators.op_open_space_recovery(state, self.rng)
+        self.assertTrue(changed)
+
+        pos_after = state.get_object_position('sofa-1')
+        dist_after = math.hypot(pos_after[0], pos_after[2])
+        self.assertGreater(dist_after, dist_before)
+
+
+class Phase72ConstraintSearchAndRepairTests(TestCase):
+    """
+    Tests two-phase search and repair behavior, reproducibility, and scene isolation.
+    """
+
+    def setUp(self):
+        self.initial_scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'mock-sofa-test',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern 3-Seater Sofa',
+                    'position': [0.0, 0.45, -0.8],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [2.2, 0.9, 0.9],
+                    'scale': [1.0, 1.0, 1.0],
+                },
+                {
+                    'id': 'mock-chair-breach',
+                    'assetId': 'chair-accent-armchair',
+                    'name': 'Lounge Accent Armchair',
+                    'position': [2.8, 0.44, 0.0],  # Breaches 2.5m wall limit
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [0.85, 0.88, 0.85],
+                    'scale': [1.0, 1.0, 1.0],
+                },
+            ],
+            'relationships': [],
+        }
+
+    def test_repair_and_optimize_repairs_out_of_bounds_violation(self):
+        from apps.ai_agent.optimization.optimization_search import SpatialOptimizerSearch
+
+        search = SpatialOptimizerSearch()
+        opt_state, metrics = search.repair_and_optimize(
+            initial_scene=self.initial_scene,
+            initial_actions=[],
+            variant_seed_offset=1,
+        )
+
+        self.assertFalse(metrics.initial_valid)
+        self.assertTrue(opt_state.is_valid)
+        self.assertTrue(metrics.final_valid)
+        self.assertGreaterEqual(metrics.repaired_boundary_violations, 1)
+
+    def test_search_is_strictly_deterministic_under_fixed_seed(self):
+        from apps.ai_agent.optimization.optimization_search import SpatialOptimizerSearch
+
+        search1 = SpatialOptimizerSearch()
+        search2 = SpatialOptimizerSearch()
+
+        opt1, m1 = search1.repair_and_optimize(
+            initial_scene=self.initial_scene,
+            initial_actions=[],
+            variant_seed_offset=42,
+        )
+        opt2, m2 = search2.repair_and_optimize(
+            initial_scene=self.initial_scene,
+            initial_actions=[],
+            variant_seed_offset=42,
+        )
+
+        pos1 = opt1.scene['objects'][1]['position']
+        pos2 = opt2.scene['objects'][1]['position']
+        self.assertEqual(pos1, pos2)
+        self.assertEqual(opt1.objectives.aggregate_score(), opt2.objectives.aggregate_score())
+
+    def test_search_never_mutates_original_input_scene(self):
+        from apps.ai_agent.optimization.optimization_search import SpatialOptimizerSearch
+
+        scene_snapshot = copy.deepcopy(self.initial_scene)
+        search = SpatialOptimizerSearch()
+        opt_state, metrics = search.repair_and_optimize(
+            initial_scene=self.initial_scene,
+            initial_actions=[],
+        )
+
+        self.assertEqual(self.initial_scene, scene_snapshot)
+
+
+class Phase72ParetoAndDiversityTests(TestCase):
+    """
+    Tests Pareto dominance, front sorting, crowding distance, and diversity metrics.
+    """
+
+    def test_objective_vector_dominance(self):
+        from apps.ai_agent.optimization.optimization_types import ObjectiveVector
+
+        vec_a = ObjectiveVector(containment=100, collision=100, circulation=90, clearance=90)
+        vec_b = ObjectiveVector(containment=100, collision=100, circulation=80, clearance=80)
+        vec_c = ObjectiveVector(containment=100, collision=100, circulation=95, clearance=70)
+
+        self.assertTrue(vec_a.dominates(vec_b))
+        self.assertFalse(vec_b.dominates(vec_a))
+        # Non-dominance (trade-off)
+        self.assertFalse(vec_a.dominates(vec_c))
+        self.assertFalse(vec_c.dominates(vec_a))
+
+    def test_pareto_selector_non_dominated_sorting(self):
+        from apps.ai_agent.optimization.optimization_selection import ParetoSelector
+        from apps.ai_agent.optimization.optimization_types import ObjectiveVector, OptimizationCandidateState
+
+        c1 = OptimizationCandidateState(
+            state_id='c1', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(circulation=95, utilization=90)
+        )
+        c2 = OptimizationCandidateState(
+            state_id='c2', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(circulation=80, utilization=75)  # Dominated by c1
+        )
+        c3 = OptimizationCandidateState(
+            state_id='c3', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(circulation=90, utilization=95)  # Trade-off with c1
+        )
+
+        fronts = ParetoSelector.non_dominated_sort([c1, c2, c3])
+        self.assertEqual(len(fronts), 2)
+        front0_ids = {c.state_id for c in fronts[0]}
+        self.assertEqual(front0_ids, {'c1', 'c3'})
+        self.assertEqual(fronts[1][0].state_id, 'c2')
+
+    def test_diversity_engine_measures_spatial_and_rotational_difference(self):
+        from apps.ai_agent.optimization.optimization_diversity import DiversityEngine
+        from apps.ai_agent.optimization.optimization_state import CandidateSceneState
+
+        scene1 = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [{'id': 'o1', 'position': [-1.0, 0.45, 0.0], 'rotationEuler': [0.0, 0.0, 0.0]}],
+            'relationships': [],
+        }
+        scene2 = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [{'id': 'o1', 'position': [1.0, 0.45, 0.0], 'rotationEuler': [0.0, math.pi, 0.0]}],
+            'relationships': [],
+        }
+
+        s1 = CandidateSceneState(scene1)
+        s2 = CandidateSceneState(scene2)
+
+        dist = DiversityEngine.calculate_state_distance(s1, s2)
+        self.assertGreater(dist, 40.0)
+
+    def test_badge_assignment(self):
+        from apps.ai_agent.optimization.optimization_selection import ParetoSelector
+        from apps.ai_agent.optimization.optimization_types import ObjectiveVector, OptimizationCandidateState
+
+        c_overall = OptimizationCandidateState(
+            state_id='c1', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(containment=100, collision=100, circulation=92, utilization=90, preferences=95)
+        )
+        c_circ = OptimizationCandidateState(
+            state_id='c2', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(containment=100, collision=100, circulation=99, utilization=75, preferences=80)
+        )
+        c_space = OptimizationCandidateState(
+            state_id='c3', scene={}, proposed_actions=[],
+            objectives=ObjectiveVector(containment=100, collision=100, circulation=85, utilization=98, preferences=80)
+        )
+
+        ParetoSelector.assign_badges([c_overall, c_circ, c_space])
+        self.assertEqual(c_overall.best_badge, "Best Overall")
+        self.assertEqual(c_circ.best_badge, "Best Circulation")
+        self.assertEqual(c_space.best_badge, "Best Open Space")
+
+
+class Phase72OptimizationIntegrationTests(APITestCase):
+    """
+    End-to-end integration tests for multi-candidate generation with active optimization.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='opt_user', password='password123')
+        self.design = Design.objects.create(title='Optimization Design', owner=self.user, scene_json={'objects': []})
+        self.session = AgentSession.objects.create(design=self.design, owner=self.user, title='Opt Session')
+
+    def test_candidate_generator_attaches_optimization_metadata(self):
+        from apps.ai_agent.candidate_generator import CandidateGenerator
+        from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
+
+        scene = {
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+            'relationships': [],
+        }
+        gen = CandidateGenerator(adapter=MockDesignLLMAdapter())
+        candidates = gen.generate_candidates(
+            user_prompt="Arrange a conversational living area with sofa, coffee table, and accent chairs",
+            current_scene=scene,
+            candidate_count=3,
+        )
+
+        self.assertEqual(len(candidates), 3)
+        for cand in candidates:
+            self.assertIsNotNone(cand.optimization_metadata)
+            meta = cand.optimization_metadata
+            self.assertEqual(meta['version'], '7.2')
+            self.assertIn('iterations', meta)
+            self.assertIn('durationMs', meta)
+            self.assertIn('finalValid', meta)
+            self.assertIn('objectives', meta)
+            self.assertTrue(cand.is_valid)
+            self.assertTrue(cand.is_approval_eligible)
+
+    def test_evaluation_runner_74_scenarios_pass_all_gates(self):
+        from apps.ai_agent.evaluation import run_spatial_evaluation
+
+        result = run_spatial_evaluation()
+        sm = result.summary_metrics
+
+        self.assertEqual(sm.total_cases, 74)
+        self.assertEqual(sm.total_candidates, 222)
+        self.assertEqual(sm.gate_pass_rate_pct, 100.0)
+        self.assertEqual(sm.failed_gates_count, 0)
+        self.assertGreaterEqual(sm.hard_validity_rate_pct, 80.0)
+        self.assertGreaterEqual(sm.mean_candidate_diversity_score, 80.0)
+        self.assertGreaterEqual(sm.mean_preference_score, 90.0)
+
 
 
 

@@ -51,6 +51,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Evaluation completed across {sm.total_cases} scenarios ({sm.total_candidates} candidates)."))
         self.stdout.write(f"Hard Validity Rate: {sm.hard_validity_rate_pct:.1f}%")
+        self.stdout.write(f"Candidate Eligibility Rate: {sm.candidate_eligibility_rate_pct:.1f}%")
+        self.stdout.write(f"Mean Preference Score: {sm.mean_preference_score:.1f}/100")
         self.stdout.write(f"Mean Circulation Score: {sm.mean_circulation_score:.1f}/100")
         self.stdout.write(f"Mean Clearance Score: {sm.mean_clearance_score:.1f}/100")
         self.stdout.write(f"Mean Utilization Score: {sm.mean_utilization_score:.1f}/100")

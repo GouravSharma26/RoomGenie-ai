@@ -96,6 +96,7 @@ class EvaluationSummaryMetrics:
     total_candidates: int = 0
     valid_candidates: int = 0
     hard_validity_rate_pct: float = 0.0
+    candidate_eligibility_rate_pct: float = 0.0
     boundary_violation_rate_pct: float = 0.0
     collision_rate_pct: float = 0.0
     doorway_obstruction_rate_pct: float = 0.0

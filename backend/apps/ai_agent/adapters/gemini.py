@@ -263,6 +263,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
         catalogue_context: list[dict[str, Any]] | None = None,
         spatial_context: dict[str, Any] | None = None,
         user_requirements: dict[str, Any] | None = None,
+        preferences: Any = None,
     ) -> list[DesignProposalResult]:
         """
         Generates multiple distinct candidate layout proposals.
@@ -277,6 +278,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 catalogue_context=catalogue_context,
                 spatial_context=spatial_context,
                 user_requirements=user_requirements,
+                preferences=preferences,
             )
 
         # Diverse stylistic/spatial directions for multi-candidate generation
@@ -313,6 +315,7 @@ class GeminiDesignLLMAdapter(BaseDesignLLMAdapter):
                 catalogue_context=catalogue_context,
                 spatial_context=spatial_context,
                 user_requirements=user_requirements,
+                preferences=preferences,
             )
 
         return variants

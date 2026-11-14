@@ -59,6 +59,31 @@ export interface CandidateIssue {
   object_ids?: string[];
 }
 
+export interface OptimizationMetadata {
+  version: string;
+  iterations: number;
+  statesEvaluated?: number;
+  durationMs: number;
+  repaired: boolean;
+  initialValid: boolean;
+  finalValid: boolean;
+  initialScore: number;
+  finalScore: number;
+  scoreDelta: number;
+  bestBadge?: string | null;
+  objectives?: {
+    containment: number;
+    collision: number;
+    circulation: number;
+    clearance: number;
+    accessibility: number;
+    utilization: number;
+    preferences: number;
+    relationships: number;
+  };
+  appliedOperators?: string[];
+}
+
 export interface LayoutCandidateRecord {
   id: string;
   schema_version: number;
@@ -91,6 +116,7 @@ export interface LayoutCandidateRecord {
   source_scene_hash?: string;
   created_at_ms?: number;
   budget_diff?: BudgetDiff;
+  optimization_metadata?: OptimizationMetadata;
 }
 
 export interface ValidationResults {

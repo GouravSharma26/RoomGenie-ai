@@ -41,6 +41,7 @@ def generate_markdown_report(run_output: EvaluationRunOutput) -> str:
         f"| **Total Evaluation Scenarios** | {sm.total_cases} | >= 30 | {'✅ PASS' if sm.total_cases >= 30 else '❌ FAIL'} |",
         f"| **Total Candidates Evaluated** | {sm.total_candidates} | >= 90 | {'✅ PASS' if sm.total_candidates >= 90 else '❌ FAIL'} |",
         f"| **Candidate Hard-Validity Rate** | {sm.hard_validity_rate_pct:.1f}% | >= 90.0% | {'✅ PASS' if sm.hard_validity_rate_pct >= 90.0 else '⚠️ REVIEW'} |",
+        f"| **Candidate Approval Eligibility Rate** | {sm.candidate_eligibility_rate_pct:.1f}% | >= 80.0% | {'✅ PASS' if sm.candidate_eligibility_rate_pct >= 80.0 else '⚠️ REVIEW'} |",
         f"| **Boundary Breach Rate** | {sm.boundary_violation_rate_pct:.1f}% | <= 2.0% | {'✅ PASS' if sm.boundary_violation_rate_pct <= 2.0 else '❌ FAIL'} |",
         f"| **OBB Collision Rate** | {sm.collision_rate_pct:.1f}% | <= 2.0% | {'✅ PASS' if sm.collision_rate_pct <= 2.0 else '❌ FAIL'} |",
         f"| **Doorway Obstruction Rate** | {sm.doorway_obstruction_rate_pct:.1f}% | <= 5.0% | {'✅ PASS' if sm.doorway_obstruction_rate_pct <= 5.0 else '❌ FAIL'} |",
