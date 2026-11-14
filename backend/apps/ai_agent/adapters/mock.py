@@ -560,6 +560,29 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
             return [incompat_proposal] * candidate_count
 
         # -------------------------------------------------------------
+        # Negative Gate: Ambiguous or Unsupported Furniture Request (SCN-90, SCN-91)
+        # -------------------------------------------------------------
+        if 'asdfghjk' in prompt_lower or 'piano' in prompt_lower or 'unsupported' in prompt_lower:
+            invalid_proposal = DesignProposalResult(
+                text_response="Negative gate test: ambiguous or unsupported furniture request cannot produce an eligible candidate.",
+                proposed_actions=[
+                    {
+                        'type': 'add_furniture',
+                        'object_id': 'mock-invalid-request',
+                        'asset_id': 'unsupported-asset-nonexistent',
+                        'position': [50.0, 0.0, 50.0],
+                        'rotation_euler': [0.0, 0.0, 0.0],
+                    }
+                ],
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Infeasible / Ambiguous Proposal",
+                description="Prompt contains unsupported furniture or ambiguous non-spatial content.",
+                trade_offs=["Cannot fulfill request"],
+            )
+            return [invalid_proposal] * candidate_count
+
+        # -------------------------------------------------------------
         # Single Armchair Request (e.g. "Add an armchair")
         # -------------------------------------------------------------
         if any(w in prompt_lower for w in ('armchair', 'reading', 'cozy chair')) and not any(w in prompt_lower for w in ('sofa', 'workspace', 'boundary', 'collision', 'clearance', 'budget')):

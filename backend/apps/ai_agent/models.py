@@ -137,3 +137,20 @@ class UserDesignPreference(models.Model):
     def __str__(self):
         return f"DesignPreferences for {self.owner.username} (v{self.schema_version})"
 
+
+# Phase 7.3: Explainable, Feedback-Driven Spatial Design Refinement Models
+from apps.ai_agent.feedback.feedback_models import (
+    UserCandidateFeedback,
+    UserPairwiseComparison,
+    LearnedPreferenceAdjustment,
+)
+
+__all__ = [
+    'AgentSession',
+    'AgentRun',
+    'UserDesignPreference',
+    'UserCandidateFeedback',
+    'UserPairwiseComparison',
+    'LearnedPreferenceAdjustment',
+]
+

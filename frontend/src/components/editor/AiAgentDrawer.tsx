@@ -19,7 +19,11 @@ import {
   LayoutGrid,
   Eye,
   ShieldCheck,
-  Sliders
+  Sliders,
+  ThumbsUp,
+  ThumbsDown,
+  HelpCircle,
+  Lightbulb
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { usePreviewStore } from '../../editor3d/store/previewStore';
@@ -34,11 +38,15 @@ import {
   fetchUserPreferences,
   saveUserPreferences,
   resetUserPreferences,
+  submitCandidateFeedback,
+  getCandidateExplanation,
+  refineCandidateLayout,
   type AgentSessionRecord, 
   type AgentRunRecord, 
   type ProposedAction,
   type BudgetDiff,
-  type LayoutCandidateRecord
+  type LayoutCandidateRecord,
+  type CandidateExplanation
 } from '../../services/agentApi';
 import type { DesignPreferences, PreferencesFeedback } from '../../types/preferenceTypes';
 import { PREFERENCE_TAXONOMY_LABELS } from '../../types/preferenceTypes';
@@ -138,6 +146,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
   const [isPrefModalOpen, setIsPrefModalOpen] = useState(false);
   const [isSavedPref, setIsSavedPref] = useState(false);
   const [lastPreferencesFeedback, setLastPreferencesFeedback] = useState<PreferencesFeedback | null>(null);
+
+  // Phase 7.3: Explainability, Feedback & Refinement States
+  const [candidateFeedback, setCandidateFeedback] = useState<Record<string, { type: 'liked' | 'disliked'; reason?: string }>>({});
+  const [explanationState, setExplanationState] = useState<Record<string, { loading: boolean; open: boolean; data?: CandidateExplanation }>>({});
+  const [refinementInput, setRefinementInput] = useState<Record<string, string>>({});
+  const [isRefining, setIsRefining] = useState<Record<string, boolean>>({});
+  const [refinementStatus, setRefinementStatus] = useState<Record<string, string | null>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -502,6 +517,77 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       setActionInProgressId(null);
     }
   }, [session]);
+
+  const handleFeedback = useCallback(async (runId: string, candId: string, type: 'liked' | 'disliked', reason?: string) => {
+    try {
+      setCandidateFeedback(prev => ({ ...prev, [candId]: { type, reason } }));
+      await submitCandidateFeedback({
+        run_id: runId,
+        candidate_id: candId,
+        feedback_type: type,
+        structured_reasons: reason ? [reason] : (type === 'liked' ? ['better_circulation'] : ['other']),
+      });
+    } catch (e) {
+      console.warn('Failed to submit feedback:', e);
+    }
+  }, []);
+
+  const handleToggleExplanation = useCallback(async (runId: string, candId: string) => {
+    const curr = explanationState[candId];
+    if (curr?.open) {
+      setExplanationState(prev => ({ ...prev, [candId]: { ...curr, open: false } }));
+      return;
+    }
+    if (curr?.data) {
+      setExplanationState(prev => ({ ...prev, [candId]: { ...curr, open: true } }));
+      return;
+    }
+    setExplanationState(prev => ({ ...prev, [candId]: { loading: true, open: true } }));
+    try {
+      const expl = await getCandidateExplanation(runId, candId);
+      setExplanationState(prev => ({ ...prev, [candId]: { loading: false, open: true, data: expl } }));
+    } catch (e) {
+      setExplanationState(prev => ({ ...prev, [candId]: { loading: false, open: false } }));
+      console.warn('Failed to fetch explanation:', e);
+    }
+  }, [explanationState]);
+
+  const handleExecuteRefinement = useCallback(async (msgId: string, runId: string, candId: string) => {
+    const prompt = (refinementInput[candId] || '').trim();
+    if (!prompt) return;
+
+    setIsRefining(prev => ({ ...prev, [candId]: true }));
+    setRefinementStatus(prev => ({ ...prev, [candId]: null }));
+
+    try {
+      const res = await refineCandidateLayout(runId, candId, prompt);
+      if (res.refined_candidates && res.refined_candidates.length > 0) {
+        setMessages(prev => prev.map(m => {
+          if (m.id === msgId) {
+            return {
+              ...m,
+              candidates: res.refined_candidates,
+              selectedCandidateId: res.refined_candidates[0].id,
+            };
+          }
+          return m;
+        }));
+        usePreviewStore.getState().startPreview(runId, res.refined_candidates[0], res.refined_candidates);
+        const statusMsg = `Refined into ${res.refined_candidates.length} options (${res.refinement_request.intent_category.replace('_', ' ')})`;
+        const newCandId = res.refined_candidates[0].id;
+        setRefinementStatus(prev => ({
+          ...prev,
+          [candId]: statusMsg,
+          [newCandId]: statusMsg,
+        }));
+        setRefinementInput(prev => ({ ...prev, [candId]: '' }));
+      }
+    } catch (e: any) {
+      setRefinementStatus(prev => ({ ...prev, [candId]: `Refinement failed: ${e.message || 'Error'}` }));
+    } finally {
+      setIsRefining(prev => ({ ...prev, [candId]: false }));
+    }
+  }, [refinementInput]);
 
   const handleCloseDrawer = useCallback(() => {
     usePreviewStore.getState().exitPreview();
@@ -917,6 +1003,128 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                               <span>Refined over {activeCand.refinement_attempts} attempts using automated feedback</span>
                             </div>
                           )}
+
+                          {/* Phase 7.3: Candidate Feedback Controls */}
+                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs" data-testid="candidate-feedback-controls">
+                            <span className="text-[10px] text-slate-400 font-medium">Was this candidate helpful?</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => msg.run && handleFeedback(msg.run.id, activeCand.id, 'liked')}
+                                data-testid={`feedback-like-${activeCand.id}`}
+                                className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] transition ${
+                                  candidateFeedback[activeCand.id]?.type === 'liked'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                                    : 'bg-slate-800/60 text-slate-400 hover:text-emerald-300 hover:bg-slate-800'
+                                }`}
+                                title="Like this candidate layout"
+                              >
+                                <ThumbsUp className="w-3 h-3" />
+                                <span>Like</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => msg.run && handleFeedback(msg.run.id, activeCand.id, 'disliked')}
+                                data-testid={`feedback-dislike-${activeCand.id}`}
+                                className={`px-2 py-1 rounded flex items-center gap-1 text-[11px] transition ${
+                                  candidateFeedback[activeCand.id]?.type === 'disliked'
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-semibold'
+                                    : 'bg-slate-800/60 text-slate-400 hover:text-rose-300 hover:bg-slate-800'
+                                }`}
+                                title="Dislike this candidate layout"
+                              >
+                                <ThumbsDown className="w-3 h-3" />
+                                <span>Dislike</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Phase 7.3: Explainability Panel ("Why this layout?") */}
+                          <div className="pt-1.5 border-t border-slate-800/80" data-testid="candidate-explanation-block">
+                            <button
+                              type="button"
+                              onClick={() => msg.run && handleToggleExplanation(msg.run.id, activeCand.id)}
+                              data-testid={`toggle-explanation-${activeCand.id}`}
+                              className="w-full flex items-center justify-between text-[11px] text-indigo-300 hover:text-indigo-200 transition font-medium py-0.5"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>Why this layout?</span>
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                {explanationState[activeCand.id]?.open ? 'Hide explanation ▲' : 'Inspect reasoning ▼'}
+                              </span>
+                            </button>
+
+                            {explanationState[activeCand.id]?.open && (
+                              <div className="mt-2 p-2.5 bg-slate-950/80 border border-indigo-900/40 rounded-lg space-y-2 text-[11px]" data-testid="explanation-content">
+                                {explanationState[activeCand.id]?.loading ? (
+                                  <div className="flex items-center gap-2 text-slate-400 py-1">
+                                    <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                                    <span>Generating explanation from spatial metrics...</span>
+                                  </div>
+                                ) : explanationState[activeCand.id]?.data ? (
+                                  <>
+                                    <div className="font-semibold text-white text-[11px] flex items-center gap-1.5">
+                                      <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                      <span>{explanationState[activeCand.id].data!.headline}</span>
+                                    </div>
+                                    {explanationState[activeCand.id].data!.why_recommended.length > 0 && (
+                                      <ul className="space-y-1 text-slate-300 pl-4 list-disc text-[10px]">
+                                        {explanationState[activeCand.id].data!.why_recommended.map((r, rIdx) => (
+                                          <li key={rIdx}>{r}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    {explanationState[activeCand.id].data!.key_metrics && (
+                                      <div className="grid grid-cols-3 gap-1 bg-slate-900/60 p-1.5 rounded border border-slate-800 text-[9px] text-slate-400 font-mono">
+                                        <div>Open space: <span className="text-white font-semibold">{explanationState[activeCand.id].data!.key_metrics.open_floor_m2 ?? '--'} m²</span></div>
+                                        <div>Occupied: <span className="text-white font-semibold">{explanationState[activeCand.id].data!.key_metrics.occupied_floor_pct ?? '--'}%</span></div>
+                                        <div>Min door clr: <span className="text-white font-semibold">{explanationState[activeCand.id].data!.key_metrics.door_clearance_min_m ?? '--'}m</span></div>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Phase 7.3: Conversational Layout Refinement */}
+                          <div className="pt-2 border-t border-slate-800/80" data-testid="candidate-refinement-block">
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                              Refine this layout
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={refinementInput[activeCand.id] || ''}
+                                onChange={(e) => setRefinementInput(prev => ({ ...prev, [activeCand.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !isRefining[activeCand.id] && msg.run) {
+                                    handleExecuteRefinement(msg.id, msg.run.id, activeCand.id);
+                                  }
+                                }}
+                                placeholder="e.g. Keep sofa, move table forward 0.2m..."
+                                className="flex-1 bg-slate-950/70 border border-slate-800 rounded px-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                                data-testid={`refinement-input-${activeCand.id}`}
+                              />
+                              <button
+                                type="button"
+                                disabled={isRefining[activeCand.id] || !(refinementInput[activeCand.id] || '').trim()}
+                                onClick={() => msg.run && handleExecuteRefinement(msg.id, msg.run.id, activeCand.id)}
+                                data-testid={`refine-btn-${activeCand.id}`}
+                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-xs font-medium flex items-center gap-1 transition shrink-0"
+                              >
+                                {isRefining[activeCand.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                <span>Refine</span>
+                              </button>
+                            </div>
+                            {refinementStatus[activeCand.id] && (
+                              <div className="mt-1 text-[10px] text-cyan-300 font-mono" data-testid={`refinement-status-${activeCand.id}`}>
+                                {refinementStatus[activeCand.id]}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
 

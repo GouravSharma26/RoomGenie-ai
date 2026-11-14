@@ -364,3 +364,201 @@ export async function rejectAgentRun(
 
   return await res.json();
 }
+
+export interface CandidateExplanation {
+  candidate_id: string;
+  label: string;
+  headline: string;
+  why_recommended: string[];
+  key_metrics: {
+    boundary_score: number;
+    collision_score: number;
+    circulation_score: number;
+    clearance_score: number;
+    utilization_score: number;
+    budget_score: number;
+    overall_score: number;
+    occupied_floor_pct?: number;
+    open_floor_m2?: number;
+    furniture_count?: number;
+    door_clearance_min_m?: number;
+    budget_paise?: number;
+  };
+  alignment_reasons: string[];
+  trade_offs: string[];
+  spatial_adjustments: string[];
+}
+
+export interface CandidateComparisonDetail {
+  candidate_a_id: string;
+  candidate_b_id: string;
+  candidate_a_label: string;
+  candidate_b_label: string;
+  overall_score_delta: number;
+  open_space_delta_m2: number;
+  circulation_delta: number;
+  position_displacements: Array<{
+    object_id: string;
+    name: string;
+    asset_id: string;
+    distance_meters: number;
+    yaw_difference_deg: number;
+    position_a: [number, number];
+    position_b: [number, number];
+    description: string;
+  }>;
+  key_trade_offs: string[];
+  recommendation_summary: string;
+}
+
+export interface LearnedPreferenceState {
+  user_id: number;
+  model_version: number;
+  feedback_count: number;
+  adjusted_weights: Record<string, number>;
+  confidence_scores: Record<string, number>;
+  explanations: Record<string, string>;
+  is_active: boolean;
+  last_updated_iso?: string;
+}
+
+export interface RefinementResponse {
+  refined_candidates: LayoutCandidateRecord[];
+  refinement_request: {
+    raw_prompt: string;
+    intent_category: string;
+    target_object_ids: string[];
+    protected_object_ids: string[];
+    is_ambiguous: boolean;
+    ambiguity_reason?: string;
+  };
+  base_candidate_id: string;
+  count: number;
+}
+
+export async function submitCandidateFeedback(data: {
+  run_id: string;
+  candidate_id: string;
+  feedback_type: 'liked' | 'disliked' | 'selected' | 'rejected' | 'modified';
+  structured_reasons?: string[];
+  feedback_text?: string;
+}): Promise<any> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/feedback/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      errorMsg = err.detail || JSON.stringify(err);
+    } catch {
+      // fallback
+    }
+    throw new Error(`Failed to submit feedback: ${errorMsg}`);
+  }
+  return await res.json();
+}
+
+export async function submitPairwiseComparison(data: {
+  run_id: string;
+  candidate_a_id: string;
+  candidate_b_id: string;
+  outcome: 'a_preferred' | 'b_preferred' | 'tie' | 'both_disliked';
+  structured_reasons?: string[];
+  comparison_text?: string;
+}): Promise<any> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/feedback/compare/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      errorMsg = err.detail || JSON.stringify(err);
+    } catch {
+      // fallback
+    }
+    throw new Error(`Failed to submit comparison: ${errorMsg}`);
+  }
+  return await res.json();
+}
+
+export async function getLearnedPreferences(): Promise<LearnedPreferenceState> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/feedback/learned-preferences/`, {
+    method: 'GET',
+    headers: getAuthHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch learned preferences: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function resetLearnedPreferences(): Promise<LearnedPreferenceState> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/feedback/learned-preferences/reset/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Failed to reset learned preferences: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function getCandidateExplanation(runId: string, candidateId: string): Promise<CandidateExplanation> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/runs/${runId}/candidates/${candidateId}/explain/`, {
+    method: 'GET',
+    headers: getAuthHeaders(token),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch explanation: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function compareCandidatesDetailed(
+  runId: string,
+  candidateAId: string,
+  candidateBId: string
+): Promise<CandidateComparisonDetail> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/runs/${runId}/candidates/compare-detailed/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify({
+      candidate_a_id: candidateAId,
+      candidate_b_id: candidateBId,
+    }),
+  });
+  if (!res.ok) throw new Error(`Failed to compare candidates: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function refineCandidateLayout(
+  runId: string,
+  candidateId: string,
+  instruction: string
+): Promise<RefinementResponse> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/runs/${runId}/candidates/${candidateId}/refine/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify({
+      instruction,
+    }),
+  });
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      errorMsg = err.detail || JSON.stringify(err);
+    } catch {
+      // fallback
+    }
+    throw new Error(`Failed to refine candidate: ${errorMsg}`);
+  }
+  return await res.json();
+}

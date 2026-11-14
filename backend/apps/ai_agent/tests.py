@@ -3417,6 +3417,41 @@ class Phase72OptimizationIntegrationTests(APITestCase):
         self.design = Design.objects.create(title='Optimization Design', owner=self.user, scene_json={'objects': []})
         self.session = AgentSession.objects.create(design=self.design, owner=self.user, title='Opt Session')
 
+        from apps.furniture.models import FurnitureAsset
+        FurnitureAsset.objects.create(
+            id='sofa-modern-3seater',
+            name='Modern 3-Seater Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=2999900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='table-oak-coffee',
+            name='Oak Coffee Table',
+            category='tables',
+            width=Decimal('1.10'),
+            height=Decimal('0.45'),
+            depth=Decimal('0.60'),
+            price_paise=899900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='chair-accent-armchair',
+            name='Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.85'),
+            price_paise=1299900,
+            currency='INR',
+            is_active=True,
+        )
+
     def test_candidate_generator_attaches_optimization_metadata(self):
         from apps.ai_agent.candidate_generator import CandidateGenerator
         from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
@@ -3451,13 +3486,434 @@ class Phase72OptimizationIntegrationTests(APITestCase):
         result = run_spatial_evaluation()
         sm = result.summary_metrics
 
-        self.assertEqual(sm.total_cases, 74)
-        self.assertEqual(sm.total_candidates, 222)
+        self.assertEqual(sm.total_cases, 104)
+        self.assertEqual(sm.total_candidates, 312)
         self.assertEqual(sm.gate_pass_rate_pct, 100.0)
         self.assertEqual(sm.failed_gates_count, 0)
         self.assertGreaterEqual(sm.hard_validity_rate_pct, 80.0)
         self.assertGreaterEqual(sm.mean_candidate_diversity_score, 80.0)
         self.assertGreaterEqual(sm.mean_preference_score, 90.0)
+
+
+# =============================================================================
+# Phase 7.3: Explainable, Feedback-Driven Spatial Design Refinement Tests
+# =============================================================================
+
+from apps.ai_agent.feedback import (
+    FeedbackRepository,
+    PreferenceLearningEngine,
+    ExplanationEngine,
+    CandidateComparisonService,
+    RefinementInterpreter,
+    RefinementPlanner,
+    RefinementRunner,
+    FeedbackService,
+    FeedbackType,
+    ComparisonOutcome,
+    UserCandidateFeedback,
+    UserPairwiseComparison,
+    LearnedPreferenceAdjustment,
+)
+
+
+class Phase73FeedbackPersistenceAndOwnershipTests(APITestCase):
+    """
+    Tests feedback recording, pairwise comparison, cross-user ownership isolation,
+    and learned preferences persistence and reset.
+    """
+
+    def setUp(self):
+        self.user_a = User.objects.create_user(username='phase73_user_a', password='password123')
+        self.user_b = User.objects.create_user(username='phase73_user_b', password='password123')
+
+        self.design_a = Design.objects.create(
+            owner=self.user_a,
+            title="Design A",
+            scene_json={'schemaVersion': 1, 'unit': 'm', 'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}
+        )
+        self.session_a = AgentSession.objects.create(owner=self.user_a, design=self.design_a, title="Session A")
+        self.run_a = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Arrange living room",
+            status=AgentRun.STATUS_PROPOSED,
+            validation_results={
+                'candidates': [
+                    {'id': 'cand-1', 'label': 'Option A', 'score': {'overall': 92.0, 'circulation': 90.0, 'boundary': 100.0, 'collision': 100.0, 'clearance': 100.0, 'utilization': 90.0, 'budget': 100.0}, 'candidate_scene': {'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}},
+                    {'id': 'cand-2', 'label': 'Option B', 'score': {'overall': 88.0, 'circulation': 80.0, 'boundary': 100.0, 'collision': 100.0, 'clearance': 100.0, 'utilization': 85.0, 'budget': 100.0}, 'candidate_scene': {'room': {'width': 6.0, 'length': 5.0, 'height': 2.8}, 'objects': []}},
+                ]
+            }
+        )
+
+    def test_record_candidate_feedback_success(self):
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-1',
+            'feedback_type': 'liked',
+            'structured_reasons': ['better_circulation', 'more_open_floor_space'],
+            'feedback_text': 'I like the walking space.',
+            'candidate_score': 92.0,
+            'candidate_label': 'Option A',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertIn('feedback', res.data)
+        self.assertIn('learned_preferences', res.data)
+        self.assertEqual(res.data['feedback']['candidate_id'], 'cand-1')
+        self.assertEqual(res.data['feedback']['feedback_type'], 'liked')
+
+        # Verify DB record
+        fb = UserCandidateFeedback.objects.get(id=res.data['feedback']['id'])
+        self.assertEqual(fb.user, self.user_a)
+        self.assertEqual(fb.structured_reasons, ['better_circulation', 'more_open_floor_space'])
+
+    def test_cross_user_cannot_submit_feedback_on_another_users_run(self):
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-1',
+            'feedback_type': 'liked',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_record_pairwise_comparison_success(self):
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-feedback-compare')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_a_id': 'cand-1',
+            'candidate_b_id': 'cand-2',
+            'outcome': 'a_preferred',
+            'structured_reasons': ['better_circulation'],
+            'comparison_text': 'Candidate A has much clearer entry route.',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['comparison']['outcome'], 'a_preferred')
+
+        comp = UserPairwiseComparison.objects.get(id=res.data['comparison']['id'])
+        self.assertEqual(comp.user, self.user_a)
+
+    def test_learned_preferences_get_and_reset(self):
+        self.client.force_authenticate(user=self.user_a)
+        # Record feedback to trigger learned preference adjustment
+        url_fb = reverse('agent-feedback')
+        self.client.post(url_fb, {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-1',
+            'feedback_type': 'selected',
+            'structured_reasons': ['better_circulation'],
+        }, format='json')
+
+        # Check GET learned preferences
+        url_get = reverse('agent-learned-preferences')
+        res_get = self.client.get(url_get)
+        self.assertEqual(res_get.status_code, status.HTTP_200_OK)
+        self.assertGreater(res_get.data['feedback_count'], 0)
+        self.assertIn('circulation', res_get.data['adjusted_weights'])
+
+        # Check POST reset
+        url_reset = reverse('agent-learned-preferences-reset')
+        res_reset = self.client.post(url_reset, {}, format='json')
+        self.assertEqual(res_reset.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_reset.data['feedback_count'], 0)
+        self.assertEqual(res_reset.data['adjusted_weights'], {})
+
+
+class Phase73PreferenceLearningTests(TestCase):
+    """
+    Tests mathematical stability, bounds, determinism, and explicit preference
+    precedence of the PreferenceLearningEngine.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='pref_learn_user', password='password123')
+        self.engine = PreferenceLearningEngine()
+
+    def test_bounded_weight_updates(self):
+        current_state = FeedbackRepository.get_learned_preference_state(self.user)
+        # Generate 50 repeated positive feedback events for circulation
+        feedback_history = [
+            type('MockFB', (), {
+                'feedback_type': 'selected',
+                'structured_reasons': ['better_circulation'],
+            })
+            for _ in range(50)
+        ]
+        weights, confidence, explanations, count = self.engine.compute_updated_weights(
+            current_state=current_state,
+            feedback_history=feedback_history,
+        )
+        self.assertEqual(count, 50)
+        # Must be bounded strictly at MAX_WEIGHT (2.50)
+        self.assertLessEqual(weights['circulation'], 2.50)
+        self.assertGreaterEqual(weights['circulation'], 1.0)
+        self.assertGreaterEqual(confidence['circulation'], 0.90)
+        self.assertIn('Circulation weight increased', explanations['circulation'])
+
+    def test_strictly_deterministic_from_identical_history(self):
+        current_state = FeedbackRepository.get_learned_preference_state(self.user)
+        history = [
+            type('MockFB', (), {'feedback_type': 'liked', 'structured_reasons': ['more_open_floor_space']}),
+            type('MockFB', (), {'feedback_type': 'disliked', 'structured_reasons': ['better_storage']}),
+        ]
+        w1, c1, e1, _ = self.engine.compute_updated_weights(current_state, history)
+        w2, c2, e2, _ = self.engine.compute_updated_weights(current_state, history)
+        self.assertEqual(w1, w2)
+        self.assertEqual(c1, c2)
+        self.assertEqual(e1, e2)
+
+    def test_contradictory_signals_counteract_smoothly(self):
+        current_state = FeedbackRepository.get_learned_preference_state(self.user)
+        # 2 likes and 2 dislikes
+        history = [
+            type('MockFB', (), {'feedback_type': 'liked', 'structured_reasons': ['better_circulation']}),
+            type('MockFB', (), {'feedback_type': 'liked', 'structured_reasons': ['better_circulation']}),
+            type('MockFB', (), {'feedback_type': 'disliked', 'structured_reasons': ['better_circulation']}),
+            type('MockFB', (), {'feedback_type': 'disliked', 'structured_reasons': ['better_circulation']}),
+        ]
+        weights, _, _, _ = self.engine.compute_updated_weights(current_state, history)
+        # Should stay close to baseline 1.0
+        self.assertAlmostEqual(weights['circulation'], 1.04, delta=0.10)
+
+    def test_explicit_preference_precedence(self):
+        current_state = FeedbackRepository.get_learned_preference_state(self.user)
+        history = [
+            type('MockFB', (), {'feedback_type': 'selected', 'structured_reasons': ['better_circulation']})
+            for _ in range(5)
+        ]
+        explicit_saved = {'circulation': 2.0}
+        weights, _, explanations, _ = self.engine.compute_updated_weights(
+            current_state=current_state,
+            feedback_history=history,
+            explicit_saved_weights=explicit_saved,
+        )
+        # Explicit setting anchors the weight; feedback cannot wildly overwrite it
+        self.assertAlmostEqual(weights['circulation'], 2.0, delta=0.25)
+        self.assertIn("Anchored by explicit user setting (2.0)", explanations['circulation'])
+
+
+class Phase73ExplanationAndComparisonTests(APITestCase):
+    """
+    Tests evidence-based candidate explanation generation and deep pairwise comparison.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='explain_user', password='password123')
+        self.design = Design.objects.create(
+            owner=self.user,
+            title="Living Design",
+            scene_json={
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'sofa-1', 'name': 'Modern Sofa', 'assetId': 'sofa-modern-3seater', 'position': [0, 0.45, -0.8], 'rotationEuler': [0, 0, 0], 'dimensions': [2.2, 0.9, 0.9], 'scale': [1, 1, 1]}
+                ]
+            }
+        )
+        self.session = AgentSession.objects.create(owner=self.user, design=self.design, title="Session")
+        self.cand_a_dict = {
+            'id': 'cand-opt-a',
+            'label': 'Option A: Conversational',
+            'description': 'Balanced seating circle',
+            'reasoning_summary': 'Conversational setup',
+            'is_valid': True,
+            'is_approval_eligible': True,
+            'score': {'overall': 95.0, 'circulation': 92.0, 'clearance': 100.0, 'utilization': 95.0, 'boundary': 100.0, 'collision': 100.0, 'budget': 100.0, 'preference_dimensions': {'circulation': 92.0}},
+            'candidate_scene': {
+                'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'sofa-1', 'name': 'Modern Sofa', 'assetId': 'sofa-modern-3seater', 'position': [0, 0.45, -0.8], 'dimensions': [2.2, 0.9, 0.9], 'scale': [1, 1, 1]},
+                    {'id': 'table-1', 'name': 'Coffee Table', 'assetId': 'table-oak-coffee', 'position': [0, 0.225, 0.2], 'dimensions': [1.2, 0.45, 0.6], 'scale': [1, 1, 1]}
+                ],
+                'relationships': [{'anchorObjectId': 'sofa-1', 'childObjectId': 'table-1', 'socketId': 'sofa-front-table', 'gap': 0.40}]
+            },
+            'proposed_actions': [{'type': 'attach_to_socket', 'anchor_object_id': 'sofa-1', 'child_object_id': 'table-1', 'socket_id': 'sofa-front-table', 'gap_meters': 0.40}],
+        }
+        self.cand_b_dict = {
+            'id': 'cand-opt-b',
+            'label': 'Option B: Open Circulation',
+            'description': 'Maximizes central floor space',
+            'reasoning_summary': 'Perimeter focus',
+            'is_valid': True,
+            'is_approval_eligible': True,
+            'score': {'overall': 90.0, 'circulation': 85.0, 'clearance': 95.0, 'utilization': 88.0, 'boundary': 100.0, 'collision': 100.0, 'budget': 100.0},
+            'candidate_scene': {
+                'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'sofa-1', 'name': 'Modern Sofa', 'assetId': 'sofa-modern-3seater', 'position': [0, 0.45, -1.2], 'dimensions': [2.2, 0.9, 0.9], 'scale': [1, 1, 1]},
+                    {'id': 'table-1', 'name': 'Coffee Table', 'assetId': 'table-oak-coffee', 'position': [0, 0.225, -0.4], 'dimensions': [1.2, 0.45, 0.6], 'scale': [1, 1, 1]}
+                ],
+                'relationships': []
+            },
+            'proposed_actions': [],
+        }
+
+        self.run = AgentRun.objects.create(
+            session=self.session,
+            user_prompt="Living room options",
+            status=AgentRun.STATUS_PROPOSED,
+            validation_results={'candidates': [self.cand_a_dict, self.cand_b_dict]}
+        )
+
+    def test_get_candidate_explanation_endpoint(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse('agent-candidate-explain', kwargs={'run_id': str(self.run.id), 'candidate_id': 'cand-opt-a'})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['candidate_id'], 'cand-opt-a')
+        self.assertEqual(res.data['rank'], 1)
+        self.assertIn('overall_score', res.data)
+        self.assertGreater(len(res.data['key_strengths']), 0)
+        self.assertIn('factual_metrics', res.data)
+        self.assertEqual(res.data['factual_metrics']['furniture_count'], 2)
+
+    def test_compare_detailed_endpoint(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse('agent-candidates-compare-detailed', kwargs={'run_id': str(self.run.id)})
+        payload = {
+            'candidate_a_id': 'cand-opt-a',
+            'candidate_b_id': 'cand-opt-b',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['candidate_a_id'], 'cand-opt-a')
+        self.assertEqual(res.data['candidate_b_id'], 'cand-opt-b')
+        self.assertIn('position_displacements', res.data)
+        self.assertIn('objective_deltas', res.data)
+        self.assertIn('summary_verdict', res.data)
+
+
+class Phase73RefinementInterpreterTests(TestCase):
+    """
+    Tests natural language refinement parsing, protected items extraction,
+    and ambiguity handling.
+    """
+
+    def setUp(self):
+        self.scene = {
+            'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+            'objects': [
+                {'id': 'mock-sofa', 'name': 'Modern 3-Seater Sofa', 'assetId': 'sofa-modern-3seater'},
+                {'id': 'mock-table', 'name': 'Minimalist Coffee Table', 'assetId': 'table-oak-coffee'},
+                {'id': 'mock-chair-l', 'name': 'Lounge Accent Armchair', 'assetId': 'chair-accent-armchair'},
+            ]
+        }
+
+    def test_parses_target_and_protected_objects(self):
+        prompt = "Keep the sofa where it is, but move the coffee table slightly forward."
+        req = RefinementInterpreter.interpret_refinement(prompt, self.scene)
+        self.assertFalse(req.is_ambiguous)
+        self.assertEqual(req.target_object_ids, ['mock-table'])
+        self.assertEqual(req.protected_object_ids, ['mock-sofa'])
+        self.assertEqual(req.preferred_direction, 'forward')
+
+    def test_parses_open_space_directive(self):
+        prompt = "Make the room feel more open and spacious."
+        req = RefinementInterpreter.interpret_refinement(prompt, self.scene)
+        self.assertFalse(req.is_ambiguous)
+        self.assertEqual(req.intent_category, 'increase_open_space')
+
+    def test_parses_circulation_directive(self):
+        prompt = "Improve the walking path to the doorway."
+        req = RefinementInterpreter.interpret_refinement(prompt, self.scene)
+        self.assertFalse(req.is_ambiguous)
+        self.assertEqual(req.intent_category, 'improve_circulation')
+
+    def test_ambiguity_on_short_or_gibberish_prompt(self):
+        req = RefinementInterpreter.interpret_refinement("asdf", self.scene)
+        self.assertTrue(req.is_ambiguous)
+        self.assertIsNotNone(req.ambiguity_reason)
+
+    def test_ambiguity_on_nonexistent_furniture(self):
+        req = RefinementInterpreter.interpret_refinement("Move the grand piano closer to the window", self.scene)
+        self.assertTrue(req.is_ambiguous)
+        self.assertIn("piano", req.ambiguity_reason)
+
+
+class Phase73RefinementPlannerAndRunnerTests(APITestCase):
+    """
+    Tests bounded refinement execution, protected objects preservation,
+    and canonical scene immutability.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='refine_runner_user', password='password123')
+        self.design = Design.objects.create(
+            owner=self.user,
+            title="Refinement Design",
+            scene_json={
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'mock-sofa-a', 'name': 'Modern 3-Seater Sofa', 'assetId': 'sofa-modern-3seater', 'position': [0.0, 0.425, -0.8], 'dimensions': [2.1, 0.85, 0.9], 'scale': [1, 1, 1]},
+                    {'id': 'mock-table-a', 'name': 'Minimalist Coffee Table', 'assetId': 'table-oak-coffee', 'position': [0.0, 0.225, 0.25], 'dimensions': [1.2, 0.45, 0.6], 'scale': [1, 1, 1]},
+                ]
+            }
+        )
+        self.session = AgentSession.objects.create(owner=self.user, design=self.design, title="Session")
+        self.base_cand_dict = {
+            'id': 'cand-base-1',
+            'label': 'Option A: Initial',
+            'description': 'Initial layout',
+            'reasoning_summary': 'Initial layout',
+            'is_valid': True,
+            'is_approval_eligible': True,
+            'score': {'overall': 92.0, 'circulation': 90.0, 'boundary': 100.0, 'collision': 100.0, 'clearance': 100.0, 'utilization': 90.0, 'budget': 100.0},
+            'candidate_scene': {
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': {'width': 6.0, 'length': 5.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'mock-sofa-a', 'name': 'Modern 3-Seater Sofa', 'assetId': 'sofa-modern-3seater', 'position': [0.0, 0.425, -0.8], 'dimensions': [2.1, 0.85, 0.9], 'scale': [1, 1, 1]},
+                    {'id': 'mock-table-a', 'name': 'Minimalist Coffee Table', 'assetId': 'table-oak-coffee', 'position': [0.0, 0.225, 0.25], 'dimensions': [1.2, 0.45, 0.6], 'scale': [1, 1, 1]},
+                ],
+                'relationships': [{'anchorObjectId': 'mock-sofa-a', 'childObjectId': 'mock-table-a', 'socketId': 'sofa-front-table', 'gap': 0.40}]
+            },
+            'proposed_actions': [
+                {'type': 'add_furniture', 'object_id': 'mock-sofa-a', 'asset_id': 'sofa-modern-3seater', 'position': [0.0, 0.425, -0.8]},
+                {'type': 'add_furniture', 'object_id': 'mock-table-a', 'asset_id': 'table-oak-coffee', 'position': [0.0, 0.225, 0.25]},
+                {'type': 'attach_to_socket', 'anchor_object_id': 'mock-sofa-a', 'child_object_id': 'mock-table-a', 'socket_id': 'sofa-front-table', 'gap_meters': 0.40},
+            ]
+        }
+        self.run = AgentRun.objects.create(
+            session=self.session,
+            user_prompt="Initial proposal",
+            status=AgentRun.STATUS_PROPOSED,
+            validation_results={'candidates': [self.base_cand_dict]}
+        )
+
+    def test_refine_candidate_endpoint_preserves_protected_sofa_and_shifts_table(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse('agent-candidate-refine', kwargs={'run_id': str(self.run.id), 'candidate_id': 'cand-base-1'})
+        payload = {
+            'instruction': 'Keep the sofa where it is, but move the coffee table forward.',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['is_ambiguous'])
+        self.assertGreater(len(res.data['refined_candidates']), 0)
+
+        top_refined = res.data['refined_candidates'][0]
+        ref_meta = top_refined.get('optimization_metadata', {})
+        self.assertTrue(ref_meta.get('protectedObjectsPreserved'))
+        self.assertIn('mock-sofa-a', ref_meta.get('protectedObjects', []))
+
+        # Check that sofa position in refined scene is identical to original [-0.8]
+        refined_objs = {o['id']: o for o in top_refined['candidate_scene']['objects']}
+        self.assertEqual(refined_objs['mock-sofa-a']['position'], [0.0, 0.425, -0.8])
+        # Check that coffee table position shifted forward (> 0.25)
+        self.assertGreater(refined_objs['mock-table-a']['position'][2], 0.25)
+
+        # CRITICAL VERIFICATION: Canonical Scene in Database was NOT mutated!
+        self.design.refresh_from_db()
+        self.assertEqual(len(self.design.scene_json['objects']), 2)  # Remains exact initial 2 items
+        self.assertEqual(self.design.scene_json['objects'][1]['position'], [0.0, 0.225, 0.25])  # Table in DB untouched!
 
 
 

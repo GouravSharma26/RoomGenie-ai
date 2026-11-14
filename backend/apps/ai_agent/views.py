@@ -118,6 +118,24 @@ class AgentPromptView(APIView):
             existing_scene_objects=current_scene.get('objects', []),
         )
 
+        # Phase 7.3: Blend active learned preference adjustments into preferences
+        try:
+            from apps.ai_agent.feedback import FeedbackRepository, PreferenceLearningEngine
+            learned_state = FeedbackRepository.get_learned_preference_state(request.user)
+            if learned_state.is_active and learned_state.adjusted_weights:
+                blended_pref_dict = PreferenceLearningEngine.apply_learned_weights_to_preferences(
+                    base_preferences=pref_dict or {},
+                    learned_state=learned_state,
+                )
+                norm_prefs = normalize_preferences(
+                    structured_preferences=blended_pref_dict,
+                    prompt_instruction=prompt,
+                    existing_scene_objects=current_scene.get('objects', []),
+                )
+        except Exception as ex:
+            import logging
+            logging.getLogger(__name__).warning("Could not apply learned preferences: %s", ex)
+
         # Call CandidateGenerator orchestrator
         adapter = get_design_llm_adapter()
         generator = CandidateGenerator(adapter=adapter)
@@ -442,4 +460,241 @@ class UserDesignPreferenceView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# Phase 7.3: Explainable, Feedback-Driven Spatial Design Refinement Views
+# =============================================================================
+
+from apps.ai_agent.candidate_types import LayoutCandidate
+from apps.ai_agent.feedback.feedback_service import FeedbackService
+
+
+class CandidateFeedbackView(APIView):
+    """
+    POST /api/v1/agent/feedback/
+    Records explicit user feedback (selected, liked, disliked, rejected, modified)
+    for a generated layout candidate, updating learned preference weights.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        run_id = data.get('run_id')
+        candidate_id = data.get('candidate_id')
+        feedback_type = data.get('feedback_type')
+
+        if not run_id or not candidate_id or not feedback_type:
+            return Response(
+                {"detail": "Missing required fields: run_id, candidate_id, feedback_type."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
+
+        service = FeedbackService()
+        result = service.submit_candidate_feedback(
+            user=request.user,
+            run=run,
+            candidate_id=candidate_id,
+            feedback_type=feedback_type,
+            structured_reasons=data.get('structured_reasons', []),
+            feedback_text=data.get('feedback_text', ''),
+            candidate_score=float(data.get('candidate_score', 0.0)),
+            candidate_label=data.get('candidate_label', ''),
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class PairwiseComparisonView(APIView):
+    """
+    POST /api/v1/agent/feedback/compare/
+    Records structured pairwise comparisons between two candidates.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        run_id = data.get('run_id')
+        candidate_a_id = data.get('candidate_a_id')
+        candidate_b_id = data.get('candidate_b_id')
+        outcome = data.get('outcome')
+
+        if not run_id or not candidate_a_id or not candidate_b_id or not outcome:
+            return Response(
+                {"detail": "Missing required fields: run_id, candidate_a_id, candidate_b_id, outcome."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
+
+        service = FeedbackService()
+        result = service.submit_pairwise_comparison(
+            user=request.user,
+            run=run,
+            candidate_a_id=candidate_a_id,
+            candidate_b_id=candidate_b_id,
+            outcome=outcome,
+            structured_reasons=data.get('structured_reasons', []),
+            comparison_text=data.get('comparison_text', ''),
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class LearnedPreferencesView(APIView):
+    """
+    GET /api/v1/agent/feedback/learned-preferences/
+    Returns the user's active learned preference weights, explanations, and evidence count.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        service = FeedbackService()
+        result = service.get_user_learned_preferences(request.user)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class ResetLearnedPreferencesView(APIView):
+    """
+    POST /api/v1/agent/feedback/learned-preferences/reset/
+    Explicitly resets learned preference adjustments back to baseline.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        service = FeedbackService()
+        result = service.reset_user_learned_preferences(request.user)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class CandidateExplainView(APIView):
+    """
+    GET /api/v1/agent/runs/{run_id}/candidates/{candidate_id}/explain/
+    Returns evidence-based explanations for a specific candidate.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, run_id, candidate_id):
+        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
+        candidates_data = run.validation_results.get('candidates', [])
+
+        cand_dict = None
+        cand_rank = 1
+        for idx, c in enumerate(candidates_data):
+            if c.get('id') == candidate_id:
+                cand_dict = c
+                cand_rank = idx + 1
+                break
+
+        if not cand_dict:
+            return Response(
+                {"detail": f"Candidate '{candidate_id}' not found in run {run_id}."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        candidate = LayoutCandidate.from_dict(cand_dict)
+        initial_scene = run.session.design.scene_json if run.session.design else None
+
+        service = FeedbackService()
+        explanation = service.get_candidate_explanation(
+            candidate=candidate,
+            rank=cand_rank,
+            total_candidates=len(candidates_data),
+            initial_scene=initial_scene,
+        )
+        return Response(explanation, status=status.HTTP_200_OK)
+
+
+class CandidateCompareDetailedView(APIView):
+    """
+    POST /api/v1/agent/runs/{run_id}/candidates/compare-detailed/
+    Computes exact side-by-side spatial displacements, asset selection differences,
+    and objective deltas between two candidates.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, run_id):
+        cand_a_id = request.data.get('candidate_a_id')
+        cand_b_id = request.data.get('candidate_b_id')
+
+        if not cand_a_id or not cand_b_id:
+            return Response(
+                {"detail": "Both candidate_a_id and candidate_b_id are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
+        candidates_data = run.validation_results.get('candidates', [])
+        cands_by_id = {c.get('id'): c for c in candidates_data}
+
+        if cand_a_id not in cands_by_id or cand_b_id not in cands_by_id:
+            return Response(
+                {"detail": "One or both specified candidate IDs could not be found in this run."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        cand_a = LayoutCandidate.from_dict(cands_by_id[cand_a_id])
+        cand_b = LayoutCandidate.from_dict(cands_by_id[cand_b_id])
+
+        service = FeedbackService()
+        detail = service.compare_candidates(cand_a, cand_b)
+        return Response(detail, status=status.HTTP_200_OK)
+
+
+class CandidateRefineView(APIView):
+    """
+    POST /api/v1/agent/runs/{run_id}/candidates/{candidate_id}/refine/
+    Refines an existing candidate layout based on a natural language instruction.
+    Preserves protected items, canonical scene immutability, and hard spatial validity.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, run_id, candidate_id):
+        instruction = request.data.get('instruction', '').strip()
+        if not instruction:
+            return Response(
+                {"detail": "Instruction is required for layout refinement."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
+        candidates_data = run.validation_results.get('candidates', [])
+        cands_by_id = {c.get('id'): c for c in candidates_data}
+
+        if candidate_id not in cands_by_id:
+            return Response(
+                {"detail": f"Candidate '{candidate_id}' not found in run {run_id}."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        base_candidate = LayoutCandidate.from_dict(cands_by_id[candidate_id])
+        service = FeedbackService()
+
+        # 1. Interpret instruction into typed request
+        ref_req = service.interpret_refinement_instruction(instruction, base_candidate.candidate_scene)
+
+        # 2. Check ambiguity
+        if ref_req.is_ambiguous:
+            return Response({
+                'is_ambiguous': True,
+                'ambiguity_reason': ref_req.ambiguity_reason,
+                'refinement_request': ref_req.to_dict(),
+                'clarification_prompt': ref_req.ambiguity_reason,
+                'refined_candidates': [],
+            }, status=status.HTTP_200_OK)
+
+        # 3. Execute refinement runner
+        refined_cands = service.execute_refinement(
+            base_candidate=base_candidate,
+            refinement_request=ref_req,
+        )
+
+        # Return serialized results without mutating persisted scene
+        return Response({
+            'is_ambiguous': False,
+            'base_candidate_id': base_candidate.id,
+            'refinement_request': ref_req.to_dict(),
+            'refined_candidates': [c.to_dict() for c in refined_cands],
+            'count': len(refined_cands),
+        }, status=status.HTTP_200_OK)
 

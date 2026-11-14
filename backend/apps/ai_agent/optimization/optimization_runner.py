@@ -150,6 +150,16 @@ class OptimizationRunner:
                 'appliedOperators': opt_state.operators_applied,
             }
 
+            # Fundamental validity check: spatial optimization repairs spatial bounds/collisions,
+            # but cannot repair reference errors (missing catalogue assets), schema errors, or budget violations.
+            has_fundamental_error = (
+                not candidate.reference_valid or
+                not candidate.schema_valid or
+                not candidate.budget_valid
+            )
+            final_is_valid = sim_res['is_valid'] and not has_fundamental_error
+            final_is_approval_eligible = sim_res['is_approval_eligible'] and not has_fundamental_error
+
             # Build optimized LayoutCandidate
             return LayoutCandidate(
                 id=candidate.id,
@@ -159,8 +169,8 @@ class OptimizationRunner:
                 proposed_actions=synced_actions,
                 candidate_scene=sim_res['candidate_scene'],
                 source_scene_hash=candidate.source_scene_hash,
-                is_valid=sim_res['is_valid'],
-                is_approval_eligible=sim_res['is_approval_eligible'],
+                is_valid=final_is_valid,
+                is_approval_eligible=final_is_approval_eligible,
                 score=score,
                 validation_feedback=sim_res['validation_feedback'],
                 trade_offs=candidate.trade_offs,
@@ -168,14 +178,14 @@ class OptimizationRunner:
                 refinement_attempts=candidate.refinement_attempts,
                 created_at_ms=candidate.created_at_ms,
                 budget_diff=sim_res['budget_diff'],
-                schema_valid=sim_res.get('schema_valid', True),
-                reference_valid=sim_res.get('reference_valid', True),
-                domain_valid=sim_res.get('domain_valid', True),
-                budget_valid=sim_res.get('budget_valid', True),
-                schema_errors=sim_res.get('schema_errors', []),
-                reference_errors=sim_res.get('reference_errors', []),
-                domain_errors=sim_res.get('domain_errors', []),
-                budget_errors=sim_res.get('budget_errors', []),
+                schema_valid=candidate.schema_valid and sim_res.get('schema_valid', True),
+                reference_valid=candidate.reference_valid and sim_res.get('reference_valid', True),
+                domain_valid=candidate.domain_valid and sim_res.get('domain_valid', True),
+                budget_valid=candidate.budget_valid and sim_res.get('budget_valid', True),
+                schema_errors=candidate.schema_errors or sim_res.get('schema_errors', []),
+                reference_errors=candidate.reference_errors or sim_res.get('reference_errors', []),
+                domain_errors=candidate.domain_errors or sim_res.get('domain_errors', []),
+                budget_errors=candidate.budget_errors or sim_res.get('budget_errors', []),
                 optimization_metadata=optimization_metadata,
             )
 

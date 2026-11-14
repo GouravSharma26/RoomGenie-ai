@@ -254,6 +254,31 @@ class ScoreBreakdown:
             'budget_evaluated': self.budget_evaluated,
         }
 
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> 'ScoreBreakdown':
+        if not data or not isinstance(data, dict):
+            return cls()
+        return cls(
+            boundary=float(data.get('boundary', 100.0)),
+            collision=float(data.get('collision', 100.0)),
+            circulation=float(data.get('circulation', 100.0)),
+            clearance=float(data.get('clearance', 100.0)),
+            utilization=float(data.get('utilization', 100.0)),
+            budget=float(data.get('budget', 100.0)),
+            overall=float(data.get('overall', 100.0)),
+            base_score=float(data.get('base_score', 100.0)),
+            preference_score=float(data.get('preference_score', 100.0)),
+            final_score=float(data.get('final_score', 100.0)),
+            lambda_weight=float(data.get('lambda_weight', 0.20)),
+            preference_dimensions=data.get('preference_dimensions', {}),
+            preference_explanations=data.get('preference_explanations', {}),
+            preference_conflicts=data.get('preference_conflicts', []),
+            unavailable_attributes=data.get('unavailable_attributes', []),
+            weights=data.get('weights', {}),
+            explanations=data.get('explanations', {}),
+            budget_evaluated=bool(data.get('budget_evaluated', False)),
+        )
+
 
 @dataclass
 class StructuredValidationIssue:
@@ -295,6 +320,41 @@ class CandidateValidationFeedback:
             'errors': [e.message for e in self.fatal_errors],
             'warnings': [w.message for w in self.advisory_warnings],
         }
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> 'CandidateValidationFeedback':
+        if not data or not isinstance(data, dict):
+            return cls()
+        fatal = [
+            StructuredValidationIssue(
+                code=e.get('code', 'FATAL_ERROR'),
+                category=e.get('category', 'unknown'),
+                message=e.get('message', ''),
+                object_ids=e.get('object_ids', []),
+            )
+            for e in data.get('fatal_errors', [])
+            if isinstance(e, dict)
+        ]
+        advisory = [
+            StructuredValidationIssue(
+                code=w.get('code', 'WARNING'),
+                category=w.get('category', 'unknown'),
+                message=w.get('message', ''),
+                object_ids=w.get('object_ids', []),
+            )
+            for w in data.get('advisory_warnings', [])
+            if isinstance(w, dict)
+        ]
+        return cls(
+            is_valid=bool(data.get('is_valid', True)),
+            is_approval_eligible=bool(data.get('is_approval_eligible', True)),
+            has_collisions=bool(data.get('has_collisions', False)),
+            has_boundary_breaches=bool(data.get('has_boundary_breaches', False)),
+            is_budget_compliant=bool(data.get('is_budget_compliant', True)),
+            is_room_passable=bool(data.get('is_room_passable', True)),
+            fatal_errors=fatal,
+            advisory_warnings=advisory,
+        )
 
 
 @dataclass
@@ -355,4 +415,41 @@ class LayoutCandidate:
             'budget_errors': self.budget_errors,
             'optimization_metadata': self.optimization_metadata,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'LayoutCandidate':
+        score_data = data.get('score', {})
+        score = ScoreBreakdown.from_dict(score_data) if isinstance(score_data, dict) else ScoreBreakdown()
+
+        val_data = data.get('validation_feedback', {})
+        val_feedback = CandidateValidationFeedback.from_dict(val_data) if isinstance(val_data, dict) else CandidateValidationFeedback()
+
+        return cls(
+            id=str(data.get('id', '')),
+            label=str(data.get('label', '')),
+            description=str(data.get('description', '')),
+            reasoning_summary=str(data.get('reasoning_summary', '')),
+            proposed_actions=list(data.get('proposed_actions', [])),
+            candidate_scene=dict(data.get('candidate_scene', {})),
+            source_scene_hash=str(data.get('source_scene_hash', '')),
+            is_valid=bool(data.get('is_valid', False)),
+            is_approval_eligible=bool(data.get('is_approval_eligible', False)),
+            score=score,
+            validation_feedback=val_feedback,
+            trade_offs=list(data.get('trade_offs', [])),
+            intended_relationships=list(data.get('intended_relationships', [])),
+            refinement_attempts=int(data.get('refinement_attempts', 0)),
+            schema_version=int(data.get('schema_version', 1)),
+            created_at_ms=int(data.get('created_at_ms', 0)),
+            budget_diff=dict(data.get('budget_diff', {})),
+            schema_valid=bool(data.get('schema_valid', True)),
+            reference_valid=bool(data.get('reference_valid', True)),
+            domain_valid=bool(data.get('domain_valid', True)),
+            budget_valid=bool(data.get('budget_valid', True)),
+            schema_errors=list(data.get('schema_errors', [])),
+            reference_errors=list(data.get('reference_errors', [])),
+            domain_errors=list(data.get('domain_errors', [])),
+            budget_errors=list(data.get('budget_errors', [])),
+            optimization_metadata=data.get('optimization_metadata'),
+        )
 
