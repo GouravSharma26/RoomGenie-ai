@@ -31,8 +31,39 @@ MAX_SINGLE_STEP_DELTA: float = 0.15  # Prevents volatile weight shock from a sin
 
 class PreferenceLearningEngine:
     """
-    Deterministic online learner that maps structured user feedback to bounded
-    preference weight adjustments, maintaining full auditability and explanations.
+    Deterministic online preference adaptation engine for RoomGenie AI.
+
+    MATHEMATICAL FORMULATION & ARCHITECTURAL FOUNDATION:
+    Unlike unconstrained stochastic gradient descent (SGD) or backpropagation algorithms
+    that minimize a loss surface across continuous parameter spaces, this engine employs
+    a bounded, heuristic online adjustment equation designed specifically for user-facing
+    spatial design systems.
+
+    Update Rule:
+        For each feedback event e touching preference dimension d:
+            delta_raw = eta(feedback_type, outcome)
+            delta_bounded = clip(delta_raw, -MAX_SINGLE_STEP_DELTA, +MAX_SINGLE_STEP_DELTA)
+            w_{t+1, d} = clip(w_{t, d} + delta_bounded, MIN_WEIGHT, MAX_WEIGHT)
+
+    Learning Rates:
+        - eta_selection = +0.10 (Explicit candidate approval)
+        - eta_like = +0.06 (Favorable evaluation with structured reasons)
+        - eta_dislike = -0.04 (Negative evaluation with structured reasons)
+        - eta_reject = -0.06 (Explicit layout rejection)
+        - eta_pairwise = +/-0.08 (Direct comparative choice between candidate A and B)
+
+    Bounds & Constraints:
+        - Step bound: MAX_SINGLE_STEP_DELTA = 0.15 (eliminates weight shock)
+        - Domain bounds: [MIN_WEIGHT=0.30, MAX_WEIGHT=2.50], centered at NEUTRAL_WEIGHT=1.00
+        - Confidence score: conf(d) = min(1.0, evidence_count(d) * 0.15)
+        - Explicit preference precedence: When explicit user weights exist, learned
+          adjustments modulate the baseline by at most +/-10%, preserving user sovereignty.
+
+    This deterministic heuristic guarantees:
+        1. Strict bounded stability (weights can never diverge to +/- infinity).
+        2. Exact auditability and natural language transparency explanations.
+        3. Identical replayability from serialized feedback histories.
+        4. Resiliency against adversarial or rapid duplicate clicks.
     """
 
     @classmethod
@@ -45,6 +76,7 @@ class PreferenceLearningEngine:
     ) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, str], int]:
         """
         Recomputes learned preference weights deterministically from full user feedback history.
+        Enforces deduplication to ensure repeated identical submissions cannot arbitrarily inflate weights.
         Returns: (adjusted_weights, confidence_scores, explanations, total_feedback_count)
         """
         weights: Dict[str, float] = {}
@@ -53,16 +85,26 @@ class PreferenceLearningEngine:
         negative_counts: Dict[str, int] = {}
         history_events: int = 0
 
+        # Duplicate protection set: tracks (candidate_id, feedback_type) already processed
+        seen_feedback_keys: set = set()
+
         # 1. Process candidate feedback events (chronological order)
-        # Note: input feedback_history is newest first, reverse to process chronologically
         events = list(reversed(feedback_history))
         for fb in events:
-            history_events += 1
+            cand_id = getattr(fb, 'candidate_id', '')
             fb_type = getattr(fb, 'feedback_type', None)
             if hasattr(fb_type, 'value'):
                 fb_type_val = fb_type.value
             else:
                 fb_type_val = str(fb_type or '').lower()
+
+            # Prevent duplicate submissions on the same candidate from inflating weights
+            fb_key = (str(cand_id), fb_type_val)
+            if fb_key in seen_feedback_keys:
+                continue
+            seen_feedback_keys.add(fb_key)
+
+            history_events += 1
 
             reasons = getattr(fb, 'structured_reasons', []) or []
 
@@ -102,8 +144,16 @@ class PreferenceLearningEngine:
                 weights[dim] = new_w
 
         # 2. Process pairwise comparisons
+        seen_pairwise_keys: set = set()
         pairwise_events = list(reversed(pairwise_history or []))
         for comp in pairwise_events:
+            cand_a = getattr(comp, 'candidate_a_id', '')
+            cand_b = getattr(comp, 'candidate_b_id', '')
+            p_key = (str(cand_a), str(cand_b))
+            if p_key in seen_pairwise_keys:
+                continue
+            seen_pairwise_keys.add(p_key)
+
             history_events += 1
             outcome = getattr(comp, 'outcome', None)
             if hasattr(outcome, 'value'):
@@ -204,3 +254,4 @@ class PreferenceLearningEngine:
         merged['learned_adjustments_active'] = True
         merged['learned_feedback_count'] = learned_state.feedback_count
         return merged
+

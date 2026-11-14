@@ -303,17 +303,30 @@ def check_relationship_cycle(
 
 # --- Physical Geometry Validators (OBB SAT, Polygon Containment, Door Landing) ---
 
+def _normalize_dims(dims: Any) -> list[float]:
+    """Ensures dimensions are always represented as [width, height, depth] list."""
+    if isinstance(dims, dict):
+        w = float(dims.get('width', 1.0))
+        h = float(dims.get('height', 1.0))
+        d = float(dims.get('depth', 1.0))
+        return [w, h, d]
+    if isinstance(dims, (list, tuple)):
+        return [float(x) for x in dims[:3]]
+    return [1.0, 1.0, 1.0]
+
+
 def get_furniture_corners_2d(
     pos: list[float],
-    dims: list[float],
+    dims: Any,
     scale: list[float],
     yaw: float
 ) -> list[tuple[float, float]]:
     """
     Computes the 4 corners [x, z] of a furniture item's 2D floor footprint in world coordinates.
     """
-    half_x = (dims[0] * scale[0]) / 2.0
-    half_z = (dims[2] * scale[2]) / 2.0
+    norm_dims = _normalize_dims(dims)
+    half_x = (norm_dims[0] * scale[0]) / 2.0
+    half_z = (norm_dims[2] * scale[2]) / 2.0
 
     cos_y = math.cos(yaw)
     sin_y = math.sin(yaw)
@@ -364,7 +377,8 @@ def validate_room_footprint_containment(
     rot = placement.get('rotationEuler', [0.0, 0.0, 0.0])
     yaw = rot[1] if len(rot) > 1 else 0.0
 
-    corners = get_furniture_corners_2d(pos, dims, scale, yaw)
+    norm_dims = _normalize_dims(dims)
+    corners = get_furniture_corners_2d(pos, norm_dims, scale, yaw)
 
     room_w = float(room.get('width', 5.0))
     room_l = float(room.get('length', 4.0))
@@ -384,8 +398,8 @@ def validate_room_footprint_containment(
             break
 
     # Floor & ceiling checks
-    base_y = pos[1] - (dims[1] * scale[1]) / 2.0
-    top_y = pos[1] + (dims[1] * scale[1]) / 2.0
+    base_y = pos[1] - (norm_dims[1] * scale[1]) / 2.0
+    top_y = pos[1] + (norm_dims[1] * scale[1]) / 2.0
     if base_y < 0.0 - tolerance:
         violations.append(f"Base Y {base_y:.2f}m is below floor level (0.0m)")
     if top_y > room_h + tolerance:
@@ -450,12 +464,12 @@ def check_obb_collisions_3d(
         return False
 
     pos_a = item_a.get('position', [0.0, 0.0, 0.0])
-    dims_a = item_a.get('dimensions', [1.0, 1.0, 1.0])
+    dims_a = _normalize_dims(item_a.get('dimensions', [1.0, 1.0, 1.0]))
     scale_a = item_a.get('scale', [1.0, 1.0, 1.0])
     rot_a = item_a.get('rotationEuler', [0.0, 0.0, 0.0])
 
     pos_b = item_b.get('position', [0.0, 0.0, 0.0])
-    dims_b = item_b.get('dimensions', [1.0, 1.0, 1.0])
+    dims_b = _normalize_dims(item_b.get('dimensions', [1.0, 1.0, 1.0]))
     scale_b = item_b.get('scale', [1.0, 1.0, 1.0])
     rot_b = item_b.get('rotationEuler', [0.0, 0.0, 0.0])
 

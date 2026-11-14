@@ -176,3 +176,4 @@ class RefinementPlanner:
         elif direction == 'toward_window':
             return (0.0, -disp)
         return (0.0, disp)
+

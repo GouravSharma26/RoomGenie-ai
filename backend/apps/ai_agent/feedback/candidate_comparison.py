@@ -163,3 +163,4 @@ class CandidateComparisonService:
         elif dz < -0.1:
             desc_parts.append("North / Toward rear wall")
         return " & ".join(desc_parts) if desc_parts else "locally"
+

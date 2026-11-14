@@ -189,6 +189,10 @@ class FeedbackService:
         state = self.repository.reset_learned_preferences(user)
         return state.to_dict()
 
+    def delete_user_feedback_history(self, user: Any) -> Dict[str, Any]:
+        """Permanently deletes historical feedback and pairwise comparisons strictly for the user."""
+        return self.repository.delete_user_feedback_history(user)
+
     def interpret_refinement_instruction(
         self,
         instruction: str,
@@ -215,3 +219,4 @@ class FeedbackService:
             user_requirements=user_requirements,
             max_budget_paise=max_budget_paise,
         )
+

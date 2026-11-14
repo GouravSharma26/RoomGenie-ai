@@ -108,10 +108,23 @@ class RefinementInterpreter:
                 matched_full = cls._find_matching_objects(m_clean, objects)
                 target_ids.update(matched_full)
 
-        # If an item was explicitly targeted for moving, remove it from protected
-        for tid in target_ids:
-            if tid in protected_ids:
-                protected_ids.remove(tid)
+        # If an item was explicitly marked protected AND targeted for moving, detect conflict
+        conflicting_ids = target_ids.intersection(protected_ids)
+        if conflicting_ids:
+            conflicting_names = [
+                str(o.get('name') or o.get('assetId') or o.get('id'))
+                for o in objects
+                if str(o.get('id')) in conflicting_ids
+            ]
+            return TypedRefinementRequest(
+                raw_prompt=user_prompt,
+                intent_category='infeasible_protection',
+                is_ambiguous=True,
+                ambiguity_reason=f"Protection conflict: Cannot move {conflicting_names} because they are marked as protected.",
+                confidence_score=0.2,
+                protected_object_ids=sorted(list(protected_ids)),
+                target_object_ids=sorted(list(target_ids)),
+            )
 
         # 5. Detect Directional Intent
         preferred_direction = None

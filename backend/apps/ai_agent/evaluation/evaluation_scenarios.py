@@ -1747,10 +1747,236 @@ EVALUATION_DATASET: List[EvaluationCase] = [
     ),
 ]
 
+# -------------------------------------------------------------
+# SUITE SEPARATION (Phase 7.4)
+# -------------------------------------------------------------
+SUITE_A_SCENARIOS: List[EvaluationCase] = [c for c in EVALUATION_DATASET if int(c.case_id.split('-')[1]) <= 74]
+SUITE_B_SCENARIOS: List[EvaluationCase] = [c for c in EVALUATION_DATASET if 75 <= int(c.case_id.split('-')[1]) <= 104]
+
+SUITE_C_SCENARIOS: List[EvaluationCase] = [
+    EvaluationCase(
+        case_id="E2E-01",
+        name="Generate Candidates & Select Top Proposal",
+        category="e2e_integration",
+        description="End-to-end workflow: user submits design request, AI generates 3 validated candidates, user selects top candidate.",
+        user_request="Arrange a cozy conversational living room with sofa and coffee table",
+        room_geometry={"width": 5.2, "length": 4.2, "height": 2.8, "openings": [{"id": "d-e1", "wallId": "w-south", "type": "door", "center": [0, 2.1], "width": 0.9}]},
+        expected_required_categories=["seating", "tables"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-02",
+        name="Feedback Submission & Weight Learning",
+        category="e2e_integration",
+        description="End-to-end workflow: user likes candidate for circulation, system learns and increases circulation weight by +0.06.",
+        user_request="Design an open-circulation living area with sofa and armchair",
+        room_geometry={"width": 5.4, "length": 4.4, "height": 2.8, "openings": [{"id": "d-e2", "wallId": "w-south", "type": "door", "center": [0, 2.2], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-03",
+        name="Pairwise Candidate Comparison & Trade-Offs",
+        category="e2e_integration",
+        description="End-to-end workflow: user compares candidate A vs candidate B side-by-side, views metric deltas, and submits preference.",
+        user_request="Arrange a spacious living room layout with sofa, coffee table, and accent chair",
+        room_geometry={"width": 5.6, "length": 4.6, "height": 2.8, "openings": [{"id": "d-e3", "wallId": "w-south", "type": "door", "center": [0, 2.3], "width": 0.9}]},
+        expected_required_categories=["seating", "tables"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-04",
+        name="Natural Language Conversational Refinement",
+        category="e2e_integration",
+        description="End-to-end workflow: user prompts 'Move the coffee table forward', system generates bounded forward refinement candidate.",
+        user_request="Keep the sofa but move the coffee table forward",
+        room_geometry={"width": 5.5, "length": 4.5, "height": 2.8, "openings": [{"id": "d-e4", "wallId": "w-south", "type": "door", "center": [0, 2.25], "width": 0.9}]},
+        expected_required_categories=["seating", "tables"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-05",
+        name="Strict Protected Object Locking",
+        category="e2e_integration",
+        description="End-to-end workflow: user locks sofa in place while moving coffee table; sofa position verified unchanged <= 0.001m.",
+        user_request="Keep the sofa where it is, but shift coffee table to the right",
+        room_geometry={"width": 5.5, "length": 4.5, "height": 2.8, "openings": [{"id": "d-e5", "wallId": "w-south", "type": "door", "center": [0, 2.25], "width": 0.9}]},
+        expected_required_categories=["seating", "tables"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-06",
+        name="Interactive 3D Preview State Isolation",
+        category="e2e_integration",
+        description="End-to-end workflow: user enters candidate preview; canonical scene hash in database verified 100% immutable.",
+        user_request="Preview alternative living room layout",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e6", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-07",
+        name="Discard Preview Restoration",
+        category="e2e_integration",
+        description="End-to-end workflow: user discards candidate preview; viewport cleanly restores original canonical scene without artifacts.",
+        user_request="Discard preview proposal and retain current arrangement",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e7", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-08",
+        name="Authoritative Apply & Persistence",
+        category="e2e_integration",
+        description="End-to-end workflow: user approves candidate; actions atomically apply inside database transaction to Design.scene_json.",
+        user_request="Approve and apply layout candidate",
+        room_geometry={"width": 5.2, "length": 4.2, "height": 2.8, "openings": [{"id": "d-e8", "wallId": "w-south", "type": "door", "center": [0, 2.1], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-09",
+        name="Persistent Undo Execution",
+        category="e2e_integration",
+        description="End-to-end workflow: user triggers undo on applied design; previous scene snapshot restored from SceneStateHistory.",
+        user_request="Undo applied layout candidate",
+        room_geometry={"width": 5.2, "length": 4.2, "height": 2.8, "openings": [{"id": "d-e9", "wallId": "w-south", "type": "door", "center": [0, 2.1], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-10",
+        name="Persistent Redo Execution",
+        category="e2e_integration",
+        description="End-to-end workflow: user triggers redo on previously undone design; applied layout reinstated from SceneStateHistory.",
+        user_request="Redo previously undone layout candidate",
+        room_geometry={"width": 5.2, "length": 4.2, "height": 2.8, "openings": [{"id": "d-e10", "wallId": "w-south", "type": "door", "center": [0, 2.1], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-11",
+        name="Stale Candidate Concurrency Rejection",
+        category="e2e_integration",
+        description="End-to-end workflow: scene modified in background; applying previous candidate returns 409 Conflict with stale=True.",
+        user_request="Apply candidate on modified canonical scene",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e11", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-12",
+        name="Multi-User Ownership & Isolation",
+        category="e2e_integration",
+        description="End-to-end workflow: User B attempting to view, explain, refine, or apply User A's run returns 404 Not Found.",
+        user_request="Attempt cross-user access to agent proposal",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e12", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-13",
+        name="Duplicate Feedback Idempotency",
+        category="e2e_integration",
+        description="End-to-end workflow: rapid repeated submissions of identical feedback update existing record without inflating weights.",
+        user_request="Submit identical feedback twice on the same candidate",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e13", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-14",
+        name="Conflicting Feedback Stabilization",
+        category="e2e_integration",
+        description="End-to-end workflow: alternating positive and negative signals are dampened gracefully within single-step bounds.",
+        user_request="Submit conflicting positive and negative feedback",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e14", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-15",
+        name="Learned Preference Reset vs. History Deletion",
+        category="e2e_integration",
+        description="End-to-end workflow: reset clears active weights to 1.0 while retaining feedback records; delete removes historical records.",
+        user_request="Test reset learned preferences and delete feedback history",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e15", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-16",
+        name="Preserve Semantic Group Attachments",
+        category="e2e_integration",
+        description="End-to-end workflow: bedroom arrangement with bed and nightstands preserves socket attachments through refinement.",
+        user_request="Keep the bed and nightstands attached, but shift the desk",
+        room_geometry={"width": 5.2, "length": 4.8, "height": 2.8, "openings": [{"id": "d-e16", "wallId": "w-south", "type": "door", "center": [0, 2.4], "width": 0.9}]},
+        expected_required_categories=["beds"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-17",
+        name="Infeasible Protection Conflict Clarification",
+        category="e2e_integration",
+        description="End-to-end workflow: user asks to move an item while simultaneously protecting it; returns clear clarification prompt.",
+        user_request="Keep the sofa where it is, but move the sofa forward",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e17", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=False,
+    ),
+    EvaluationCase(
+        case_id="E2E-18",
+        name="Error Handling & Graceful Recovery",
+        category="e2e_integration",
+        description="End-to-end workflow: nonsensical gibberish refinement request returns helpful guidance without server exception.",
+        user_request="asdfghjk",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e18", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=[],
+        expected_hard_valid=False,
+    ),
+    EvaluationCase(
+        case_id="E2E-19",
+        name="Concurrent Modification Row Locking",
+        category="e2e_integration",
+        description="End-to-end workflow: exclusive row locking via select_for_update serializes concurrent apply calls.",
+        user_request="Concurrent apply request synchronization",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e19", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+    EvaluationCase(
+        case_id="E2E-20",
+        name="Application Reload & Scene State Verification",
+        category="e2e_integration",
+        description="End-to-end workflow: reload design from database and verify canonical scene hash matches applied layout exactly.",
+        user_request="Reload persisted scene from database",
+        room_geometry={"width": 5.0, "length": 4.0, "height": 2.8, "openings": [{"id": "d-e20", "wallId": "w-south", "type": "door", "center": [0, 2.0], "width": 0.9}]},
+        expected_required_categories=["seating"],
+        expected_hard_valid=True,
+    ),
+]
+
+ALL_SCENARIOS: List[EvaluationCase] = SUITE_A_SCENARIOS + SUITE_B_SCENARIOS + SUITE_C_SCENARIOS
+
+
+def get_suite_a_scenarios() -> List[EvaluationCase]:
+    """Returns the 74 original Phase 7.2 spatial optimization regression scenarios."""
+    return SUITE_A_SCENARIOS
+
+
+def get_suite_b_scenarios() -> List[EvaluationCase]:
+    """Returns the 30 dedicated Phase 7.3 feedback and refinement evaluation scenarios."""
+    return SUITE_B_SCENARIOS
+
+
+def get_suite_c_scenarios() -> List[EvaluationCase]:
+    """Returns the 20 Phase 7.4 end-to-end integration scenarios."""
+    return SUITE_C_SCENARIOS
+
 
 def get_scenario_by_id(case_id: str) -> Optional[EvaluationCase]:
-    """Retrieve an evaluation scenario by its stable ID."""
-    for case in EVALUATION_DATASET:
+    """Retrieve an evaluation scenario by its stable ID across all suites."""
+    for case in ALL_SCENARIOS:
         if case.case_id == case_id:
             return case
     return None

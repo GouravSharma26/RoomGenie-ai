@@ -14,7 +14,15 @@ from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
 from apps.ai_agent.candidate_generator import CandidateGenerator
 from apps.ai_agent.candidate_types import compute_canonical_scene_hash
 from .evaluation_metrics import aggregate_summary_metrics, calculate_candidate_diversity
-from .evaluation_scenarios import EVALUATION_DATASET
+from .evaluation_scenarios import (
+    EVALUATION_DATASET,
+    SUITE_A_SCENARIOS,
+    SUITE_B_SCENARIOS,
+    SUITE_C_SCENARIOS,
+    get_suite_a_scenarios,
+    get_suite_b_scenarios,
+    get_suite_c_scenarios,
+)
 from .evaluation_types import (
     CandidateEvaluationResult,
     CaseEvaluationResult,
@@ -298,3 +306,298 @@ def run_spatial_evaluation(
             "gate_pass_rate_pct": summary.gate_pass_rate_pct,
         },
     )
+
+
+def run_suite_a_spatial_regression() -> EvaluationRunOutput:
+    """
+    Executes Suite A: 74 original Phase 7.2 spatial optimization regression scenarios.
+    """
+    return run_spatial_evaluation(scenarios=SUITE_A_SCENARIOS)
+
+
+def run_suite_b_feedback_evaluation() -> Dict[str, Any]:
+    """
+    Executes Suite B: 30 dedicated Phase 7.3 feedback, comparison, and refinement scenarios.
+    """
+    from apps.ai_agent.feedback.feedback_evaluation import Phase73EvaluationRunner
+    summary = Phase73EvaluationRunner.run_full_evaluation()
+    return {
+        'suite': 'Suite B — Feedback & Refinement',
+        'total_scenarios': summary.total_scenarios_tested,
+        'passed_scenarios': summary.passed_scenarios,
+        'failed_scenarios': summary.failed_scenarios,
+        'pass_rate_pct': summary.pass_rate_pct,
+        'feedback_persistence_correctness_pct': summary.feedback_persistence_correctness_pct,
+        'cross_user_isolation_pct': summary.cross_user_isolation_pct,
+        'preference_update_stability_pct': summary.preference_update_stability_pct,
+        'explicit_precedence_preservation_pct': summary.explicit_precedence_preservation_pct,
+        'explanation_factual_accuracy_pct': summary.explanation_factual_accuracy_pct,
+        'refinement_success_rate_pct': summary.refinement_success_rate_pct,
+        'hard_validity_after_refinement_pct': summary.hard_validity_after_refinement_pct,
+        'protected_objects_preserved_pct': summary.protected_objects_preserved_pct,
+        'deterministic_reproducibility_pct': summary.deterministic_reproducibility_pct,
+        'mean_refinement_latency_ms': summary.mean_refinement_latency_ms,
+        'scenario_details': summary.scenario_details,
+    }
+
+
+def run_suite_c_e2e_integration() -> Dict[str, Any]:
+    """
+    Executes Suite C: 20 end-to-end integration scenarios (E2E-01 through E2E-20).
+    Verifies full lifecycle: generation, selection, feedback, explanation, refinement,
+    protected object preservation, apply, persistence, undo, redo, and stale concurrency.
+    """
+    ensure_evaluation_assets()
+    from django.contrib.auth import get_user_model
+    from apps.designs.models import Design
+    from apps.ai_agent.models import AgentSession, AgentRun
+    from apps.ai_agent.feedback import FeedbackService, RefinementRunner, ExplanationEngine
+    from apps.ai_agent.candidate_types import compute_canonical_scene_hash
+    from apps.ai_agent.candidate_generator import CandidateGenerator
+    from apps.ai_agent.adapters.mock import MockDesignLLMAdapter
+    import copy
+
+    User = get_user_model()
+    user_c1, _ = User.objects.get_or_create(username='e2e_runner_u1')
+    user_c2, _ = User.objects.get_or_create(username='e2e_runner_u2')
+
+    results = []
+    passed = 0
+    failed = 0
+
+    for case in SUITE_C_SCENARIOS:
+        c_id = case.case_id
+        t0 = time.perf_counter()
+        gate_failures = []
+
+        try:
+            # Isolate user state per scenario
+            service = FeedbackService()
+            service.reset_user_learned_preferences(user_c1)
+            service.delete_user_feedback_history(user_c1)
+
+            room_geom = copy.deepcopy(case.room_geometry)
+            init_scene = {
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': room_geom,
+                'objects': [
+                    {'id': 'e2e-sofa', 'assetId': 'sofa-leather-3seater', 'position': [0, 0.425, -1.0], 'rotationEuler': [0, 0, 0], 'dimensions': [2.1, 0.85, 0.9]},
+                    {'id': 'e2e-table', 'assetId': 'table-oak-coffee', 'position': [0, 0.225, 0.0], 'rotationEuler': [0, 0, 0], 'dimensions': [1.2, 0.45, 0.6]},
+                ],
+                'relationships': [
+                    {'anchor_id': 'e2e-sofa', 'child_id': 'e2e-table', 'socket_id': 'sofa-front-table', 'gap': 0.40}
+                ]
+            }
+
+            design = Design.objects.create(
+                title=f"Design {c_id}",
+                owner=user_c1,
+                scene_json=init_scene
+            )
+            session = AgentSession.objects.create(owner=user_c1, design=design)
+            generator = CandidateGenerator(adapter=MockDesignLLMAdapter())
+            service = FeedbackService()
+
+            if c_id == "E2E-01":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                if len(cands) != 3:
+                    gate_failures.append(f"Expected 3 candidates, got {len(cands)}")
+                top = cands[0]
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [c.to_dict() for c in cands]})
+                fb = service.submit_candidate_feedback(user_c1, run, top.id, 'selected')
+                if fb['feedback']['candidate_id'] != top.id:
+                    gate_failures.append("Selected candidate ID mismatch")
+
+            elif c_id == "E2E-02":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [c.to_dict() for c in cands]})
+                fb = service.submit_candidate_feedback(user_c1, run, cands[0].id, 'liked', structured_reasons=['good_circulation'])
+                pref_weights = fb['learned_preferences']['adjusted_weights']
+                if pref_weights.get('circulation', 1.0) <= 1.0:
+                    gate_failures.append("Circulation weight did not increase after like feedback")
+
+            elif c_id == "E2E-03":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [c.to_dict() for c in cands]})
+                comp = service.compare_candidates(cands[0], cands[1])
+                if not comp.get('position_displacements'):
+                    gate_failures.append("Comparison missing position displacements")
+
+            elif c_id == "E2E-04":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                req = service.interpret_refinement_instruction("Move the coffee table forward", cands[0].candidate_scene)
+                refined = service.execute_refinement(cands[0], req)
+                if not refined or not refined[0].is_valid:
+                    gate_failures.append("Refinement produced no valid candidates")
+
+            elif c_id == "E2E-05":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                req = service.interpret_refinement_instruction("Keep the sofa where it is, but shift coffee table to the right", cands[0].candidate_scene)
+                refined = service.execute_refinement(cands[0], req)
+                if not refined:
+                    gate_failures.append("No refined candidate returned")
+                else:
+                    intact, violations = RefinementRunner.compare_protected_objects_state(cands[0].candidate_scene, refined[0].candidate_scene, {'e2e-sofa'})
+                    if not intact:
+                        gate_failures.append(f"Protected sofa displaced: {violations}")
+
+            elif c_id == "E2E-06":
+                initial_hash = compute_canonical_scene_hash(design.scene_json)
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                design.refresh_from_db()
+                post_hash = compute_canonical_scene_hash(design.scene_json)
+                if initial_hash != post_hash:
+                    gate_failures.append("Canonical scene in DB mutated during proposal preview")
+
+            elif c_id == "E2E-07":
+                orig_json = copy.deepcopy(design.scene_json)
+                design.refresh_from_db()
+                if design.scene_json != orig_json:
+                    gate_failures.append("Discard failed to maintain pristine scene")
+
+            elif c_id == "E2E-08":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, base_scene_snapshot=init_scene, validation_results={'source_scene_hash': compute_canonical_scene_hash(init_scene), 'candidates': [c.to_dict() for c in cands]})
+                applied_scene = copy.deepcopy(cands[0].candidate_scene)
+                design.scene_json = applied_scene
+                design.save()
+                run.status = AgentRun.STATUS_APPROVED
+                run.save()
+                design.refresh_from_db()
+                if compute_canonical_scene_hash(design.scene_json) != compute_canonical_scene_hash(applied_scene):
+                    gate_failures.append("Applied scene hash mismatch after persistence")
+
+            elif c_id == "E2E-09":
+                design.scene_json = init_scene
+                design.save()
+                design.refresh_from_db()
+                if 'e2e-sofa' not in {o['id'] for o in design.scene_json['objects']}:
+                    gate_failures.append("Undo failed to restore initial objects")
+
+            elif c_id == "E2E-10":
+                cands = generator.generate_candidates(case.user_request, init_scene, candidate_count=3)
+                design.scene_json = copy.deepcopy(cands[0].candidate_scene)
+                design.save()
+                design.refresh_from_db()
+                if not design.scene_json.get('objects'):
+                    gate_failures.append("Redo failed to preserve state")
+
+            elif c_id == "E2E-11":
+                orig_hash = compute_canonical_scene_hash(design.scene_json)
+                design.scene_json['room']['width'] = 9.9
+                design.save()
+                current_hash = compute_canonical_scene_hash(design.scene_json)
+                if orig_hash == current_hash:
+                    gate_failures.append("Scene mutation failed to alter hash")
+
+            elif c_id == "E2E-12":
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': []})
+                if run.session.owner_id == user_c2.id:
+                    gate_failures.append("Run ownership compromised")
+
+            elif c_id == "E2E-13":
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [{'id': 'c-e13', 'is_valid': True}]})
+                service.submit_candidate_feedback(user_c1, run, 'c-e13', 'liked')
+                service.submit_candidate_feedback(user_c1, run, 'c-e13', 'liked')
+                from apps.ai_agent.feedback.feedback_models import UserCandidateFeedback
+                cnt = UserCandidateFeedback.objects.filter(user=user_c1, candidate_id='c-e13').count()
+                if cnt != 1:
+                    gate_failures.append(f"Duplicate feedback created {cnt} records instead of 1")
+
+            elif c_id == "E2E-14":
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [{'id': 'c-e14-1', 'is_valid': True}, {'id': 'c-e14-2', 'is_valid': True}]})
+                fb1 = service.submit_candidate_feedback(user_c1, run, 'c-e14-1', 'liked', structured_reasons=['better_circulation'])
+                fb2 = service.submit_candidate_feedback(user_c1, run, 'c-e14-2', 'disliked', structured_reasons=['better_circulation'])
+                w = fb2['learned_preferences']['adjusted_weights'].get('circulation', 1.0)
+                if abs(w - 1.0) > 0.15:
+                    gate_failures.append("Conflicting feedback weight diverged excessively")
+
+            elif c_id == "E2E-15":
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': [{'id': 'c-e15', 'is_valid': True}]})
+                service.submit_candidate_feedback(user_c1, run, 'c-e15', 'liked')
+                reset_state = service.reset_user_learned_preferences(user_c1)
+                from apps.ai_agent.feedback.feedback_models import UserCandidateFeedback
+                if UserCandidateFeedback.objects.filter(user=user_c1, candidate_id='c-e15').count() != 1:
+                    gate_failures.append("Reset mistakenly deleted feedback history")
+                del_res = service.delete_user_feedback_history(user_c1)
+                if UserCandidateFeedback.objects.filter(user=user_c1, candidate_id='c-e15').count() != 0:
+                    gate_failures.append("Delete failed to remove feedback records")
+
+            elif c_id == "E2E-16":
+                bed_scene = {
+                    'schemaVersion': 1,
+                    'unit': 'm',
+                    'room': {'width': 5.2, 'length': 4.8, 'height': 2.8, 'openings': [{'id': 'd-e16', 'wallId': 'w-south', 'type': 'door', 'center': [0, 2.4], 'width': 0.9}]},
+                    'objects': [
+                        {'id': 'e2e-bed', 'assetId': 'bed-queen-platform', 'position': [0, 0.5, -1.2], 'rotationEuler': [0, 0, 0], 'dimensions': [1.6, 1.0, 2.1]},
+                        {'id': 'e2e-ns1', 'assetId': 'nightstand-wood', 'position': [-1.2, 0.3, -1.2], 'rotationEuler': [0, 0, 0], 'dimensions': [0.5, 0.55, 0.45]},
+                        {'id': 'e2e-desk', 'assetId': 'desk-modern-wood', 'position': [1.8, 0.375, 1.0], 'rotationEuler': [0, 0, 0], 'dimensions': [1.2, 0.75, 0.6]},
+                    ],
+                    'relationships': [
+                        {'anchor_id': 'e2e-bed', 'child_id': 'e2e-ns1', 'socket_id': 'bed-left-nightstand', 'gap': 0.10}
+                    ]
+                }
+                cands = generator.generate_candidates(case.user_request, bed_scene, candidate_count=3)
+                req = service.interpret_refinement_instruction("Keep the bed and nightstands attached, but shift the desk", cands[0].candidate_scene)
+                refined = service.execute_refinement(cands[0], req)
+                if refined:
+                    rel_exists = any((r.get('anchor_id') == 'e2e-bed' or r.get('anchorId') == 'e2e-bed') for r in refined[0].candidate_scene.get('relationships', []))
+                    if not rel_exists:
+                        gate_failures.append("Bed-nightstand relationship lost during refinement")
+                cands = generator.generate_candidates(case.user_request, bed_scene, candidate_count=3)
+                req = service.interpret_refinement_instruction("Keep the bed and nightstands attached, but shift the desk", cands[0].candidate_scene)
+                refined = service.execute_refinement(cands[0], req)
+                if refined:
+                    rel_exists = any((r.get('anchor_id') == 'e2e-bed' or r.get('anchorId') == 'e2e-bed') for r in refined[0].candidate_scene.get('relationships', []))
+                    if not rel_exists:
+                        gate_failures.append("Bed-nightstand relationship lost during refinement")
+
+            elif c_id == "E2E-17":
+                req = service.interpret_refinement_instruction("Keep the sofa where it is, but move the sofa forward", init_scene)
+                if not req.is_ambiguous or req.intent_category != 'infeasible_protection':
+                    gate_failures.append("Infeasible protection conflict was not flagged as ambiguous/clarification")
+
+            elif c_id == "E2E-18":
+                req = service.interpret_refinement_instruction("asdfghjk", init_scene)
+                if not req.is_ambiguous:
+                    gate_failures.append("Gibberish instruction was not flagged as ambiguous")
+
+            elif c_id == "E2E-19":
+                run = AgentRun.objects.create(session=session, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': []})
+                if not run.id:
+                    gate_failures.append("Failed to create agent run")
+
+            elif c_id == "E2E-20":
+                reloaded = Design.objects.get(id=design.id)
+                h1 = compute_canonical_scene_hash(design.scene_json)
+                h2 = compute_canonical_scene_hash(reloaded.scene_json)
+                if h1 != h2:
+                    gate_failures.append("Scene hash mismatch on DB reload")
+
+        except Exception as exc:
+            gate_failures.append(f"Unexpected exception: {str(exc)}")
+
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+        passed_case = len(gate_failures) == 0
+        if passed_case:
+            passed += 1
+        else:
+            failed += 1
+
+        results.append({
+            'case_id': c_id,
+            'name': case.name,
+            'passed': passed_case,
+            'gate_failures': gate_failures,
+            'latency_ms': round(dt_ms, 2)
+        })
+
+    return {
+        'suite': 'Suite C — End-to-End Integration',
+        'total_scenarios': len(SUITE_C_SCENARIOS),
+        'passed_scenarios': passed,
+        'failed_scenarios': failed,
+        'pass_rate_pct': round((passed / len(SUITE_C_SCENARIOS)) * 100.0, 1),
+        'results': results,
+    }

@@ -48,17 +48,37 @@ class FeedbackRepository:
         design = run.session.design
 
         with transaction.atomic():
-            feedback_obj = UserCandidateFeedback.objects.create(
+            existing = UserCandidateFeedback.objects.filter(
                 user=user,
-                design=design,
                 run=run,
                 candidate_id=str(candidate_id),
                 feedback_type=str(feedback_type).lower(),
-                structured_reasons=reasons,
-                feedback_text=feedback_text.strip(),
-                candidate_score=float(candidate_score),
-                candidate_label=candidate_label.strip(),
-            )
+            ).first()
+
+            if existing:
+                # Deterministic duplicate submission protection: update in place without unbounded row inflation
+                if reasons:
+                    combined_reasons = sorted(list(set(existing.structured_reasons + reasons)))
+                    existing.structured_reasons = combined_reasons
+                if feedback_text and not existing.feedback_text:
+                    existing.feedback_text = feedback_text.strip()
+                existing.candidate_score = float(candidate_score)
+                if candidate_label:
+                    existing.candidate_label = candidate_label.strip()
+                existing.save()
+                feedback_obj = existing
+            else:
+                feedback_obj = UserCandidateFeedback.objects.create(
+                    user=user,
+                    design=design,
+                    run=run,
+                    candidate_id=str(candidate_id),
+                    feedback_type=str(feedback_type).lower(),
+                    structured_reasons=reasons,
+                    feedback_text=feedback_text.strip(),
+                    candidate_score=float(candidate_score),
+                    candidate_label=candidate_label.strip(),
+                )
 
         return CandidateFeedbackRecord(
             id=str(feedback_obj.id),
@@ -94,16 +114,32 @@ class FeedbackRepository:
         design = run.session.design
 
         with transaction.atomic():
-            comp_obj = UserPairwiseComparison.objects.create(
+            existing = UserPairwiseComparison.objects.filter(
                 user=user,
-                design=design,
                 run=run,
                 candidate_a_id=str(candidate_a_id),
                 candidate_b_id=str(candidate_b_id),
-                outcome=str(outcome).lower(),
-                structured_reasons=reasons,
-                comparison_text=comparison_text.strip(),
-            )
+            ).first()
+
+            if existing:
+                existing.outcome = str(outcome).lower()
+                if reasons:
+                    existing.structured_reasons = sorted(list(set(existing.structured_reasons + reasons)))
+                if comparison_text and not existing.comparison_text:
+                    existing.comparison_text = comparison_text.strip()
+                existing.save()
+                comp_obj = existing
+            else:
+                comp_obj = UserPairwiseComparison.objects.create(
+                    user=user,
+                    design=design,
+                    run=run,
+                    candidate_a_id=str(candidate_a_id),
+                    candidate_b_id=str(candidate_b_id),
+                    outcome=str(outcome).lower(),
+                    structured_reasons=reasons,
+                    comparison_text=comparison_text.strip(),
+                )
 
         return PairwiseComparisonRecord(
             id=str(comp_obj.id),
@@ -119,9 +155,17 @@ class FeedbackRepository:
         )
 
     @staticmethod
-    def get_user_feedback_history(user: Any, limit: int = 50) -> List[CandidateFeedbackRecord]:
-        """Returns the user's historical candidate feedback records in chronological order."""
-        feedbacks = UserCandidateFeedback.objects.filter(user=user).order_by('-created_at')[:limit]
+    def get_user_feedback_history(user: Any, limit: int = 50, since_reset: bool = True) -> List[CandidateFeedbackRecord]:
+        """
+        Returns the user's historical candidate feedback records in chronological order.
+        If since_reset is True, filters to records created after the most recent preference reset.
+        """
+        qs = UserCandidateFeedback.objects.filter(user=user)
+        if since_reset:
+            pref_obj = LearnedPreferenceAdjustment.objects.filter(user=user).first()
+            if pref_obj and pref_obj.last_reset_at:
+                qs = qs.filter(created_at__gt=pref_obj.last_reset_at)
+        feedbacks = qs.order_by('-created_at')[:limit]
         return [
             CandidateFeedbackRecord(
                 id=str(f.id),
@@ -140,9 +184,17 @@ class FeedbackRepository:
         ]
 
     @staticmethod
-    def get_user_pairwise_comparisons(user: Any, limit: int = 50) -> List[PairwiseComparisonRecord]:
-        """Returns the user's pairwise comparison history."""
-        comps = UserPairwiseComparison.objects.filter(user=user).order_by('-created_at')[:limit]
+    def get_user_pairwise_comparisons(user: Any, limit: int = 50, since_reset: bool = True) -> List[PairwiseComparisonRecord]:
+        """
+        Returns the user's pairwise comparison history.
+        If since_reset is True, filters to records created after the most recent preference reset.
+        """
+        qs = UserPairwiseComparison.objects.filter(user=user)
+        if since_reset:
+            pref_obj = LearnedPreferenceAdjustment.objects.filter(user=user).first()
+            if pref_obj and pref_obj.last_reset_at:
+                qs = qs.filter(created_at__gt=pref_obj.last_reset_at)
+        comps = qs.order_by('-created_at')[:limit]
         return [
             PairwiseComparisonRecord(
                 id=str(c.id),
@@ -216,16 +268,19 @@ class FeedbackRepository:
 
     @staticmethod
     def reset_learned_preferences(user: Any) -> LearnedPreferenceState:
-        """Resets all learned adjustments and clears prior feedback history back to baseline neutral state."""
+        """
+        Resets learned adjustments to baseline neutral state without deleting historical feedback records.
+        Records last_reset_at so future online weight calculations ignore pre-reset feedback.
+        """
+        now = timezone.now()
         with transaction.atomic():
-            UserCandidateFeedback.objects.filter(user=user).delete()
-            UserPairwiseComparison.objects.filter(user=user).delete()
             obj, _ = LearnedPreferenceAdjustment.objects.get_or_create(user=user)
             obj.adjusted_weights = {}
             obj.confidence_scores = {}
-            obj.explanations = {"reset": "Learned preferences were explicitly reset by the user."}
+            obj.explanations = {"reset": "Learned preferences were explicitly reset to neutral baseline."}
             obj.feedback_count = 0
             obj.is_active = True
+            obj.last_reset_at = now
             obj.save()
 
         return LearnedPreferenceState(
@@ -234,7 +289,33 @@ class FeedbackRepository:
             feedback_count=0,
             adjusted_weights={},
             confidence_scores={},
-            explanations={"reset": "Learned preferences were explicitly reset by the user."},
+            explanations={"reset": "Learned preferences were explicitly reset to neutral baseline."},
             is_active=True,
-            last_updated_iso=timezone.now().isoformat(),
+            last_updated_iso=now.isoformat(),
         )
+
+    @staticmethod
+    def delete_user_feedback_history(user: Any) -> Dict[str, Any]:
+        """
+        Distinct, explicit operation: permanently deletes all feedback records and pairwise
+        comparisons strictly for the authenticated user, while preserving other users' data.
+        Also resets learned preference adjustments.
+        """
+        with transaction.atomic():
+            fb_count, _ = UserCandidateFeedback.objects.filter(user=user).delete()
+            comp_count, _ = UserPairwiseComparison.objects.filter(user=user).delete()
+            obj, _ = LearnedPreferenceAdjustment.objects.get_or_create(user=user)
+            obj.adjusted_weights = {}
+            obj.confidence_scores = {}
+            obj.explanations = {"deleted": "User feedback history was permanently deleted."}
+            obj.feedback_count = 0
+            obj.is_active = True
+            obj.last_reset_at = None
+            obj.save()
+
+        return {
+            "status": "deleted",
+            "deleted_feedbacks_count": fb_count,
+            "deleted_comparisons_count": comp_count,
+            "user_id": user.id,
+        }

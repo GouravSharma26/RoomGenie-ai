@@ -8,7 +8,7 @@ import copy
 import logging
 import math
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from apps.ai_agent.candidate_types import LayoutCandidate
 from apps.ai_agent.candidate_simulator import CandidateSimulator
 from apps.ai_agent.candidate_scorer import CandidateScorer
@@ -117,28 +117,77 @@ class RefinementRunner:
                 strategy_bias='circulation' if refinement_request.intent_category == 'improve_circulation' else 'wall_compact',
             )
 
-            # 5. Protected Objects Enforcement Check:
-            # Verify no protected item was displaced during search & repair
+            # 5. Protected Objects & Semantic Relationship Integrity Check
             opt_objs = {o.get('id'): o for o in optimized_cand.candidate_scene.get('objects', []) if 'id' in o}
-            protected_intact = True
             any_rolled_back = False
+
+            # Restore original state of any protected object that may have been adjusted
             for pid in protected_ids:
                 if pid in base_objs and pid in opt_objs:
-                    p_orig = base_objs[pid].get('position', [0, 0, 0])
-                    p_curr = opt_objs[pid].get('position', [0, 0, 0])
+                    b_obj = base_objs[pid]
+                    curr_obj = opt_objs[pid]
+                    # Ensure position, rotation, dimensions, scale, material match exactly
+                    p_orig = b_obj.get('position', [0, 0, 0])
+                    p_curr = curr_obj.get('position', [0, 0, 0])
                     dist = math.hypot(p_orig[0] - p_curr[0], p_orig[2] - p_curr[2])
-                    if dist > 0.05:  # Tolerance threshold
-                        # Strictly enforce position preservation
-                        opt_objs[pid]['position'] = list(p_orig)
+                    if dist > 0.001:
+                        curr_obj['position'] = list(p_orig)
                         any_rolled_back = True
-                elif pid not in opt_objs:
-                    protected_intact = False
+                    if 'rotationEuler' in b_obj:
+                        curr_obj['rotationEuler'] = list(b_obj['rotationEuler'])
+                    elif 'rotation' in b_obj:
+                        curr_obj['rotation'] = list(b_obj['rotation'])
+                    if 'dimensions' in b_obj:
+                        curr_obj['dimensions'] = copy.deepcopy(b_obj['dimensions'])
+                    if 'scale' in b_obj:
+                        curr_obj['scale'] = copy.deepcopy(b_obj['scale'])
+                    if 'material' in b_obj:
+                        curr_obj['material'] = copy.deepcopy(b_obj['material'])
+
+            # Preserve semantic relationships where anchor/child are protected
+            base_rels = base_candidate.candidate_scene.get('relationships', [])
+            opt_rels = list(optimized_cand.candidate_scene.get('relationships', []))
+            for b_rel in base_rels:
+                anc = b_rel.get('anchor_id') or b_rel.get('anchorId')
+                chd = b_rel.get('child_id') or b_rel.get('childId')
+                if anc in protected_ids and chd in protected_ids:
+                    # Verify relationship exists in refined scene
+                    exists = any(
+                        (r.get('anchor_id') or r.get('anchorId')) == anc and
+                        (r.get('child_id') or r.get('childId')) == chd
+                        for r in opt_rels
+                    )
+                    if not exists:
+                        opt_rels.append(copy.deepcopy(b_rel))
+                        any_rolled_back = True
+            optimized_cand.candidate_scene['relationships'] = opt_rels
 
             if any_rolled_back:
                 from apps.ai_agent.optimization.optimization_runner import sync_actions_with_state
                 optimized_cand.proposed_actions = sync_actions_with_state(
                     optimized_cand.proposed_actions, optimized_cand.candidate_scene
                 )
+                # Re-validate after restoring protected items to guarantee no collisions were introduced
+                re_sim = CandidateSimulator.validate_candidate_scene(
+                    candidate_scene=optimized_cand.candidate_scene,
+                    max_budget_paise=max_budget_paise,
+                    user_requirements=user_requirements,
+                    budget_diff=optimized_cand.budget_diff,
+                )
+                optimized_cand.is_valid = re_sim['is_valid']
+                optimized_cand.is_approval_eligible = re_sim['is_approval_eligible']
+                optimized_cand.validation_feedback = re_sim['validation_feedback']
+
+            # Full protected state comparison check
+            protected_intact, protection_violations = self.compare_protected_objects_state(
+                base_scene=base_candidate.candidate_scene,
+                candidate_scene=optimized_cand.candidate_scene,
+                protected_ids=protected_ids,
+            )
+
+            if not protected_intact:
+                optimized_cand.is_valid = False
+                optimized_cand.is_approval_eligible = False
 
             # 6. Compute comparison with base candidate
             comparison = CandidateComparisonService.compare_candidates(base_candidate, optimized_cand)
@@ -151,6 +200,7 @@ class RefinementRunner:
                 'protectedObjects': refinement_request.protected_object_ids,
                 'targetObjects': refinement_request.target_object_ids,
                 'protectedObjectsPreserved': protected_intact,
+                'protectionViolations': protection_violations,
                 'scoreDelta': round(optimized_cand.score.overall - base_candidate.score.overall, 1),
                 'displacements': comparison.position_displacements,
                 'executionDurationMs': round((time.time() - start_time) * 1000.0, 2),
@@ -165,3 +215,80 @@ class RefinementRunner:
 
         # 7. Rank refined candidates
         return CandidateRanker.rank_candidates(refined_candidates)
+
+    @classmethod
+    def compare_protected_objects_state(
+        cls,
+        base_scene: Dict[str, Any],
+        candidate_scene: Dict[str, Any],
+        protected_ids: Set[str],
+    ) -> Tuple[bool, List[str]]:
+        """
+        Performs exhaustive state verification for protected objects:
+        - Object ID existence
+        - Catalogue identity (assetId)
+        - Exact position within 0.001m
+        - Rotation Euler within 0.001 rad
+        - Scale
+        - Dimensions
+        - Material
+        - Semantic relationships & parent/child attachment information
+        """
+        violations: List[str] = []
+        base_objs = {o.get('id'): o for o in base_scene.get('objects', []) if 'id' in o}
+        cand_objs = {o.get('id'): o for o in candidate_scene.get('objects', []) if 'id' in o}
+
+        for pid in protected_ids:
+            if pid not in base_objs:
+                continue
+            if pid not in cand_objs:
+                violations.append(f"Protected object '{pid}' was removed from the scene.")
+                continue
+
+            b = base_objs[pid]
+            c = cand_objs[pid]
+
+            # 1. Catalogue identity
+            if b.get('assetId') != c.get('assetId'):
+                violations.append(f"Protected object '{pid}' assetId changed ({b.get('assetId')} -> {c.get('assetId')}).")
+
+            # 2. Position within 0.001m
+            b_pos = b.get('position', [0, 0, 0])
+            c_pos = c.get('position', [0, 0, 0])
+            pos_dist = math.sqrt(sum((bp - cp) ** 2 for bp, cp in zip(b_pos, c_pos)))
+            if pos_dist > 0.001:
+                violations.append(f"Protected object '{pid}' position displaced by {pos_dist:.4f}m.")
+
+            # 3. Rotation
+            b_rot = b.get('rotationEuler') or b.get('rotation', [0, 0, 0])
+            c_rot = c.get('rotationEuler') or c.get('rotation', [0, 0, 0])
+            if len(b_rot) == len(c_rot) and len(b_rot) >= 3:
+                rot_diff = max(abs(br - cr) for br, cr in zip(b_rot, c_rot))
+                if rot_diff > 0.001:
+                    violations.append(f"Protected object '{pid}' rotation changed by {rot_diff:.4f} rad.")
+
+            # 4. Dimensions & Scale
+            if b.get('dimensions') and c.get('dimensions') and b.get('dimensions') != c.get('dimensions'):
+                violations.append(f"Protected object '{pid}' dimensions altered.")
+            if b.get('scale') and c.get('scale') and b.get('scale') != c.get('scale'):
+                violations.append(f"Protected object '{pid}' scale altered.")
+
+            # 5. Material
+            if b.get('material') and c.get('material') and b.get('material') != c.get('material'):
+                violations.append(f"Protected object '{pid}' material altered.")
+
+        # 6. Semantic relationships & parent/child attachments
+        base_rels = base_scene.get('relationships', [])
+        cand_rels = candidate_scene.get('relationships', [])
+        for rel in base_rels:
+            anchor = rel.get('anchor_id') or rel.get('anchorId')
+            child = rel.get('child_id') or rel.get('childId')
+            if anchor in protected_ids and child in protected_ids:
+                matched_rel = next(
+                    (r for r in cand_rels if (r.get('anchor_id') or r.get('anchorId')) == anchor and (r.get('child_id') or r.get('childId')) == child),
+                    None
+                )
+                if not matched_rel:
+                    violations.append(f"Protected semantic relationship between '{anchor}' and '{child}' was severed.")
+
+        return len(violations) == 0, violations

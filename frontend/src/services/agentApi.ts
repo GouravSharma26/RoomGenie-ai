@@ -369,7 +369,9 @@ export interface CandidateExplanation {
   candidate_id: string;
   label: string;
   headline: string;
+  rank_rationale?: string;
   why_recommended: string[];
+  key_strengths?: string[];
   key_metrics: {
     boundary_score: number;
     collision_score: number;
@@ -384,6 +386,7 @@ export interface CandidateExplanation {
     door_clearance_min_m?: number;
     budget_paise?: number;
   };
+  factual_metrics?: Record<string, any>;
   alignment_reasons: string[];
   trade_offs: string[];
   spatial_adjustments: string[];
@@ -423,6 +426,9 @@ export interface LearnedPreferenceState {
 }
 
 export interface RefinementResponse {
+  is_ambiguous?: boolean;
+  ambiguity_reason?: string;
+  clarification_prompt?: string;
   refined_candidates: LayoutCandidateRecord[];
   refinement_request: {
     raw_prompt: string;

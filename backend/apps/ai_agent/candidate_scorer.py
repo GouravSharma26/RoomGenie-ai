@@ -48,6 +48,10 @@ class CandidateScorer:
             for obj in objects:
                 pos = obj.get('position', [0, 0, 0])
                 dims = obj.get('dimensions', [1, 1, 1])
+                if isinstance(dims, dict):
+                    dims = [float(dims.get('width', 1.0)), float(dims.get('height', 1.0)), float(dims.get('depth', 1.0))]
+                elif not isinstance(dims, (list, tuple)) or len(dims) < 3:
+                    dims = [1.0, 1.0, 1.0]
                 # Check distance to walls (assuming rectangular center-origin or bounding box)
                 dist_x = (room_w / 2.0) - (abs(pos[0]) + dims[0] / 2.0)
                 dist_z = (room_l / 2.0) - (abs(pos[2]) + dims[2] / 2.0)
@@ -125,6 +129,10 @@ class CandidateScorer:
         furniture_footprint = 0.0
         for obj in objects:
             dims = obj.get('dimensions', [1, 1, 1])
+            if isinstance(dims, dict):
+                dims = [float(dims.get('width', 1.0)), float(dims.get('height', 1.0)), float(dims.get('depth', 1.0))]
+            elif not isinstance(dims, (list, tuple)) or len(dims) < 3:
+                dims = [1.0, 1.0, 1.0]
             scale = obj.get('scale', [1, 1, 1])
             furniture_footprint += (dims[0] * scale[0]) * (dims[2] * scale[2])
 

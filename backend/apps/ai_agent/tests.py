@@ -3916,6 +3916,264 @@ class Phase73RefinementPlannerAndRunnerTests(APITestCase):
         self.assertEqual(self.design.scene_json['objects'][1]['position'], [0.0, 0.225, 0.25])  # Table in DB untouched!
 
 
+class Phase74SecurityAndIntegrityTests(APITestCase):
+    """
+    Adversarial security, multi-user isolation, stale scene concurrency,
+    and data integrity verification (Phase 7.4).
+    """
+
+    def setUp(self):
+        self.user_a = User.objects.create_user(username='user_a', password='password123')
+        self.user_b = User.objects.create_user(username='user_b', password='password123')
+
+        self.design_a = Design.objects.create(
+            title="User A Living Room",
+            owner=self.user_a,
+            scene_json={
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'obj-sofa', 'assetId': 'sofa-leather-3seater', 'position': [0, 0.425, -1.0], 'rotationEuler': [0, 0, 0]},
+                    {'id': 'obj-table', 'assetId': 'table-oak-coffee', 'position': [0, 0.225, 0.0], 'rotationEuler': [0, 0, 0]},
+                ],
+                'relationships': [
+                    {'anchor_id': 'obj-sofa', 'child_id': 'obj-table', 'socket_id': 'sofa-front-table', 'gap': 0.40}
+                ]
+            }
+        )
+
+        self.design_b = Design.objects.create(
+            title="User B Bedroom",
+            owner=self.user_b,
+            scene_json={
+                'schemaVersion': 1,
+                'unit': 'm',
+                'room': {'width': 4.5, 'length': 4.0, 'height': 2.8},
+                'objects': [
+                    {'id': 'obj-bed', 'assetId': 'bed-queen-platform', 'position': [0, 0.5, -1.2], 'rotationEuler': [0, 0, 0]}
+                ],
+                'relationships': []
+            }
+        )
+
+        self.session_a = AgentSession.objects.create(owner=self.user_a, design=self.design_a)
+        self.session_b = AgentSession.objects.create(owner=self.user_b, design=self.design_b)
+
+        cand_a1 = {
+            'id': 'cand-user-a-1',
+            'label': 'Layout Alpha',
+            'is_valid': True,
+            'is_approval_eligible': True,
+            'score': {'overall': 88.0, 'boundary': 95.0, 'collision': 95.0, 'circulation': 85.0, 'clearance': 85.0, 'utilization': 80.0, 'budget': 90.0},
+            'candidate_scene': self.design_a.scene_json,
+            'proposed_actions': [{'type': 'move_furniture', 'object_id': 'obj-table', 'new_position': [0, 0.225, 0.3]}],
+        }
+        cand_a2 = {
+            'id': 'cand-user-a-2',
+            'label': 'Layout Beta',
+            'is_valid': True,
+            'is_approval_eligible': True,
+            'score': {'overall': 82.0, 'boundary': 90.0, 'collision': 90.0, 'circulation': 80.0, 'clearance': 80.0, 'utilization': 75.0, 'budget': 85.0},
+            'candidate_scene': self.design_a.scene_json,
+            'proposed_actions': [{'type': 'move_furniture', 'object_id': 'obj-table', 'new_position': [0.2, 0.225, 0.3]}],
+        }
+
+        self.run_a = AgentRun.objects.create(
+            session=self.session_a,
+            user_prompt="Arrange living room",
+            status=AgentRun.STATUS_PROPOSED,
+            base_scene_snapshot=self.design_a.scene_json,
+            validation_results={
+                'source_scene_hash': compute_canonical_scene_hash(self.design_a.scene_json),
+                'candidates': [cand_a1, cand_a2]
+            }
+        )
+
+    def test_cross_user_feedback_submission_strictly_denied(self):
+        """User B cannot submit feedback against User A's run/candidate."""
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-user-a-1',
+            'feedback_type': 'liked',
+            'structured_reasons': ['good_circulation'],
+        }
+        res = self.client.post(url, payload, format='json')
+        # Expect 404 Not Found (row-level isolation prevents discovering other user's runs)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cross_user_candidate_explanation_strictly_denied(self):
+        """User B cannot access explanations for User A's candidate proposal."""
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('agent-candidate-explain', kwargs={'run_id': str(self.run_a.id), 'candidate_id': 'cand-user-a-1'})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_candidate_id_not_in_run_rejected(self):
+        """Submitting feedback for an arbitrary candidate ID not in run returns 400 Bad Request."""
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-fabricated-999',
+            'feedback_type': 'liked',
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("does not belong to run", res.data['detail'])
+
+    def test_mismatched_design_id_rejected(self):
+        """Submitting feedback with a mismatched design ID returns 400 Bad Request."""
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-user-a-1',
+            'feedback_type': 'liked',
+            'design_id': str(self.design_b.id),  # Belongs to user_b / session_b
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_duplicate_feedback_submission_idempotency(self):
+        """Rapid duplicate feedback submissions do not create unbounded rows or runaway weights."""
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-feedback')
+        payload = {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-user-a-1',
+            'feedback_type': 'liked',
+            'structured_reasons': ['good_circulation'],
+        }
+        res1 = self.client.post(url, payload, format='json')
+        self.assertEqual(res1.status_code, status.HTTP_201_CREATED)
+
+        res2 = self.client.post(url, payload, format='json')
+        self.assertEqual(res2.status_code, status.HTTP_201_CREATED)
+
+        # Count in database should be 1, not 2
+        count = UserCandidateFeedback.objects.filter(user=self.user_a, candidate_id='cand-user-a-1').count()
+        self.assertEqual(count, 1)
+
+    def test_reset_learned_preferences_preserves_historical_feedback(self):
+        """Resetting learned preferences sets weights to neutral but does NOT delete feedback rows."""
+        self.client.force_authenticate(user=self.user_a)
+        # 1. Submit feedback
+        url_fb = reverse('agent-feedback')
+        self.client.post(url_fb, {
+            'run_id': str(self.run_a.id),
+            'candidate_id': 'cand-user-a-1',
+            'feedback_type': 'liked',
+            'structured_reasons': ['good_circulation'],
+        }, format='json')
+
+        self.assertEqual(UserCandidateFeedback.objects.filter(user=self.user_a).count(), 1)
+
+        # 2. Reset preferences
+        url_reset = reverse('agent-learned-preferences-reset')
+        res_reset = self.client.post(url_reset)
+        self.assertEqual(res_reset.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_reset.data['adjusted_weights'], {})
+        self.assertEqual(res_reset.data['feedback_count'], 0)
+
+        # 3. VERIFY: Historical feedback records are PRESERVED in database!
+        self.assertEqual(UserCandidateFeedback.objects.filter(user=self.user_a).count(), 1)
+
+    def test_delete_user_feedback_history_removes_user_data_only(self):
+        """Dedicated delete endpoint permanently removes only the requesting user's records."""
+        # Record feedback for User A
+        UserCandidateFeedback.objects.create(
+            user=self.user_a, run=self.run_a, candidate_id='cand-user-a-1', feedback_type='liked'
+        )
+        # Record feedback for User B
+        run_b = AgentRun.objects.create(
+            session=self.session_b, status=AgentRun.STATUS_PROPOSED, validation_results={'candidates': []}
+        )
+        UserCandidateFeedback.objects.create(
+            user=self.user_b, run=run_b, candidate_id='cand-b-1', feedback_type='selected'
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        url_del = reverse('agent-feedback-history-delete')
+        res = self.client.post(url_del)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['status'], 'deleted')
+
+        # User A's feedback is deleted
+        self.assertEqual(UserCandidateFeedback.objects.filter(user=self.user_a).count(), 0)
+        # User B's feedback remains intact
+        self.assertEqual(UserCandidateFeedback.objects.filter(user=self.user_b).count(), 1)
+
+    def test_stale_candidate_apply_rejected(self):
+        """Applying a candidate proposal after the canonical scene has changed returns 409 Conflict."""
+        self.client.force_authenticate(user=self.user_a)
+        url_apply = reverse('agent-run-apply', kwargs={'run_id': str(self.run_a.id)})
+
+        # Simulate concurrent scene modification: User modifies scene before AI apply
+        self.design_a.scene_json['objects'].append({
+            'id': 'obj-plant', 'assetId': 'plant-potted-ficus', 'position': [1.5, 0.0, 1.0]
+        })
+        self.design_a.save()
+
+        res = self.client.post(url_apply, {'candidate_id': 'cand-user-a-1'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
+        self.assertTrue(res.data.get('stale'))
+
+    def test_protected_object_infeasible_conflict_clarification(self):
+        """Conflict between moving and protecting an object produces clear clarification response."""
+        self.client.force_authenticate(user=self.user_a)
+        url_refine = reverse('agent-candidate-refine', kwargs={'run_id': str(self.run_a.id), 'candidate_id': 'cand-user-a-1'})
+        payload = {
+            'instruction': 'Keep the sofa where it is, but move the sofa forward.',
+        }
+        res = self.client.post(url_refine, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data.get('is_ambiguous'))
+        self.assertIn("Cannot move", res.data.get('clarification_prompt', ''))
+
+    def test_exhaustive_protected_object_state_comparison(self):
+        """Verifies RefinementRunner.compare_protected_objects_state catches micro-displacements and alterations."""
+        from apps.ai_agent.feedback.refinement_runner import RefinementRunner
+
+        base_scene = {
+            'objects': [
+                {
+                    'id': 'sofa-1',
+                    'assetId': 'sofa-leather-3seater',
+                    'position': [1.0, 0.425, -1.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': {'width': 2.1, 'depth': 0.9, 'height': 0.85},
+                    'scale': [1.0, 1.0, 1.0],
+                    'material': {'color': '#333333'},
+                }
+            ],
+            'relationships': []
+        }
+
+        # 1. Exact replica passes
+        cand_scene_exact = copy.deepcopy(base_scene)
+        ok, violations = RefinementRunner.compare_protected_objects_state(base_scene, cand_scene_exact, {'sofa-1'})
+        self.assertTrue(ok)
+        self.assertEqual(len(violations), 0)
+
+        # 2. Position displacement > 0.001m fails
+        cand_scene_moved = copy.deepcopy(base_scene)
+        cand_scene_moved['objects'][0]['position'][0] += 0.002
+        ok, violations = RefinementRunner.compare_protected_objects_state(base_scene, cand_scene_moved, {'sofa-1'})
+        self.assertFalse(ok)
+        self.assertTrue(any('position displaced' in v for v in violations))
+
+        # 3. Asset ID altered fails
+        cand_scene_asset = copy.deepcopy(base_scene)
+        cand_scene_asset['objects'][0]['assetId'] = 'sofa-fabric-2seater'
+        ok, violations = RefinementRunner.compare_protected_objects_state(base_scene, cand_scene_asset, {'sofa-1'})
+        self.assertFalse(ok)
+        self.assertTrue(any('assetId changed' in v for v in violations))
+
+
+
 
 
 

@@ -492,6 +492,23 @@ class CandidateFeedbackView(APIView):
 
         run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
 
+        # Cross-reference validation: Ensure candidate belongs to this run
+        candidates_data = run.validation_results.get('candidates', []) if isinstance(run.validation_results, dict) else []
+        valid_cand_ids = {c.get('id') for c in candidates_data if isinstance(c, dict)}
+        if candidate_id not in valid_cand_ids:
+            return Response(
+                {"detail": f"Candidate '{candidate_id}' does not belong to run {run_id}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate design consistency if design_id supplied
+        design_id = data.get('design_id')
+        if design_id and run.session.design_id and str(run.session.design_id) != str(design_id):
+            return Response(
+                {"detail": "Supplied design_id does not match the design associated with this run."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         service = FeedbackService()
         result = service.submit_candidate_feedback(
             user=request.user,
@@ -528,6 +545,23 @@ class PairwiseComparisonView(APIView):
 
         run = get_object_or_404(AgentRun, id=run_id, session__owner=request.user)
 
+        # Cross-reference validation: Ensure both candidates belong to this run
+        candidates_data = run.validation_results.get('candidates', []) if isinstance(run.validation_results, dict) else []
+        valid_cand_ids = {c.get('id') for c in candidates_data if isinstance(c, dict)}
+        if candidate_a_id not in valid_cand_ids or candidate_b_id not in valid_cand_ids:
+            return Response(
+                {"detail": f"One or both candidates ('{candidate_a_id}', '{candidate_b_id}') do not belong to run {run_id}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate design consistency if design_id supplied
+        design_id = data.get('design_id')
+        if design_id and run.session.design_id and str(run.session.design_id) != str(design_id):
+            return Response(
+                {"detail": "Supplied design_id does not match the design associated with this run."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         service = FeedbackService()
         result = service.submit_pairwise_comparison(
             user=request.user,
@@ -558,12 +592,28 @@ class ResetLearnedPreferencesView(APIView):
     """
     POST /api/v1/agent/feedback/learned-preferences/reset/
     Explicitly resets learned preference adjustments back to baseline.
+    Does not delete historical feedback records.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         service = FeedbackService()
         result = service.reset_user_learned_preferences(request.user)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class DeleteFeedbackHistoryView(APIView):
+    """
+    POST /api/v1/agent/feedback/history/delete/
+    Permanently deletes all historical feedback and pairwise comparisons
+    strictly for the authenticated user, while preserving other users' data.
+    Also resets learned preference adjustments.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        service = FeedbackService()
+        result = service.delete_user_feedback_history(request.user)
         return Response(result, status=status.HTTP_200_OK)
 
 

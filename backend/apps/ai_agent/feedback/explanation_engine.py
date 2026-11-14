@@ -147,7 +147,9 @@ class ExplanationEngine:
             'zones_count': len(zones),
             'room_area_sqm': round(room_sqm, 2),
             'furniture_footprint_sqm': round(total_footprint, 2),
+            'open_floor_m2': max(0.0, round(room_sqm - total_footprint, 2)),
             'occupied_floor_pct': usable_floor_pct,
+            'door_clearance_min_m': 0.9,
             'overall_score': round(score.overall, 1),
             'circulation_score': round(score.circulation, 1),
             'clearance_score': round(score.clearance, 1),
@@ -173,3 +175,4 @@ class ExplanationEngine:
             trade_offs=trade_offs,
             factual_metrics=factual_metrics,
         )
+

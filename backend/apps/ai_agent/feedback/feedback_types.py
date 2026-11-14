@@ -164,14 +164,19 @@ class CandidateExplanation:
             'rank': self.rank,
             'overall_score': round(self.overall_score, 1),
             'rank_rationale': self.rank_rationale,
+            'headline': self.rank_rationale,
             'key_strengths': self.key_strengths,
+            'why_recommended': self.key_strengths,
             'preferences_satisfied': self.preferences_satisfied,
+            'alignment_reasons': self.preferences_satisfied,
             'spatial_constraints_satisfied': self.spatial_constraints_satisfied,
+            'spatial_adjustments': self.spatial_constraints_satisfied,
             'preserved_elements': self.preserved_elements,
             'modifications_made': self.modifications_made,
             'socket_relationships_summary': self.socket_relationships_summary,
             'trade_offs': self.trade_offs,
             'factual_metrics': self.factual_metrics,
+            'key_metrics': self.factual_metrics,
         }
 
 
@@ -237,3 +242,4 @@ class TypedRefinementRequest:
             'ambiguity_reason': self.ambiguity_reason,
             'confidence_score': round(self.confidence_score, 2),
         }
+

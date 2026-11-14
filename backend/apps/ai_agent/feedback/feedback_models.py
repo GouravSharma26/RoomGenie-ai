@@ -107,6 +107,7 @@ class LearnedPreferenceAdjustment(models.Model):
     confidence_scores = models.JSONField(default=dict, blank=True)
     explanations = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
+    last_reset_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -115,3 +116,4 @@ class LearnedPreferenceAdjustment(models.Model):
 
     def __str__(self):
         return f"LearnedAdjustments for {self.user.username} (count={self.feedback_count}, active={self.is_active})"
+

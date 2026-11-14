@@ -561,7 +561,12 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
 
     try {
       const res = await refineCandidateLayout(runId, candId, prompt);
-      if (res.refined_candidates && res.refined_candidates.length > 0) {
+      if (res.is_ambiguous) {
+        setRefinementStatus(prev => ({
+          ...prev,
+          [candId]: `Ambiguous instruction: ${res.ambiguity_reason || 'Please specify the exact furniture item and adjustment.'}`,
+        }));
+      } else if (res.refined_candidates && res.refined_candidates.length > 0) {
         setMessages(prev => prev.map(m => {
           if (m.id === msgId) {
             return {
@@ -1067,11 +1072,11 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                                   <>
                                     <div className="font-semibold text-white text-[11px] flex items-center gap-1.5">
                                       <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                      <span>{explanationState[activeCand.id].data!.headline}</span>
+                                      <span>{explanationState[activeCand.id].data!.headline || explanationState[activeCand.id].data!.rank_rationale || 'Candidate Rationale'}</span>
                                     </div>
-                                    {explanationState[activeCand.id].data!.why_recommended.length > 0 && (
+                                    {((explanationState[activeCand.id].data!.why_recommended || explanationState[activeCand.id].data!.key_strengths || [])).length > 0 && (
                                       <ul className="space-y-1 text-slate-300 pl-4 list-disc text-[10px]">
-                                        {explanationState[activeCand.id].data!.why_recommended.map((r, rIdx) => (
+                                        {(explanationState[activeCand.id].data!.why_recommended || explanationState[activeCand.id].data!.key_strengths || []).map((r, rIdx) => (
                                           <li key={rIdx}>{r}</li>
                                         ))}
                                       </ul>
