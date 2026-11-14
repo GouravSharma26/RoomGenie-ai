@@ -502,6 +502,45 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         variants: list[DesignProposalResult] = []
 
         # -------------------------------------------------------------
+        # Negative Gate / Incompatible Socket Attachment Test Case
+        # -------------------------------------------------------------
+        if 'incompatible socket' in prompt_lower or 'attach bed to sofa' in prompt_lower:
+            sofa_id = pick_asset_id('sofa-modern-3seater', 'sofa-3seat-modern', category='seating')
+            bed_id = pick_asset_id('bed-queen-platform', 'bed-queen-nordic-wood', category='beds')
+            incompat_proposal = DesignProposalResult(
+                text_response="Negative gate test: attempting incompatible socket attachment.",
+                proposed_actions=[
+                    {
+                        'type': 'add_furniture',
+                        'object_id': 'mock-sofa-test',
+                        'asset_id': sofa_id,
+                        'position': [0.0, 0.45, 0.0],
+                        'rotation_euler': [0.0, 0.0, 0.0],
+                    },
+                    {
+                        'type': 'add_furniture',
+                        'object_id': 'mock-bed-incompat',
+                        'asset_id': bed_id,
+                        'position': [0.0, 0.475, 1.0],
+                        'rotation_euler': [0.0, 0.0, 0.0],
+                    },
+                    {
+                        'type': 'attach_to_socket',
+                        'anchor_object_id': 'mock-sofa-test',
+                        'child_object_id': 'mock-bed-incompat',
+                        'socket_id': 'sofa-front-table',
+                        'gap_meters': 0.45,
+                    },
+                ],
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Incompatible Socket Proposal",
+                description="Attempting to attach a bed to a sofa front-table socket.",
+                trade_offs=["Invalid semantic socket attachment"],
+            )
+            return [incompat_proposal] * candidate_count
+
+        # -------------------------------------------------------------
         # Single Armchair Request (e.g. "Add an armchair")
         # -------------------------------------------------------------
         if any(w in prompt_lower for w in ('armchair', 'reading', 'cozy chair')) and not any(w in prompt_lower for w in ('sofa', 'workspace', 'boundary', 'collision', 'clearance', 'budget')):

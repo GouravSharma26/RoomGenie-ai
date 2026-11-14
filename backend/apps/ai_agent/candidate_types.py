@@ -34,11 +34,50 @@ def normalize_num(val: Any, decimals: int = 4) -> float:
         return 0.0
 
 
+def normalize_polygon_vertices(vertices: Any, decimals: int = 4) -> List[List[float]]:
+    """
+    Normalizes a polygon vertex ring by cyclically shifting to the lexicographically smallest
+    starting vertex while strictly preserving cyclic edge sequence and orientation.
+    Preserves exact topological identity without hiding geometric differences.
+    """
+    if not isinstance(vertices, list) or len(vertices) < 3:
+        return []
+
+    norm_pts: List[List[float]] = []
+    for pt in vertices:
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+            norm_pts.append([normalize_num(pt[0], decimals), normalize_num(pt[1], decimals)])
+
+    if len(norm_pts) < 3:
+        return norm_pts
+
+    # If the ring is explicitly closed with duplicate start/end, slice to open ring for rotation
+    closed = (norm_pts[0] == norm_pts[-1])
+    pts_to_rotate = norm_pts[:-1] if closed else norm_pts
+
+    n = len(pts_to_rotate)
+    if n < 3:
+        return norm_pts
+
+    # Find candidate cyclic rotations starting at minimum (x, z)
+    min_pt = min(pts_to_rotate)
+    candidate_indices = [i for i, pt in enumerate(pts_to_rotate) if pt == min_pt]
+
+    best_candidate = pts_to_rotate[candidate_indices[0]:] + pts_to_rotate[:candidate_indices[0]]
+    for idx in candidate_indices[1:]:
+        cand = pts_to_rotate[idx:] + pts_to_rotate[:idx]
+        if cand < best_candidate:
+            best_candidate = cand
+
+    return best_candidate
+
+
 def compute_canonical_scene_hash(scene: Dict[str, Any] | None) -> str:
     """
     Computes a deterministic SHA-256 hash of a canonical 3D scene.
     Strips transient UI fields, normalizes floating-point coordinates to 4 decimal places,
-    and sorts objects and relationships deterministically by ID.
+    performs cyclic starting-point normalization on polygon footprints preserving topology,
+    and sorts objects, walls, openings, and relationships deterministically by ID.
     """
     if not isinstance(scene, dict):
         return hashlib.sha256(b"empty_or_null_scene").hexdigest()
@@ -51,14 +90,15 @@ def compute_canonical_scene_hash(scene: Dict[str, Any] | None) -> str:
         room_dict['length'] = normalize_num(raw_room.get('length', 4.0))
         room_dict['height'] = normalize_num(raw_room.get('height', 2.8))
 
-        # Footprint polygon vertices
-        footprint = raw_room.get('footprint', [])
-        if isinstance(footprint, list):
-            room_dict['footprint'] = [
-                [normalize_num(pt[0]), normalize_num(pt[1])]
-                for pt in footprint
-                if isinstance(pt, (list, tuple)) and len(pt) >= 2
-            ]
+        # Footprint polygon vertices (supports both 'footprint' and 'polygonVertices')
+        footprint_raw = raw_room.get('footprint')
+        if footprint_raw is None:
+            footprint_raw = raw_room.get('polygonVertices')
+
+        if isinstance(footprint_raw, list):
+            norm_footprint = normalize_polygon_vertices(footprint_raw)
+            if norm_footprint:
+                room_dict['footprint'] = norm_footprint
 
         # Walls (normalized and sorted by ID)
         walls = raw_room.get('walls', [])
@@ -77,7 +117,7 @@ def compute_canonical_scene_hash(scene: Dict[str, Any] | None) -> str:
             norm_walls.sort(key=lambda x: x['id'])
             room_dict['walls'] = norm_walls
 
-        # Openings
+        # Openings (normalized and sorted by ID)
         openings = raw_room.get('openings', [])
         if isinstance(openings, list):
             norm_openings = []

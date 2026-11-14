@@ -2371,5 +2371,326 @@ class Phase64PreviewAndReversibleApplyBackendTests(APITestCase):
         self.assertEqual(apply_res.status_code, status.HTTP_404_NOT_FOUND)
 
 
+# =====================================================================
+# Phase 6.5 Tests: Canonical Hashing, Persistent Undo/Redo & Telemetry
+# =====================================================================
+
+from apps.ai_agent.candidate_types import compute_canonical_scene_hash
+
+class Phase65CanonicalSceneHashingTests(unittest.TestCase):
+    """
+    Mandatory Investigation B Verification:
+    Tests canonical scene hash computation, cyclic starting-point normalization,
+    edge topology preservation, and transient UI field stripping.
+    """
+
+    def setUp(self):
+        self.base_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {
+                'width': 5.0,
+                'length': 4.0,
+                'height': 2.8,
+                'footprint': [[0.0, 0.0], [5.0, 0.0], [5.0, 4.0], [0.0, 4.0]],
+                'walls': [
+                    {'id': 'w-1', 'start': [0.0, 0.0], 'end': [5.0, 0.0], 'thickness': 0.15},
+                    {'id': 'w-2', 'start': [5.0, 0.0], 'end': [5.0, 4.0], 'thickness': 0.15},
+                ],
+                'openings': [
+                    {'id': 'op-1', 'wallId': 'w-1', 'type': 'door', 'distanceAlongWall': 1.5, 'width': 0.9, 'height': 2.1},
+                ],
+            },
+            'objects': [
+                {
+                    'id': 'obj-sofa',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Modern Sofa',
+                    'position': [2.5, 0.45, 2.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                }
+            ],
+            'relationships': [
+                {
+                    'id': 'rel-1',
+                    'anchorObjectId': 'obj-sofa',
+                    'childObjectId': 'obj-table',
+                    'socketId': 'sofa-front-table',
+                    'gap': 0.45,
+                    'relativeYaw': 0.0,
+                }
+            ],
+            'zones': [
+                {'id': 'zone-living', 'type': 'living', 'memberObjectIds': ['obj-sofa', 'obj-table']}
+            ]
+        }
+
+    def test_cyclic_starting_point_normalization_produces_identical_hash(self):
+        """
+        Shifting the polygon starting vertex cyclically along the contour must produce
+        the exact same hash.
+        """
+        import copy
+        h_base = compute_canonical_scene_hash(self.base_scene)
+
+        # Shift cyclic starting points
+        shift1 = copy.deepcopy(self.base_scene)
+        shift1['room']['footprint'] = [[5.0, 0.0], [5.0, 4.0], [0.0, 4.0], [0.0, 0.0]]
+        self.assertEqual(compute_canonical_scene_hash(shift1), h_base)
+
+        shift2 = copy.deepcopy(self.base_scene)
+        shift2['room']['footprint'] = [[5.0, 4.0], [0.0, 4.0], [0.0, 0.0], [5.0, 0.0]]
+        self.assertEqual(compute_canonical_scene_hash(shift2), h_base)
+
+        shift3 = copy.deepcopy(self.base_scene)
+        shift3['room']['footprint'] = [[0.0, 4.0], [0.0, 0.0], [5.0, 0.0], [5.0, 4.0]]
+        self.assertEqual(compute_canonical_scene_hash(shift3), h_base)
+
+    def test_different_polygon_geometry_produces_different_hash(self):
+        """Topological differences in room geometry must produce distinct hashes."""
+        import copy
+        h_base = compute_canonical_scene_hash(self.base_scene)
+
+        # Modified vertex
+        diff_geom = copy.deepcopy(self.base_scene)
+        diff_geom['room']['footprint'] = [[0.0, 0.0], [5.5, 0.0], [5.5, 4.0], [0.0, 4.0]]
+        self.assertNotEqual(compute_canonical_scene_hash(diff_geom), h_base)
+
+        # Reversed winding order
+        rev_geom = copy.deepcopy(self.base_scene)
+        rev_geom['room']['footprint'] = [[0.0, 4.0], [5.0, 4.0], [5.0, 0.0], [0.0, 0.0]]
+        self.assertNotEqual(compute_canonical_scene_hash(rev_geom), h_base)
+
+    def test_transient_ui_fields_are_stripped(self):
+        """Transient editor UI states must not change the canonical scene hash."""
+        import copy
+        h_base = compute_canonical_scene_hash(self.base_scene)
+
+        ui_scene = copy.deepcopy(self.base_scene)
+        ui_scene['selectedId'] = 'obj-sofa'
+        ui_scene['hoveredId'] = 'obj-table'
+        ui_scene['activeSnapGuides'] = [{'type': 'center', 'position': 2.5}]
+        ui_scene['cameraResetNonce'] = 42
+        ui_scene['viewMode'] = 'orthographic'
+        ui_scene['objects'][0]['isSelected'] = True
+        ui_scene['objects'][0]['isHovered'] = False
+        ui_scene['objects'][0]['previewColor'] = '#ff0000'
+
+        h_ui = compute_canonical_scene_hash(ui_scene)
+        self.assertEqual(h_ui, h_base)
+
+    def test_object_transforms_produce_different_hash(self):
+        """Meaningful spatial transforms on furniture must alter the hash."""
+        import copy
+        h_base = compute_canonical_scene_hash(self.base_scene)
+
+        moved = copy.deepcopy(self.base_scene)
+        moved['objects'][0]['position'] = [2.5, 0.45, 2.1]
+        self.assertNotEqual(compute_canonical_scene_hash(moved), h_base)
+
+        rotated = copy.deepcopy(self.base_scene)
+        rotated['objects'][0]['rotationEuler'] = [0.0, 1.57, 0.0]
+        self.assertNotEqual(compute_canonical_scene_hash(rotated), h_base)
+
+
+class Phase65PersistentUndoRedoTests(APITestCase):
+    """
+    Mandatory Investigation A Verification:
+    Tests that applying a proposal updates the authoritative DB design,
+    subsequent client undo/redo calls sync the DB state via existing design API,
+    and optimistic concurrency rejects stale concurrent modifications with HTTP 409.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='test_undo_user', password='password123')
+        self.client.force_authenticate(user=self.user)
+        self.initial_scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [
+                {
+                    'id': 'initial-sofa',
+                    'assetId': 'sofa-modern-3seater',
+                    'name': 'Initial Sofa',
+                    'position': [0.0, 0.45, 0.0],
+                    'rotationEuler': [0.0, 0.0, 0.0],
+                    'dimensions': [2.1, 0.85, 0.9],
+                }
+            ],
+            'relationships': [],
+        }
+        self.design = Design.objects.create(
+            owner=self.user,
+            title='Undo Redo Design',
+            scene_json=self.initial_scene,
+        )
+
+    def test_persistent_undo_redo_and_optimistic_concurrency_workflow(self):
+        """
+        Verifies the full reversible apply lifecycle:
+        1. Design starts with initial scene (1 sofa).
+        2. Client syncs proposed candidate scene (sofa + coffee table).
+        3. DB reflects new scene.
+        4. Client performs undo (restores initial scene).
+        5. Client sends PATCH with expected_updated_at.
+        6. DB reflects restored initial scene.
+        7. Stale update with old expected_updated_at returns HTTP 409 Conflict.
+        """
+        # Step 1: Initial state
+        self.design.refresh_from_db()
+        self.assertEqual(len(self.design.scene_json['objects']), 1)
+        original_updated_at = self.design.updated_at.isoformat()
+
+        # Step 2: Apply proposed scene with 2 objects
+        new_scene = copy.deepcopy(self.initial_scene)
+        new_scene['objects'].append({
+            'id': 'cand-table',
+            'assetId': 'table-coffee-wood',
+            'name': 'Coffee Table',
+            'position': [0.0, 0.225, 1.2],
+            'rotationEuler': [0.0, 0.0, 0.0],
+            'dimensions': [1.1, 0.45, 0.6],
+        })
+
+        patch_url = reverse('designs:design-detail', kwargs={'pk': self.design.pk})
+        res = self.client.patch(patch_url, {
+            'scene_json': new_scene,
+            'expected_updated_at': original_updated_at,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # Step 3: DB now has 2 objects
+        self.design.refresh_from_db()
+        self.assertEqual(len(self.design.scene_json['objects']), 2)
+        applied_updated_at = self.design.updated_at.isoformat()
+
+        # Step 4 & 5: Client Undoes -> syncs original scene back to DB
+        undo_res = self.client.patch(patch_url, {
+            'scene_json': self.initial_scene,
+            'expected_updated_at': applied_updated_at,
+        }, format='json')
+        self.assertEqual(undo_res.status_code, status.HTTP_200_OK)
+
+        # Step 6: DB reflects restored initial scene
+        self.design.refresh_from_db()
+        self.assertEqual(len(self.design.scene_json['objects']), 1)
+        self.assertEqual(self.design.scene_json['objects'][0]['id'], 'initial-sofa')
+
+        # Step 7: Optimistic Concurrency Conflict (stale expected_updated_at)
+        stale_res = self.client.patch(patch_url, {
+            'scene_json': new_scene,
+            'expected_updated_at': original_updated_at,  # Stale timestamp!
+        }, format='json')
+        self.assertEqual(stale_res.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(stale_res.data.get('code'), 'stale_concurrency')
+
+
+class Phase65SpatialEvaluationFrameworkTests(APITestCase):
+    """
+    Tests for the deterministic spatial evaluation framework (scenarios, runner, metrics, reports).
+    """
+
+    def test_evaluation_dataset_structure_and_completeness(self):
+        """Dataset must contain at least 30 scenarios covering all 14 categories."""
+        from apps.ai_agent.evaluation.evaluation_scenarios import EVALUATION_DATASET
+        self.assertGreaterEqual(len(EVALUATION_DATASET), 30)
+
+        categories = {case.category for case in EVALUATION_DATASET}
+        expected_cats = {
+            'living_room', 'bedroom', 'workspace', 'dining', 'polygon',
+            'concave', 'constrained', 'multi_door', 'windows', 'preservation',
+            'socket_attachment', 'budget_capped', 'negative_constrained',
+        }
+        for cat in expected_cats:
+            self.assertIn(cat, categories, f"Missing scenario category: {cat}")
+
+    def test_evaluation_runner_executes_offline_and_passes_gates(self):
+        """Runner must execute offline with mock adapter and pass 100% of spatial gates."""
+        from apps.ai_agent.evaluation.evaluation_runner import run_spatial_evaluation
+        output = run_spatial_evaluation()
+        self.assertGreaterEqual(output.summary_metrics.total_cases, 30)
+        self.assertEqual(output.summary_metrics.gate_pass_rate_pct, 100.0)
+
+    def test_report_generation_markdown_and_json(self):
+        """Report generator must output valid JSON and formatted markdown with math equations."""
+        from apps.ai_agent.evaluation.evaluation_runner import run_spatial_evaluation
+        from apps.ai_agent.evaluation.evaluation_report import generate_json_report, generate_markdown_report
+        output = run_spatial_evaluation()
+        
+        json_str = generate_json_report(output)
+        self.assertIn('"gate_pass_rate_pct": 100.0', json_str)
+
+        md_str = generate_markdown_report(output)
+        self.assertIn('# RoomGenie AI — Spatial AI Evaluation Report', md_str)
+        self.assertIn('✅ **ALL GATES PASSED**', md_str)
+        self.assertIn('0.25 C_{\\text{bound}}', md_str)
+
+
+class Phase65TelemetryPrivacyTests(unittest.TestCase):
+    """
+    Tests for privacy-conscious structured spatial telemetry.
+    Ensures data minimization, prompt sanitization, coarse room summaries,
+    error masking, and safe non-blocking exception handling.
+    """
+
+    def setUp(self):
+        from apps.ai_agent.telemetry import clear_telemetry_events
+        clear_telemetry_events()
+
+    def test_prompt_sanitization_removes_cleartext(self):
+        from apps.ai_agent.telemetry import sanitize_prompt
+        raw_prompt = "Put a luxury velvet sofa next to the bay window under 50000 rupees"
+        sanitized = sanitize_prompt(raw_prompt)
+        self.assertNotIn("luxury", sanitized)
+        self.assertNotIn("velvet", sanitized)
+        self.assertEqual(sanitized['length'], len(raw_prompt))
+        self.assertEqual(sanitized['category'], 'living')
+        self.assertIn('hash', sanitized)
+        self.assertEqual(len(sanitized['hash']), 8)
+
+    def test_coarse_room_summary_omits_geometry(self):
+        from apps.ai_agent.telemetry import summarize_scene_coarse
+        scene = {
+            'room': {
+                'width': 6.0,
+                'length': 4.5,
+                'footprint': [[0, 0], [6, 0], [6, 4.5], [0, 4.5]],
+            },
+            'objects': [{'id': 'sofa-1'}, {'id': 'table-1'}],
+        }
+        summary = summarize_scene_coarse(scene)
+        self.assertEqual(summary['object_count'], 2)
+        self.assertEqual(summary['approx_area_sqm'], 27.0)
+        self.assertTrue(summary['is_polygon'])
+        self.assertNotIn('footprint', summary)
+
+    def test_telemetry_event_data_minimization(self):
+        from apps.ai_agent.telemetry import record_spatial_event, get_recent_telemetry_events
+        record_spatial_event(
+            event_name="candidate_generation_completed",
+            payload={
+                "user_prompt": "Arrange a desk and chair",
+                "api_key": "secret-gemini-key-12345",
+                "auth_token": "bearer-token-abcde",
+                "candidate_count": 3,
+            },
+            session_id="anon-session-123",
+        )
+        events = get_recent_telemetry_events()
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event['event_name'], "candidate_generation_completed")
+        self.assertEqual(event['session_id'], "anon-session-123")
+        # Ensure secret keys were stripped
+        self.assertNotIn("api_key", event['data'])
+        self.assertNotIn("auth_token", event['data'])
+        self.assertNotIn("Arrange a desk and chair", str(event))
+        self.assertIn("prompt_summary", event['data'])
+        self.assertEqual(event['data']['prompt_summary']['category'], 'workspace')
+
+
+
 
 

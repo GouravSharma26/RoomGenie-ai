@@ -123,6 +123,50 @@ export async function saveDesignToBackend(
   return await res.json();
 }
 
+export async function persistDesignScene(
+  designId: string,
+  scene: CanonicalScene,
+  options?: { expectedUpdatedAt?: string }
+): Promise<DesignRecord> {
+  const token = await ensureAuthenticated();
+  const url = `${API_BASE_URL}/api/v1/designs/${designId}/`;
+
+  // Sanitize scene objects by omitting ephemeral blob: URLs before persistence
+  const sanitizedScene: CanonicalScene = {
+    ...scene,
+    objects: scene.objects.map((obj) => {
+      if (obj.modelUrl && obj.modelUrl.startsWith('blob:')) {
+        const { modelUrl: _modelUrl, ...rest } = obj;
+        return rest;
+      }
+      return obj;
+    }),
+  };
+
+  const payload: Record<string, any> = {
+    scene_json: sanitizedScene,
+  };
+  if (options?.expectedUpdatedAt) {
+    payload.expected_updated_at = options.expectedUpdatedAt;
+  }
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(
+      errData.detail ||
+        (errData.scene_json ? JSON.stringify(errData.scene_json) : `Persist error (HTTP ${res.status})`)
+    );
+  }
+
+  return await res.json();
+}
+
 export async function deleteDesignFromBackend(id: string): Promise<void> {
   const token = await ensureAuthenticated();
   const res = await fetch(`${API_BASE_URL}/api/v1/designs/${id}/`, {

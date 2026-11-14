@@ -1,0 +1,5570 @@
+{
+  "timestamp": "2026-11-14T04:12:56.209786+00:00",
+  "commit_hash": "33dce1a",
+  "adapter_name": "deterministic_mock_adapter",
+  "summary_metrics": {
+    "dataset_version": "1.0.0",
+    "total_cases": 32,
+    "total_candidates": 96,
+    "valid_candidates": 22,
+    "hard_validity_rate_pct": 22.916666666666664,
+    "boundary_violation_rate_pct": 73.95833333333334,
+    "collision_rate_pct": 57.291666666666664,
+    "doorway_obstruction_rate_pct": 0.0,
+    "invalid_relationship_rate_pct": 25.0,
+    "mean_circulation_score": 95.0,
+    "mean_clearance_score": 100.0,
+    "mean_utilization_score": 92.48844690104455,
+    "mean_overall_score": 65.33217802343779,
+    "required_category_fulfillment_rate_pct": 68.75,
+    "preservation_compliance_rate_pct": 100.0,
+    "budget_compliance_rate_pct": 100.0,
+    "mean_candidate_diversity_score": 22.08798231787526,
+    "generation_success_rate_pct": 100.0,
+    "simulation_success_rate_pct": 100.0,
+    "mean_latency_ms": 26.93043750025481,
+    "gate_pass_rate_pct": 100.0,
+    "passed_gates_count": 32,
+    "failed_gates_count": 0
+  },
+  "case_results": [
+    {
+      "case_id": "SCN-01",
+      "name": "Standard Living Room Seating",
+      "category": "living_room",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-a7b03c",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 30.742899998585926,
+      "simulation_ms": 19.98,
+      "scoring_ms": 10.76,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-a7b03c",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-a10d44",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-cbcddf",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-02",
+      "name": "Compact Studio Living Zone",
+      "category": "living_room",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-c0a46f",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.416328856083116,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 30.13650000139023,
+      "simulation_ms": 19.59,
+      "scoring_ms": 10.55,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-c0a46f",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-fb8756",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.25
+            ],
+            [
+              0.0,
+              -0.05
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-f044b7",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.25m exceeds room width limits [-2.00m, 2.00m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.00m, 2.00m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-03",
+      "name": "Spacious Living Room Lounge",
+      "category": "living_room",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 2,
+      "top_candidate_id": "cand-1-17a3bc",
+      "top_candidate_label": "Option A: Conversational Seating Arrangement",
+      "top_candidate_score": 99.0,
+      "diversity_score": 27.50972290588209,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 17.378599997755373,
+      "simulation_ms": 11.3,
+      "scoring_ms": 6.08,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-17a3bc",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              -2.251,
+              -0.6425
+            ],
+            [
+              2.251,
+              -0.6425
+            ]
+          ],
+          "relationships_count": 3,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-ecc836",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.9,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 89.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-38cc79",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.70277777777778,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 97.02777777777779,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-04",
+      "name": "Master Bedroom with Dual Nightstands",
+      "category": "bedroom",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-e65c4b",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.33889999904204,
+      "simulation_ms": 16.47,
+      "scoring_ms": 8.87,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-e65c4b",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-55cf80",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-310397",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-05",
+      "name": "Guest Bedroom Arrangement",
+      "category": "bedroom",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-01c8cf",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.291900001320755,
+      "simulation_ms": 16.44,
+      "scoring_ms": 8.85,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-01c8cf",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-a0be52",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-2d1012",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.25m exceeds room width limits [-2.00m, 2.00m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.00m, 2.00m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-06",
+      "name": "Spacious Bedroom Suite",
+      "category": "bedroom",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-0b6116",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 98.51515151515152,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.07549999791081,
+      "simulation_ms": 16.3,
+      "scoring_ms": 8.78,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-0b6116",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.51515151515152,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 95.15151515151516,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-92385a",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-c4ccf0",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.75m, 2.75m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.75m, 2.75m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-07",
+      "name": "Executive Home Study",
+      "category": "workspace",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-9327a8",
+      "top_candidate_label": "Option A: Daylight-Focused Workspace",
+      "top_candidate_score": 49.0,
+      "diversity_score": 27.585902902329735,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 29.015100000833627,
+      "simulation_ms": 18.86,
+      "scoring_ms": 10.16,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-9327a8",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-273058",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -2.25m exceeds room length limits [-1.90m, 1.90m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.2
+            ],
+            [
+              0.0,
+              -1.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-e7b5a3",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-08",
+      "name": "Compact Home Office Nook",
+      "category": "workspace",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-2-27187c",
+      "top_candidate_label": "Option B: Circulation-Optimized Workspace",
+      "top_candidate_score": 47.988888888888894,
+      "diversity_score": 25.47929021266597,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 29.117500002030283,
+      "simulation_ms": 18.93,
+      "scoring_ms": 10.19,
+      "candidates": [
+        {
+          "candidate_id": "cand-2-27187c",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 47.988888888888894,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 89.8888888888889,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -2.05m exceeds room length limits [-1.50m, 1.50m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.0
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-bbcd9a",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 47.211111111111116,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 82.11111111111114,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 4 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Ergonomic Study Desk' violates room boundary: X coordinate -1.90m exceeds room width limits [-1.75m, 1.75m]",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate -2.02m exceeds room width limits [-1.75m, 1.75m]; Z coordinate -1.85m exceeds room length limits [-1.50m, 1.50m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-d27ed6",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 46.43333333333334,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 74.33333333333337,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.50m, 1.50m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-09",
+      "name": "Studio Workstation Corner",
+      "category": "workspace",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-13284e",
+      "top_candidate_label": "Option A: Daylight-Focused Workspace",
+      "top_candidate_score": 49.0,
+      "diversity_score": 27.585902902329735,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 28.73820000240812,
+      "simulation_ms": 18.68,
+      "scoring_ms": 10.06,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-13284e",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate -2.02m exceeds room width limits [-2.00m, 2.00m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-47a9b3",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -2.25m exceeds room length limits [-2.00m, 2.00m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.2
+            ],
+            [
+              0.0,
+              -1.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-824c9e",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-10",
+      "name": "Family Dining Room",
+      "category": "dining",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-4e0691",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.253899999370333,
+      "simulation_ms": 16.42,
+      "scoring_ms": 8.84,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-4e0691",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-e8f9be",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-35a508",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-11",
+      "name": "Compact Dining Area",
+      "category": "dining",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-bb9454",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 20.30521774497201,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 26.017600001068786,
+      "simulation_ms": 16.91,
+      "scoring_ms": 9.11,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-bb9454",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-80f843",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: X coordinate -1.98m exceeds room width limits [-1.90m, 1.90m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.1
+            ],
+            [
+              0.0,
+              0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-75b031",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.25m exceeds room width limits [-1.90m, 1.90m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-1.90m, 1.90m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-12",
+      "name": "Pentagon Room Living Lounge",
+      "category": "polygon",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-812f48",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 97.63636363636364,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.16480000122101,
+      "simulation_ms": 16.36,
+      "scoring_ms": 8.81,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-812f48",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.63636363636364,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 86.36363636363637,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-30e0ab",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.36616161616162,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.66161616161617,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -0.85m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-1925f6",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [-2.85m, -0.64m] lies outside parametric room polygon",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-13",
+      "name": "Pentagon Room Bedroom",
+      "category": "polygon",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-26c4f5",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 97.63636363636364,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.231499999790685,
+      "simulation_ms": 16.4,
+      "scoring_ms": 8.83,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-26c4f5",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.63636363636364,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 86.36363636363637,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-7a1936",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.36616161616162,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.66161616161617,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -0.85m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-924bc8",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [-2.85m, -0.64m] lies outside parametric room polygon",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-14",
+      "name": "Pentagon Multi-Door Ingress",
+      "category": "polygon",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-ee7b76",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 97.63636363636364,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 26.081200001499383,
+      "simulation_ms": 16.95,
+      "scoring_ms": 9.13,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-ee7b76",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.63636363636364,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 86.36363636363637,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-6e82ba",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.36616161616162,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.66161616161617,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -0.85m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-5afad8",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [-2.85m, -0.64m] lies outside parametric room polygon",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-15",
+      "name": "Concave L-Shaped Living Suite",
+      "category": "concave",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-3dd796",
+      "top_candidate_label": "Option A: Conversational Seating Arrangement",
+      "top_candidate_score": 49.0,
+      "diversity_score": 31.73054086039619,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 30.059199998504482,
+      "simulation_ms": 19.54,
+      "scoring_ms": 10.52,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-3dd796",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -1.25m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m); Footprint corner [0.42m, -1.23m] lies outside parametric room polygon"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              -2.251,
+              -0.6425
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 2,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-de5c4e",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 48.70277777777778,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 97.02777777777779,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' violates room boundary: Footprint corner [0.60m, -0.40m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -1.75m] lies outside parametric room polygon",
+            "Item 'Minimalist Coffee Table' violates room boundary: Footprint corner [0.60m, -1.60m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-d891e5",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 47.9,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 89.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' violates room boundary: Footprint corner [0.60m, -0.70m] lies outside parametric room polygon",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -0.25m] lies outside parametric room polygon",
+            "Item 'Minimalist Coffee Table' violates room boundary: Footprint corner [0.60m, -0.10m] lies outside parametric room polygon"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              0.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-16",
+      "name": "L-Shaped Living & Study Division",
+      "category": "concave",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-2-43bb8f",
+      "top_candidate_label": "Option B: Open-Circulation Layout",
+      "top_candidate_score": 73.08564814814815,
+      "diversity_score": 22.752639392625372,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 30.487200001516612,
+      "simulation_ms": 19.82,
+      "scoring_ms": 10.67,
+      "candidates": [
+        {
+          "candidate_id": "cand-2-43bb8f",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.08564814814815,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 90.8564814814815,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -1.75m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-9762eb",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 72.41666666666667,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 84.16666666666667,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -0.25m] lies outside parametric room polygon"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-fa475e",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 48.75462962962963,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 97.5462962962963,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: Footprint corner [1.05m, -1.25m] lies outside parametric room polygon",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              -2.251,
+              -0.6425
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 2,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-17",
+      "name": "Compact Micro-Studio",
+      "category": "constrained",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-2-e5f31a",
+      "top_candidate_label": "Option B: Circulation-Optimized Workspace",
+      "top_candidate_score": 45.400721153846156,
+      "diversity_score": 24.85185185185186,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 29.61470000082045,
+      "simulation_ms": 19.25,
+      "scoring_ms": 10.37,
+      "candidates": [
+        {
+          "candidate_id": "cand-2-e5f31a",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 45.400721153846156,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 64.00721153846156,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.30m, 1.30m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-1d066c",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 44.419150641025645,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 54.19150641025645,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 4 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Ergonomic Study Desk' violates room boundary: X coordinate -1.80m exceeds room width limits [-1.60m, 1.60m]",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate -1.93m exceeds room width limits [-1.60m, 1.60m]; Z coordinate -1.85m exceeds room length limits [-1.30m, 1.30m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.1,
+              -0.8
+            ],
+            [
+              -1.1,
+              -0.8
+            ],
+            [
+              -1.1,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-d09f65",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 43.437580128205134,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 44.37580128205132,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 3 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate 1.62m exceeds room width limits [-1.60m, 1.60m]; Z coordinate -1.85m exceeds room length limits [-1.30m, 1.30m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.1,
+              -0.8
+            ],
+            [
+              -1.1,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-18",
+      "name": "Tight Clearance Corner Study",
+      "category": "constrained",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-2-29f70c",
+      "top_candidate_label": "Option B: Circulation-Optimized Workspace",
+      "top_candidate_score": 45.519444444444446,
+      "diversity_score": 24.457244460482716,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 29.119700000592275,
+      "simulation_ms": 18.93,
+      "scoring_ms": 10.19,
+      "candidates": [
+        {
+          "candidate_id": "cand-2-29f70c",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 45.519444444444446,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 65.19444444444444,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.95m exceeds room length limits [-1.40m, 1.40m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8999999999999999
+            ],
+            [
+              0.0,
+              -0.8999999999999999
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-7a78dc",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 44.547222222222224,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 55.47222222222223,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 4 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Ergonomic Study Desk' violates room boundary: X coordinate -1.70m exceeds room width limits [-1.50m, 1.50m]",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate -1.82m exceeds room width limits [-1.50m, 1.50m]; Z coordinate -1.85m exceeds room length limits [-1.40m, 1.40m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.0,
+              -0.8
+            ],
+            [
+              -1.0,
+              -0.8
+            ],
+            [
+              -1.0,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-e8d186",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 43.575,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 45.750000000000014,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 3 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: X coordinate 1.62m exceeds room width limits [-1.50m, 1.50m]; Z coordinate -1.85m exceeds room length limits [-1.40m, 1.40m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.0,
+              -0.8
+            ],
+            [
+              -1.0,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-19",
+      "name": "Dual Door Traffic Hall",
+      "category": "multi_door",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-701eb1",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 98.51515151515152,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.093700001889374,
+      "simulation_ms": 16.31,
+      "scoring_ms": 8.78,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-701eb1",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.51515151515152,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 95.15151515151516,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-d22f0d",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-63d316",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.75m, 2.75m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.75m, 2.75m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-20",
+      "name": "Triple Ingress Distribution Foyer",
+      "category": "multi_door",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 2,
+      "top_candidate_id": "cand-1-f58435",
+      "top_candidate_label": "Option A: Conversational Seating Arrangement",
+      "top_candidate_score": 99.0,
+      "diversity_score": 27.50972290588209,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 17.065600000933046,
+      "simulation_ms": 11.09,
+      "scoring_ms": 5.97,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-f58435",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              -2.251,
+              -0.6425
+            ],
+            [
+              2.251,
+              -0.6425
+            ]
+          ],
+          "relationships_count": 3,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-81424e",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.9,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 89.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-ecd7b7",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.70277777777778,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 97.02777777777779,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-21",
+      "name": "Living Room with Low Bay Windows",
+      "category": "windows",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-1d5aef",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.62190000026021,
+      "simulation_ms": 16.65,
+      "scoring_ms": 8.97,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-1d5aef",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-3c3019",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-e67947",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-22",
+      "name": "Study with Garden View Windows",
+      "category": "windows",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-ff1539",
+      "top_candidate_label": "Option A: Daylight-Focused Workspace",
+      "top_candidate_score": 49.0,
+      "diversity_score": 27.585902902329735,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 28.86399999988498,
+      "simulation_ms": 18.76,
+      "scoring_ms": 10.1,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-ff1539",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-c5d239",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -2.25m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.2
+            ],
+            [
+              0.0,
+              -1.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-1afa87",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-23",
+      "name": "Preserve Existing Sofa & Add Coffee Table",
+      "category": "preservation",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-3-93aa46",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 74.0,
+      "diversity_score": 16.822222222222226,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 32.29519999877084,
+      "simulation_ms": 20.99,
+      "scoring_ms": 11.3,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-93aa46",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 100.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Existing Sofa'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'."
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.0
+            ],
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              0.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-63edbb",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Existing Sofa' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Existing Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 5,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.0
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-77f92a",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Existing Sofa' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Existing Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.0
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-24",
+      "name": "Preserve Existing Desk & Add Armchair",
+      "category": "preservation",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 3,
+      "top_candidate_id": "cand-1-e4548e",
+      "top_candidate_label": "Option A: Cozy Reading Corner",
+      "top_candidate_score": 98.33767361111111,
+      "diversity_score": 10.801025327818271,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 6.447499999922002,
+      "simulation_ms": 4.19,
+      "scoring_ms": 2.26,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-e4548e",
+          "label": "Option A: Cozy Reading Corner",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.33767361111111,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.37673611111111,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -1.2
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Corner placement",
+            "Dedicated reading nook"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-6ade15",
+          "label": "Option B: Daylight Perimeter Seating",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.33767361111111,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.37673611111111,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -1.2
+            ],
+            [
+              1.2,
+              -0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Perimeter placement",
+            "Good lighting"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-fd0df5",
+          "label": "Option C: Focal Accent Chair",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.33767361111111,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 93.37673611111111,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -1.2
+            ],
+            [
+              0.0,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Central visibility",
+            "Direct room access"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-25",
+      "name": "Sofa Front-Table Socket Attachment",
+      "category": "socket_attachment",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-3-5bcef6",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 74.0,
+      "diversity_score": 18.985185185185188,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 32.59550000075251,
+      "simulation_ms": 21.19,
+      "scoring_ms": 11.41,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-5bcef6",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 100.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Living Anchor Sofa'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'."
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              0.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-a25880",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.50m, 2.50m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Living Anchor Sofa' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Living Anchor Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 5,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-8c762a",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Living Anchor Sofa'.",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Living Anchor Sofa' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Living Anchor Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Living Anchor Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-26",
+      "name": "Bed Dual Side-Table Socket Attachment",
+      "category": "socket_attachment",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-3-0ac57a",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 74.0,
+      "diversity_score": 18.911111111111115,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 47.47700000007171,
+      "simulation_ms": 30.86,
+      "scoring_ms": 16.62,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-0ac57a",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 100.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Queen Wood Bed'.",
+            "Item 'Queen Wood Bed' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Queen Wood Bed' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'."
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "bed-queen-wood",
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.9
+            ],
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              0.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-e7a95c",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Queen Wood Bed'.",
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.60m, 2.60m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.60m, 2.60m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Queen Wood Bed' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Queen Wood Bed' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Queen Wood Bed' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Minimalist Coffee Table' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 5,
+          "placed_asset_ids": [
+            "bed-queen-wood",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.9
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-00804d",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' physically collides with 'Queen Wood Bed'.",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Queen Wood Bed' physically collides with 'Modern 3-Seater Sofa'.",
+            "Item 'Queen Wood Bed' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "bed-queen-wood",
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.9
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-27",
+      "name": "Strict Budget Ceiling \u20b940,000",
+      "category": "budget_capped",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-29b309",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 99.0,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 27.603899998212,
+      "simulation_ms": 17.94,
+      "scoring_ms": 9.66,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-29b309",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 99.0,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-fb46d0",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 69.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 0.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Candidate layout cost exceeds budget limit: \u20b950497.00 exceeds \u20b940000.00 limit.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": true,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-39e05d",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 44.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 0.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.25m, 2.25m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.25m, 2.25m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Candidate layout cost exceeds budget limit: \u20b962496.00 exceeds \u20b940000.00 limit.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": true,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-28",
+      "name": "Moderate Budget Ceiling \u20b91,00,000",
+      "category": "budget_capped",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-9ed6ed",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 98.98351648351648,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 25.260000002162997,
+      "simulation_ms": 16.42,
+      "scoring_ms": 8.84,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-9ed6ed",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 98.98351648351648,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 99.83516483516483,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-103839",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 74.0,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-f2cdec",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.85m exceeds room width limits [-2.60m, 2.60m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-2.60m, 2.60m]",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-29",
+      "name": "Insufficient Physical Room Space (Negative Gate)",
+      "category": "negative_constrained",
+      "expected_hard_valid": false,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-b06683",
+      "top_candidate_label": "Option A: Conversational Seating Arrangement",
+      "top_candidate_score": 42.0,
+      "diversity_score": 21.7126295816158,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 29.83239999957732,
+      "simulation_ms": 19.39,
+      "scoring_ms": 10.44,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-b06683",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 42.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 30.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' violates room boundary: Z coordinate 1.05m exceeds room length limits [-0.90m, 0.90m]",
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate -2.25m exceeds room width limits [-1.00m, 1.00m]",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: X coordinate 2.85m exceeds room width limits [-1.00m, 1.00m]",
+            "Candidate layout violates 3D room containment: 3 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Minimalist Coffee Table' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: X coordinate -1.05m exceeds room width limits [-1.00m, 1.00m]",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.4
+            ],
+            [
+              0.0,
+              -0.4
+            ],
+            [
+              0.0,
+              -0.4
+            ],
+            [
+              0.0,
+              -0.4
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-8ecb2d",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 42.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 30.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' violates room boundary: Z coordinate 1.10m exceeds room length limits [-0.90m, 0.90m]",
+            "Candidate layout violates 3D room containment: 4 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Minimalist Coffee Table' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: X coordinate -1.05m exceeds room width limits [-1.00m, 1.00m]",
+            "Item 'Lounge Accent Armchair' violates room boundary: X coordinate -1.08m exceeds room width limits [-1.00m, 1.00m]; Z coordinate -0.98m exceeds room length limits [-0.90m, 0.90m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.4
+            ],
+            [
+              0.0,
+              -0.4
+            ],
+            [
+              -0.5,
+              -0.4
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-0bbac8",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 42.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 30.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Attached item 'Minimalist Coffee Table' violates room boundary: Z coordinate -1.30m exceeds room length limits [-0.90m, 0.90m]",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Minimalist Coffee Table'.",
+            "Item 'Modern 3-Seater Sofa' violates room boundary: X coordinate 1.05m exceeds room width limits [-1.00m, 1.00m]"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              0.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-30",
+      "name": "Incompatible Socket Attachment (Negative Gate)",
+      "category": "negative_constrained",
+      "expected_hard_valid": false,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-4844ad",
+      "top_candidate_label": "Incompatible Socket Proposal",
+      "top_candidate_score": 49.0,
+      "diversity_score": 0.0,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 20.23209999970277,
+      "simulation_ms": 13.15,
+      "scoring_ms": 7.08,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-4844ad",
+          "label": "Incompatible Socket Proposal",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Front Coffee Table'. Allowed categories: ['tables'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate 2.05m exceeds room length limits [-2.00m, 2.00m]"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Invalid semantic socket attachment"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-880513",
+          "label": "Incompatible Socket Proposal",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Front Coffee Table'. Allowed categories: ['tables'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate 2.05m exceeds room length limits [-2.00m, 2.00m]"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Invalid semantic socket attachment"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-5443b3",
+          "label": "Incompatible Socket Proposal",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Front Coffee Table'. Allowed categories: ['tables'].",
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate 2.05m exceeds room length limits [-2.00m, 2.00m]"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Invalid semantic socket attachment"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-31",
+      "name": "Hexagonal Multi-Angle Studio",
+      "category": "polygon",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 1,
+      "top_candidate_id": "cand-3-14b5be",
+      "top_candidate_label": "Option C: Media & Entertainment Setup",
+      "top_candidate_score": 97.41666666666667,
+      "diversity_score": 21.78669922645349,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 26.644400000805035,
+      "simulation_ms": 17.32,
+      "scoring_ms": 9.33,
+      "candidates": [
+        {
+          "candidate_id": "cand-3-14b5be",
+          "label": "Option C: Media & Entertainment Setup",
+          "is_valid": true,
+          "is_approval_eligible": true,
+          "overall_score": 97.41666666666667,
+          "boundary_score": 100.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 84.16666666666667,
+          "budget_score": 100.0,
+          "fatal_errors": [],
+          "advisory_warnings": [],
+          "has_boundary_breach": false,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              0.2
+            ],
+            [
+              0.0,
+              -1.0
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Optimized for media viewing",
+            "Asymmetric seating layout"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-a1bfc9",
+          "label": "Option B: Open-Circulation Layout",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 73.08564814814815,
+          "boundary_score": 0.0,
+          "collision_score": 100.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 90.8564814814815,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Candidate layout violates 3D room containment: 1 item(s) extend beyond room walls/ceiling.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": false,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.3
+            ],
+            [
+              0.0,
+              -0.1
+            ],
+            [
+              -1.4,
+              -0.4
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Maximizes open walking routes",
+            "Less intimate conversational distance"
+          ]
+        },
+        {
+          "candidate_id": "cand-1-b75766",
+          "label": "Option A: Conversational Seating Arrangement",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 48.75462962962963,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 97.5462962962963,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [4]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [-2.85m, -0.64m] lies outside parametric room polygon",
+            "Action [6]: Attached item 'Lounge Accent Armchair' violates room boundary: Footprint corner [2.85m, -0.64m] lies outside parametric room polygon",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Modern 3-Seater Sofa' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' physically collides with 'Lounge Accent Armchair'.",
+            "Item 'Lounge Accent Armchair' violates room boundary: Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": false,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": true,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "sofa-modern-3seater",
+            "table-oak-coffee",
+            "chair-accent-armchair",
+            "chair-accent-armchair"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              0.35
+            ],
+            [
+              0.0,
+              -0.8
+            ],
+            [
+              0.0,
+              -0.8
+            ]
+          ],
+          "relationships_count": 1,
+          "trade_offs": [
+            "Prioritizes social interaction",
+            "Requires central floor area"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "SCN-32",
+      "name": "Perimeter Wall Clearance & Alignment",
+      "category": "workspace",
+      "expected_hard_valid": true,
+      "candidates_generated": 3,
+      "valid_candidates_count": 0,
+      "top_candidate_id": "cand-1-f699c8",
+      "top_candidate_label": "Option A: Daylight-Focused Workspace",
+      "top_candidate_score": 49.0,
+      "diversity_score": 27.585902902329735,
+      "passed_all_gates": true,
+      "gate_failures": [],
+      "latency_ms": 28.875899999547983,
+      "simulation_ms": 18.77,
+      "scoring_ms": 10.11,
+      "candidates": [
+        {
+          "candidate_id": "cand-1-f699c8",
+          "label": "Option A: Daylight-Focused Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 3,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.8
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Optimal ambient lighting",
+            "Slightly further from primary entrance"
+          ]
+        },
+        {
+          "candidate_id": "cand-2-cbe347",
+          "label": "Option B: Circulation-Optimized Workspace",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -2.25m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 2,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform"
+          ],
+          "placed_positions": [
+            [
+              0.0,
+              -1.2
+            ],
+            [
+              0.0,
+              -1.2
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Clear direct walking routes",
+            "Reduced secondary storage footprint"
+          ]
+        },
+        {
+          "candidate_id": "cand-3-924a84",
+          "label": "Option C: Storage-Prioritized Setup",
+          "is_valid": false,
+          "is_approval_eligible": false,
+          "overall_score": 49.0,
+          "boundary_score": 0.0,
+          "collision_score": 0.0,
+          "circulation_score": 95.0,
+          "clearance_score": 100.0,
+          "utilization_score": 100.0,
+          "budget_score": 100.0,
+          "fatal_errors": [
+            "Action [2]: Category 'beds' is not allowed for socket 'Task / Study Chair'. Allowed categories: ['seating'].",
+            "Candidate layout violates 3D room containment: 2 item(s) extend beyond room walls/ceiling.",
+            "Item 'Ergonomic Study Desk' physically collides with 'Nordic Queen Platform Bed'.",
+            "Item 'Nordic Queen Platform Bed' violates room boundary: Z coordinate -1.85m exceeds room length limits [-1.80m, 1.80m]; Base Y -0.02m is below floor level (0.0m)"
+          ],
+          "advisory_warnings": [],
+          "has_boundary_breach": true,
+          "has_collision": true,
+          "has_doorway_blockage": false,
+          "has_budget_violation": false,
+          "has_invalid_relationship": true,
+          "preservation_satisfied": true,
+          "required_categories_satisfied": false,
+          "furniture_count": 4,
+          "placed_asset_ids": [
+            "desk-workspace-study",
+            "bed-queen-platform",
+            "storage-bookshelf-tall",
+            "storage-bookshelf-tall"
+          ],
+          "placed_positions": [
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              0.8,
+              -0.8
+            ],
+            [
+              -1.2,
+              -0.8
+            ],
+            [
+              -1.2,
+              0.6
+            ]
+          ],
+          "relationships_count": 0,
+          "trade_offs": [
+            "Maximum organization and storage",
+            "Higher floor utilization"
+          ]
+        }
+      ]
+    }
+  ],
+  "gate_details": {
+    "total_gates_checked": 160,
+    "passed_cases": 32,
+    "failed_cases": 0,
+    "gate_pass_rate_pct": 100.0
+  }
+}

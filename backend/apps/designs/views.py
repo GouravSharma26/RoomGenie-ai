@@ -21,6 +21,37 @@ class DesignViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+
+        # Optimistic concurrency check if expected_updated_at is provided
+        expected_updated_at = request.data.get('expected_updated_at')
+        if expected_updated_at and instance.updated_at:
+            from django.utils.dateparse import parse_datetime
+            from django.utils import timezone
+            parsed = parse_datetime(expected_updated_at)
+            if parsed:
+                if timezone.is_aware(instance.updated_at) and timezone.is_naive(parsed):
+                    parsed = timezone.make_aware(parsed)
+                elif timezone.is_naive(instance.updated_at) and timezone.is_aware(parsed):
+                    parsed = timezone.make_naive(parsed)
+                time_diff = abs((instance.updated_at - parsed).total_seconds())
+                if time_diff > 0.001:
+                    return Response(
+                        {
+                            "detail": "Design has been modified concurrently by another session. Please reload.",
+                            "code": "stale_concurrency",
+                            "current_updated_at": instance.updated_at.isoformat(),
+                        },
+                        status=status.HTTP_409_CONFLICT
+                    )
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'], url_path='duplicate')
     def duplicate(self, request, pk=None):
         """

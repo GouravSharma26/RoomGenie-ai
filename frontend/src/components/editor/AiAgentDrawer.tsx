@@ -38,6 +38,7 @@ import {
 import type { CanonicalScene } from '../../types/scene';
 import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
 import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
+import { trackSpatialEvent, sanitizePromptClient, summarizeSceneClient, SPATIAL_ERROR_CODES } from '../../services/spatialTelemetry';
 import { buildSpatialContext } from '../../spatial/ai/spatialContextBuilder';
 
 function checkSceneHasOutOfBounds(scene?: CanonicalScene | null): boolean {
@@ -172,12 +173,32 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
+    trackSpatialEvent({
+      eventName: 'candidate_generation_requested',
+      designId: session.design,
+      promptSummary: sanitizePromptClient(trimmed),
+      roomSummary: summarizeSceneClient(scene),
+    });
+
     try {
       const walkabilityAnalysis = useEditorStore.getState().walkabilityAnalysis;
       const spatialContext = buildSpatialContext(scene, walkabilityAnalysis);
       const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext, 3);
       const candidatesList = response.candidates || response.run?.validation_results?.candidates || [];
       const selectedId = response.selected_candidate?.id || candidatesList[0]?.id;
+
+      trackSpatialEvent({
+        eventName: 'candidate_generation_succeeded',
+        designId: session.design,
+        promptSummary: sanitizePromptClient(trimmed),
+        roomSummary: summarizeSceneClient(scene),
+        candidateMetrics: {
+          candidateCount: candidatesList.length,
+          validCandidateCount: candidatesList.filter((c: any) => c.is_valid).length,
+          selectedCandidateId: selectedId,
+          overallScore: response.selected_candidate?.score?.overall,
+        },
+      });
 
       const assistantMsg: MessageItem = {
         id: response.run.id,
@@ -272,6 +293,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       });
     } catch (err: any) {
       setErrorMsg(err.message || 'Error communicating with AI assistant.');
+      trackSpatialEvent({
+        eventName: 'candidate_generation_failed',
+        designId: session.design,
+        promptSummary: sanitizePromptClient(trimmed),
+        errorCode: SPATIAL_ERROR_CODES.ERR_UNKNOWN,
+        errorCategory: err.message || 'Generation failed',
+      });
       recordAgentProposal({
         accepted: false,
         tier1Success: false,
@@ -293,8 +321,18 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     const targetCand = candRecord || usePreviewStore.getState().allCandidates.find(c => c.id === candId);
     if (targetCand) {
       usePreviewStore.getState().switchCandidate(targetCand);
+      trackSpatialEvent({
+        eventName: 'candidate_preview_selected',
+        designId: session?.design,
+        candidateMetrics: {
+          candidateCount: usePreviewStore.getState().allCandidates.length,
+          validCandidateCount: usePreviewStore.getState().allCandidates.filter(c => c.is_valid).length,
+          selectedCandidateId: candId,
+          overallScore: targetCand.score?.overall,
+        },
+      });
     }
-  }, []);
+  }, [session]);
 
   const handleApplyProposal = useCallback(async (msg: MessageItem, candidateId?: string) => {
     if (!msg.run || msg.run.status !== 'proposed') return;
@@ -311,6 +349,9 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       
       // Update editor 3D store (creates exactly 1 undo history step)
       loadScene(appliedResult.applied_scene);
+      if (session?.design) {
+        useEditorStore.getState().setCurrentDesignId(session.design);
+      }
       if (onSceneApplied) {
         onSceneApplied(appliedResult.applied_scene);
       }
@@ -320,6 +361,16 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
 
       // Telemetry: record accepted proposal
       recordAgentAcceptance();
+      trackSpatialEvent({
+        eventName: 'candidate_applied',
+        designId: session?.design,
+        roomSummary: summarizeSceneClient(appliedResult.applied_scene),
+        candidateMetrics: {
+          candidateCount: 1,
+          validCandidateCount: 1,
+          selectedCandidateId: targetCandidateId,
+        },
+      });
 
       // Update message run status
       setMessages((prev) =>
@@ -334,7 +385,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     } finally {
       setActionInProgressId(null);
     }
-  }, [scene, loadScene, onSceneApplied]);
+  }, [scene, loadScene, onSceneApplied, session]);
 
 
   const handleRejectProposal = useCallback(async (msg: MessageItem) => {
@@ -348,6 +399,10 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       await rejectAgentRun(targetRunId);
       // Discard active preview
       usePreviewStore.getState().discardPreview();
+      trackSpatialEvent({
+        eventName: 'candidate_preview_discarded',
+        designId: session?.design,
+      });
 
       // Update message run status
       setMessages((prev) =>
@@ -362,7 +417,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     } finally {
       setActionInProgressId(null);
     }
-  }, []);
+  }, [session]);
 
   const handleCloseDrawer = useCallback(() => {
     usePreviewStore.getState().exitPreview();

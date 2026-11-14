@@ -16,6 +16,7 @@ import {
 import { SAMPLE_CATALOG } from '../data/catalog';
 import { reconstructedAssetManager } from '../../services/reconstructedAssetManager';
 import { recordEdit, recordOutOfBoundsAttempt, recordUndoRedo } from '../../services/evaluationTelemetry';
+import { trackSpatialEvent, summarizeSceneClient, SPATIAL_ERROR_CODES } from '../../services/spatialTelemetry';
 import { 
   validatePlacement, 
   calculateSnap,
@@ -39,6 +40,7 @@ import {
   validateWallOpenings,
   type WallOpening,
 } from '../../spatial';
+import { persistDesignScene } from '../../services/designApi';
 
 export const CATALOG_CATEGORY_LOOKUP: Record<string, string> = Object.fromEntries(
   SAMPLE_CATALOG.map((item) => [item.id, item.category])
@@ -164,6 +166,9 @@ interface EditorState {
   redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
+  isSyncingPersistence: boolean;
+  lastSyncError: string | null;
+  syncCurrentDesignToBackend: () => Promise<any>;
 
   // Architectural Openings & Wall Editing Actions
   selectWall: (id: string | null) => void;
@@ -272,6 +277,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   activeGestureSnapshot: null,
   gestureHadOutOfBoundsAttempt: false,
   currentDesignId: null,
+  isSyncingPersistence: false,
+  lastSyncError: null,
   spatialValidations: computeSceneValidations(initialScene),
   showWalkabilityOverlay: false,
   walkabilityAnalysis: null,
@@ -936,6 +943,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedOpeningId: null,
       hoveredOpeningId: null,
       currentDesignId: null,
+      isSyncingPersistence: false,
+      lastSyncError: null,
       activeSnapGuides: [],
       activeSocketCandidate: null,
       draggedObjectId: null,
@@ -1161,6 +1170,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       gestureHadOutOfBoundsAttempt: false,
     });
     recordUndoRedo();
+    trackSpatialEvent({
+      eventName: 'persistent_undo_executed',
+      designId: get().currentDesignId,
+      roomSummary: summarizeSceneClient(previous),
+    });
+    if (get().currentDesignId) {
+      get().syncCurrentDesignToBackend().catch(() => {});
+    }
   },
 
   redo: () => {
@@ -1183,6 +1200,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       gestureHadOutOfBoundsAttempt: false,
     });
     recordUndoRedo();
+    trackSpatialEvent({
+      eventName: 'persistent_redo_executed',
+      designId: get().currentDesignId,
+      roomSummary: summarizeSceneClient(next),
+    });
+    if (get().currentDesignId) {
+      get().syncCurrentDesignToBackend().catch(() => {});
+    }
+  },
+
+  syncCurrentDesignToBackend: async () => {
+    const { currentDesignId, scene } = get();
+    if (!currentDesignId) return null;
+    try {
+      set({ isSyncingPersistence: true, lastSyncError: null });
+      const record = await persistDesignScene(currentDesignId, scene);
+      set({ isSyncingPersistence: false });
+      trackSpatialEvent({
+        eventName: 'persistent_sync_succeeded',
+        designId: currentDesignId,
+        roomSummary: summarizeSceneClient(scene),
+      });
+      return record;
+    } catch (err: any) {
+      const isConflict = err?.status === 409 || err?.message?.includes('409') || err?.message?.includes('concurrency');
+      set({ isSyncingPersistence: false, lastSyncError: err.message || 'Failed to sync design' });
+      trackSpatialEvent({
+        eventName: 'persistent_sync_failed',
+        designId: currentDesignId,
+        errorCode: isConflict ? SPATIAL_ERROR_CODES.ERR_STALE_CONCURRENCY : SPATIAL_ERROR_CODES.ERR_NETWORK_ERROR,
+        errorCategory: err?.message || 'Sync failed',
+      });
+      return null;
+    }
   },
 
   resolvePlacement: (id) => {

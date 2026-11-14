@@ -43,20 +43,24 @@ vi.mock('../../editor3d/components/WalkabilityOverlay', () => ({ WalkabilityOver
 
 describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () => {
   const canonicalBaseScene: CanonicalScene = {
+    schemaVersion: 1,
+    unit: 'm',
     room: {
-      shape: 'polygon',
-      dimensions: { width: 6.0, length: 5.0, height: 2.8 },
-      polygonVertices: [
+      width: 6.0,
+      length: 5.0,
+      height: 2.8,
+      isParametric: true,
+      footprint: [
         [-3.0, -2.5],
         [3.0, -2.5],
         [3.0, 2.5],
         [-3.0, 2.5],
       ],
       walls: [
-        { id: 'w1', startPoint: [-3.0, -2.5], endPoint: [3.0, -2.5], thickness: 0.15, openings: [] },
-        { id: 'w2', startPoint: [3.0, -2.5], endPoint: [3.0, 2.5], thickness: 0.15, openings: [] },
-        { id: 'w3', startPoint: [3.0, 2.5], endPoint: [-3.0, 2.5], thickness: 0.15, openings: [] },
-        { id: 'w4', startPoint: [-3.0, 2.5], endPoint: [-3.0, -2.5], thickness: 0.15, openings: [] },
+        { id: 'w1', startPoint: [-3.0, -2.5], endPoint: [3.0, -2.5], thickness: 0.15 },
+        { id: 'w2', startPoint: [3.0, -2.5], endPoint: [3.0, 2.5], thickness: 0.15 },
+        { id: 'w3', startPoint: [3.0, 2.5], endPoint: [-3.0, 2.5], thickness: 0.15 },
+        { id: 'w4', startPoint: [-3.0, 2.5], endPoint: [-3.0, -2.5], thickness: 0.15 },
       ],
     },
     objects: [
@@ -136,6 +140,7 @@ describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () =>
       clearance: 90,
       utilization: 85,
       budget: 90,
+      weights: { boundary: 0.25, collision: 0.25, circulation: 0.20, clearance: 0.15, utilization: 0.10, budget: 0.05 },
     },
     validation_feedback: {
       is_valid: true,
@@ -156,9 +161,6 @@ describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () =>
       diff_paise: 3899800,
       before_total_paise: 499900,
       after_total_paise: 4399700,
-      item_count_before: 1,
-      item_count_after: 3,
-      is_valid: true,
     },
   };
 
@@ -184,6 +186,7 @@ describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () =>
       clearance: 85,
       utilization: 80,
       budget: 85,
+      weights: { boundary: 0.25, collision: 0.25, circulation: 0.20, clearance: 0.15, utilization: 0.10, budget: 0.05 },
     },
     validation_feedback: {
       is_valid: true,
@@ -204,9 +207,6 @@ describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () =>
       diff_paise: 4499900,
       before_total_paise: 499900,
       after_total_paise: 4999800,
-      item_count_before: 1,
-      item_count_after: 2,
-      is_valid: true,
     },
   };
 
@@ -232,6 +232,7 @@ describe('Phase 6.4: Interactive 3D Candidate Preview & Reversible Apply', () =>
       clearance: 0,
       utilization: 0,
       budget: 0,
+      weights: { boundary: 0.25, collision: 0.25, circulation: 0.20, clearance: 0.15, utilization: 0.10, budget: 0.05 },
     },
     validation_feedback: {
       is_valid: false,
