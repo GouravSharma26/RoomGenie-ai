@@ -3638,10 +3638,11 @@ class Phase73PreferenceLearningTests(TestCase):
         # Generate 50 repeated positive feedback events for circulation
         feedback_history = [
             type('MockFB', (), {
+                'candidate_id': f'cand-{i}',
                 'feedback_type': 'selected',
                 'structured_reasons': ['better_circulation'],
             })
-            for _ in range(50)
+            for i in range(50)
         ]
         weights, confidence, explanations, count = self.engine.compute_updated_weights(
             current_state=current_state,
