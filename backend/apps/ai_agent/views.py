@@ -3,16 +3,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from apps.ai_agent.models import AgentSession, AgentRun
+from apps.ai_agent.models import AgentSession, AgentRun, UserDesignPreference
 from apps.ai_agent.serializers import (
     AgentSessionSerializer,
     AgentRunSerializer,
     AgentPromptRequestSerializer,
+    UserDesignPreferenceSerializer,
 )
 from apps.ai_agent.adapters import get_design_llm_adapter
 from apps.ai_agent.tools import validate_and_simulate_actions
 from apps.ai_agent.candidate_types import compute_canonical_scene_hash
 from apps.ai_agent.candidate_generator import CandidateGenerator
+from apps.ai_agent.preference_engine import normalize_preferences
 from apps.designs.models import Design
 from apps.designs.validators import validate_canonical_scene
 from apps.furniture.models import FurnitureAsset
@@ -91,6 +93,31 @@ class AgentPromptView(APIView):
         user_requirements = serializer.validated_data.get('user_requirements')
         max_budget = session.design.budget if (session.design and session.design.budget) else None
 
+        # Phase 7.1: Resolve structured preferences (request override > saved profile > prompt signals)
+        raw_preferences = serializer.validated_data.get('preferences')
+        saved_pref = UserDesignPreference.objects.filter(owner=request.user).first()
+        pref_dict = raw_preferences
+        pref_source = 'request' if raw_preferences else ('saved' if saved_pref else 'prompt_only')
+        if not pref_dict and saved_pref:
+            pref_dict = {
+                'style_preferences': saved_pref.style_preferences,
+                'primary_style': saved_pref.primary_style,
+                'colour_preferences': saved_pref.colour_preferences,
+                'material_preferences': saved_pref.material_preferences,
+                'layout_preferences': saved_pref.layout_preferences,
+                'functional_priorities': saved_pref.functional_priorities,
+                'budget_preferences': saved_pref.budget_preferences,
+                'furniture_preferences': saved_pref.furniture_preferences,
+                'preservation_preferences': saved_pref.preservation_preferences,
+                'preference_weights': saved_pref.preference_weights,
+            }
+
+        norm_prefs = normalize_preferences(
+            structured_preferences=pref_dict,
+            prompt_instruction=prompt,
+            existing_scene_objects=current_scene.get('objects', []),
+        )
+
         # Call CandidateGenerator orchestrator
         adapter = get_design_llm_adapter()
         generator = CandidateGenerator(adapter=adapter)
@@ -103,6 +130,7 @@ class AgentPromptView(APIView):
             conversation_history=history,
             catalogue_context=catalogue_items,
             spatial_context=spatial_context,
+            preferences=norm_prefs,
         )
 
         source_scene_hash = compute_canonical_scene_hash(current_scene)
@@ -175,6 +203,14 @@ class AgentPromptView(APIView):
             'domain_valid': domain_valid,
             'budget_valid': budget_valid,
             'requires_approval': True,
+            'preferences_feedback': {
+                'interpreted_preferences': norm_prefs.to_dict(),
+                'applied_preferences': norm_prefs.to_dict(),
+                'detected_conflicts': norm_prefs.detected_conflicts,
+                'unrecognized_preferences': norm_prefs.unrecognized_preferences,
+                'source': pref_source,
+                'has_meaningful_preferences': norm_prefs.has_meaningful_preferences,
+            },
         }, status=status.HTTP_200_OK)
 
 
@@ -367,3 +403,43 @@ class AgentRejectRunView(APIView):
                 'detail': 'Proposal rejected by user.',
                 'run': AgentRunSerializer(run).data,
             }, status=status.HTTP_200_OK)
+
+
+class UserDesignPreferenceView(APIView):
+    """
+    GET, POST, PUT, DELETE /api/v1/agent/preferences/
+    Manages persistent user design preferences (Phase 7.1).
+    Strictly isolated by user ownership: users can only view, update, or delete
+    their own preferences.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pref, _ = UserDesignPreference.objects.get_or_create(owner=request.user)
+        serializer = UserDesignPreferenceSerializer(pref)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        return self._save_preferences(request)
+
+    def put(self, request):
+        return self._save_preferences(request)
+
+    def delete(self, request):
+        pref = UserDesignPreference.objects.filter(owner=request.user).first()
+        if pref:
+            pref.delete()
+            return Response(
+                {"detail": "User design preferences have been reset."},
+                status=status.HTTP_200_OK
+            )
+        return Response({"detail": "No saved preferences found."}, status=status.HTTP_200_OK)
+
+    def _save_preferences(self, request):
+        pref, _ = UserDesignPreference.objects.get_or_create(owner=request.user)
+        serializer = UserDesignPreferenceSerializer(pref, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+

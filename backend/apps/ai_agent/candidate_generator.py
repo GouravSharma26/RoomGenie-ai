@@ -44,6 +44,7 @@ class CandidateGenerator:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         catalogue_context: Optional[List[Dict[str, Any]]] = None,
         spatial_context: Optional[Dict[str, Any]] = None,
+        preferences: Optional[Any] = None,
     ) -> List[LayoutCandidate]:
         """
         Generates, simulates, scores, and ranks candidate layouts.
@@ -63,6 +64,7 @@ class CandidateGenerator:
             catalogue_context=catalogue_context,
             spatial_context=spatial_context,
             user_requirements=user_requirements,
+            preferences=preferences,
         )
 
         candidates: List[LayoutCandidate] = []
@@ -111,6 +113,7 @@ class CandidateGenerator:
                 budget_diff=sim_res['budget_diff'],
                 user_requirements=user_requirements,
                 spatial_context=spatial_context,
+                preferences=preferences,
             )
 
             label = current_proposal.candidate_label or f"Option {chr(65 + idx)}"

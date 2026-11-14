@@ -1,5 +1,6 @@
 import type { CanonicalScene } from '../types/scene';
 import type { SpatialContext } from '../spatial/ai/aiSpatialTypes';
+import type { DesignPreferences, PreferencesFeedback } from '../types/preferenceTypes';
 import { ensureAuthenticated } from './designApi';
 import { API_BASE_URL } from './apiConfig';
 
@@ -41,6 +42,14 @@ export interface CandidateScore {
   weights: Record<string, number>;
   explanations?: Record<string, string>;
   budget_evaluated?: boolean;
+  base_score?: number;
+  preference_score?: number;
+  final_score?: number;
+  lambda_weight?: number;
+  preference_dimensions?: Record<string, number>;
+  preference_explanations?: Record<string, string>;
+  preference_conflicts?: string[];
+  unavailable_attributes?: string[];
 }
 
 export interface CandidateIssue {
@@ -143,6 +152,7 @@ export interface PromptProposalResponse {
   domain_valid?: boolean;
   budget_valid?: boolean;
   requires_approval: boolean;
+  preferences_feedback?: PreferencesFeedback;
 }
 
 
@@ -202,7 +212,8 @@ export async function sendAgentPrompt(
   sceneJson?: CanonicalScene,
   spatialContext?: SpatialContext,
   candidateCount: number = 3,
-  userRequirements?: Record<string, any>
+  userRequirements?: Record<string, any>,
+  preferences?: DesignPreferences
 ): Promise<PromptProposalResponse> {
   const token = await ensureAuthenticated();
   const res = await fetch(`${API_BASE_URL}/api/v1/agent/sessions/${sessionId}/prompt/`, {
@@ -214,6 +225,7 @@ export async function sendAgentPrompt(
       spatial_context: spatialContext,
       candidate_count: candidateCount,
       user_requirements: userRequirements,
+      preferences,
     }),
   });
 
@@ -228,6 +240,49 @@ export async function sendAgentPrompt(
     throw new Error(`Agent prompt failed: ${errorMsg}`);
   }
 
+  return await res.json();
+}
+
+export async function fetchUserPreferences(): Promise<DesignPreferences> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/preferences/`, {
+    headers: getAuthHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch user preferences: HTTP ${res.status}`);
+  }
+  return await res.json();
+}
+
+export async function saveUserPreferences(preferences: Partial<DesignPreferences>): Promise<DesignPreferences> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/preferences/`, {
+    method: 'POST',
+    headers: getAuthHeaders(token),
+    body: JSON.stringify(preferences),
+  });
+  if (!res.ok) {
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      errorMsg = err.detail || JSON.stringify(err);
+    } catch {
+      // fallback
+    }
+    throw new Error(`Failed to save preferences: ${errorMsg}`);
+  }
+  return await res.json();
+}
+
+export async function resetUserPreferences(): Promise<{ detail: string; preferences: DesignPreferences }> {
+  const token = await ensureAuthenticated();
+  const res = await fetch(`${API_BASE_URL}/api/v1/agent/preferences/`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to reset preferences: HTTP ${res.status}`);
+  }
   return await res.json();
 }
 

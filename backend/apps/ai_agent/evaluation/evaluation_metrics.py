@@ -143,6 +143,9 @@ def aggregate_summary_metrics(
         metrics.mean_clearance_score = sum(c.clearance_score for c in all_candidates) / len(all_candidates)
         metrics.mean_utilization_score = sum(c.utilization_score for c in all_candidates) / len(all_candidates)
         metrics.mean_overall_score = sum(c.overall_score for c in all_candidates) / len(all_candidates)
+        metrics.mean_preference_score = (
+            sum(c.preference_score for c in valid_cands) / len(valid_cands)
+        ) if valid_cands else 0.0
 
     metrics.required_category_fulfillment_rate_pct = (
         (category_satisfied_count / len(case_results) * 100.0) if case_results else 0.0

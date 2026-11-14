@@ -25,6 +25,8 @@ class EvaluationCase:
     expected_hard_valid: bool = True  # True if valid layout is achievable; False if over-constrained negative test
     min_acceptable_circulation_score: float = 60.0
     min_acceptable_clearance_score: float = 60.0
+    preferences: Optional[Dict[str, Any]] = None
+    expected_min_preference_score: float = 0.0
 
 
 @dataclass
@@ -43,6 +45,8 @@ class CandidateEvaluationResult:
     clearance_score: float
     utilization_score: float
     budget_score: float
+    base_score: float = 100.0
+    preference_score: float = 100.0
     fatal_errors: List[str] = field(default_factory=list)
     advisory_warnings: List[str] = field(default_factory=list)
     has_boundary_breach: bool = False
@@ -100,6 +104,8 @@ class EvaluationSummaryMetrics:
     mean_clearance_score: float = 0.0
     mean_utilization_score: float = 0.0
     mean_overall_score: float = 0.0
+    mean_preference_score: float = 0.0
+    preference_conflict_detection_rate_pct: float = 0.0
     required_category_fulfillment_rate_pct: float = 0.0
     preservation_compliance_rate_pct: float = 0.0
     budget_compliance_rate_pct: float = 0.0

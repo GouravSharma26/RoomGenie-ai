@@ -47,6 +47,15 @@ vi.mock('./services/designApi', () => ({
 }));
 
 vi.mock('./services/agentApi', () => ({
+  fetchUserPreferences: vi.fn().mockResolvedValue({
+    style_preferences: [],
+    colour_preferences: [],
+    material_preferences: [],
+    layout_preferences: [],
+    functional_priorities: [],
+  }),
+  saveUserPreferences: vi.fn().mockResolvedValue({}),
+  resetUserPreferences: vi.fn().mockResolvedValue({}),
   createAgentSession: vi.fn().mockResolvedValue({
     id: 'session-uuid-1',
     owner_username: 'demo_engineer',

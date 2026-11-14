@@ -18,23 +18,30 @@ import {
   Link2,
   LayoutGrid,
   Eye,
-  ShieldCheck
+  ShieldCheck,
+  Sliders
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
 import { usePreviewStore } from '../../editor3d/store/previewStore';
 import { CandidateComparisonModal } from './CandidateComparisonModal';
+import { PreferenceSettingsModal } from './PreferenceSettingsModal';
 import { useAuthStore } from '../../services/authStore';
 import { 
   createAgentSession, 
   sendAgentPrompt, 
   applyAgentRun, 
   rejectAgentRun,
+  fetchUserPreferences,
+  saveUserPreferences,
+  resetUserPreferences,
   type AgentSessionRecord, 
   type AgentRunRecord, 
   type ProposedAction,
   type BudgetDiff,
   type LayoutCandidateRecord
 } from '../../services/agentApi';
+import type { DesignPreferences, PreferencesFeedback } from '../../types/preferenceTypes';
+import { PREFERENCE_TAXONOMY_LABELS } from '../../types/preferenceTypes';
 import type { CanonicalScene } from '../../types/scene';
 import { clampPositionToRoom } from '../../editor3d/validation/sceneValidation';
 import { recordAgentProposal, recordAgentAcceptance } from '../../services/evaluationTelemetry';
@@ -89,6 +96,29 @@ function getFormattedTime(): string {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function getPreferencesSummary(pref: DesignPreferences): string {
+  const parts: string[] = [];
+  if (pref.style_preferences && pref.style_preferences.length > 0) {
+    const styleNames = pref.style_preferences.map(s => PREFERENCE_TAXONOMY_LABELS.styles[s as keyof typeof PREFERENCE_TAXONOMY_LABELS.styles] || s);
+    parts.push(styleNames.join('/'));
+  }
+  if (pref.colour_preferences && pref.colour_preferences.length > 0) {
+    const colName = PREFERENCE_TAXONOMY_LABELS.colours[pref.colour_preferences[0] as keyof typeof PREFERENCE_TAXONOMY_LABELS.colours] || pref.colour_preferences[0];
+    parts.push(colName.split(' ')[0]);
+  }
+  if (pref.layout_preferences && pref.layout_preferences.length > 0) {
+    const layName = PREFERENCE_TAXONOMY_LABELS.layouts[pref.layout_preferences[0] as keyof typeof PREFERENCE_TAXONOMY_LABELS.layouts] || pref.layout_preferences[0];
+    parts.push(layName.split(' ')[0]);
+  }
+  if (pref.preservation_preferences?.preserve_object_ids && pref.preservation_preferences.preserve_object_ids.length > 0) {
+    parts.push(`Preserve (${pref.preservation_preferences.preserve_object_ids.length})`);
+  }
+  if (pref.budget_preferences?.max_budget_paise) {
+    parts.push(`₹${Math.round(pref.budget_preferences.max_budget_paise / 100000)}k Cap`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'Default / Unconstrained';
+}
+
 export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
   isOpen,
   onClose,
@@ -104,7 +134,57 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [preferences, setPreferences] = useState<DesignPreferences>({});
+  const [isPrefModalOpen, setIsPrefModalOpen] = useState(false);
+  const [isSavedPref, setIsSavedPref] = useState(false);
+  const [lastPreferencesFeedback, setLastPreferencesFeedback] = useState<PreferencesFeedback | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load user saved preferences on mount
+  useEffect(() => {
+    if (!isOpen || !useAuthStore.getState().isAuthenticated) return;
+    Promise.resolve(fetchUserPreferences?.())
+      .then((saved) => {
+        if (
+          saved &&
+          (saved.style_preferences?.length ||
+            saved.colour_preferences?.length ||
+            saved.material_preferences?.length ||
+            saved.layout_preferences?.length ||
+            saved.functional_priorities?.length ||
+            saved.budget_preferences?.max_budget_paise)
+        ) {
+          setPreferences(saved);
+          setIsSavedPref(true);
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
+
+  const handleSavePreferences = useCallback(async (updated: DesignPreferences, saveAsDefault: boolean) => {
+    setPreferences(updated);
+    if (saveAsDefault) {
+      try {
+        await saveUserPreferences(updated);
+        setIsSavedPref(true);
+      } catch (e) {
+        console.warn('Failed to save default preferences:', e);
+      }
+    } else {
+      setIsSavedPref(false);
+    }
+  }, []);
+
+  const handleResetPreferences = useCallback(async () => {
+    try {
+      await resetUserPreferences();
+    } catch (e) {
+      console.warn('Failed to reset preferences:', e);
+    }
+    setPreferences({});
+    setIsSavedPref(false);
+  }, []);
 
   // Auto-scroll to bottom of conversation
   const scrollToBottom = () => {
@@ -183,9 +263,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     try {
       const walkabilityAnalysis = useEditorStore.getState().walkabilityAnalysis;
       const spatialContext = buildSpatialContext(scene, walkabilityAnalysis);
-      const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext, 3);
+      const response = await sendAgentPrompt(session.id, trimmed, scene, spatialContext, 3, undefined, preferences);
       const candidatesList = response.candidates || response.run?.validation_results?.candidates || [];
       const selectedId = response.selected_candidate?.id || candidatesList[0]?.id;
+
+      if (response.preferences_feedback) {
+        setLastPreferencesFeedback(response.preferences_feedback);
+      }
 
       trackSpatialEvent({
         eventName: 'candidate_generation_succeeded',
@@ -310,7 +394,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [session, isLoading, scene]);
+  }, [session, isLoading, scene, preferences]);
 
   const handleSelectCandidate = useCallback((msgId: string, candId: string, candRecord?: LayoutCandidateRecord) => {
     setMessages((prev) =>
@@ -716,6 +800,27 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                             </div>
                           </div>
 
+                          {/* Phase 7.1 Preference Alignment Breakdown */}
+                          {typeof activeCand.score.preference_score === 'number' && (activeCand.score.lambda_weight ?? 0) > 0 && (
+                            <div className="pt-1.5 border-t border-slate-800/80" data-testid="preference-score-block">
+                              <div className="flex items-center justify-between text-[10px] mb-1">
+                                <span className="font-semibold text-slate-400 uppercase tracking-wider">Preference Match Score</span>
+                                <span className="font-mono font-bold text-indigo-300">
+                                  {activeCand.score.preference_score.toFixed(1)} / 100 (λ = {activeCand.score.lambda_weight?.toFixed(2)})
+                                </span>
+                              </div>
+                              {activeCand.score.preference_dimensions && (
+                                <div className="flex flex-wrap gap-1 text-[9px]">
+                                  {Object.entries(activeCand.score.preference_dimensions).map(([dim, val]) => (
+                                    <span key={dim} className="bg-indigo-950/60 border border-indigo-800/60 text-indigo-200 px-1.5 py-0.5 rounded">
+                                      {dim}: {val.toFixed(0)}%
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Identified Trade-offs */}
                           {activeCand.trade_offs && activeCand.trade_offs.length > 0 && (
                             <div className="pt-1 border-t border-slate-800/80">
@@ -926,6 +1031,38 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
 
       {isAuthenticated && (
         <>
+          {/* Design Preferences Summary Bar (Phase 7.1) */}
+          <div className="px-4 py-2 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs" data-testid="preferences-bar">
+            <div className="flex items-center gap-2 overflow-hidden min-w-0">
+              <Sliders className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="text-[11px] font-semibold text-slate-400 shrink-0 uppercase tracking-wider">Preferences:</span>
+              <span className="text-xs text-slate-200 truncate font-medium">
+                {getPreferencesSummary(preferences)}
+              </span>
+              {isSavedPref && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
+                  Saved Profile
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPrefModalOpen(true)}
+              data-testid="customize-preferences-btn"
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold shrink-0 ml-2 hover:underline"
+            >
+              Customize
+            </button>
+          </div>
+
+          {/* Detected Preference Conflict Warning */}
+          {lastPreferencesFeedback && lastPreferencesFeedback.detected_conflicts.length > 0 && (
+            <div className="px-4 py-1.5 bg-amber-950/40 border-t border-amber-900/40 text-[10px] text-amber-300 flex items-center gap-1.5" data-testid="preference-conflict-banner">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>{lastPreferencesFeedback.detected_conflicts[0]}</span>
+            </div>
+          )}
+
           {/* Suggested Quick Prompts */}
           <div className="px-4 py-2 border-t border-slate-800/80 bg-slate-950/40">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider block mb-1.5">
@@ -990,6 +1127,16 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
             usePreviewStore.getState().setComparisonOpen(false);
           }
         }}
+      />
+
+      {/* Design Preferences Settings Modal (Phase 7.1) */}
+      <PreferenceSettingsModal
+        isOpen={isPrefModalOpen}
+        onClose={() => setIsPrefModalOpen(false)}
+        currentPreferences={preferences}
+        onSavePreferences={handleSavePreferences}
+        onResetPreferences={handleResetPreferences}
+        scene={scene}
       />
     </div>
   );

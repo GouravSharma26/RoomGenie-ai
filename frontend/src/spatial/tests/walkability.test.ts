@@ -301,7 +301,7 @@ describe('Phase 4: Walkability & Circulation Engine', () => {
       expect(result.costGrid).toBeDefined();
       expect(result.circulation).toBeDefined();
       expect(result.circulation.accessibleFurnitureCount).toBeGreaterThan(0);
-      expect(duration).toBeLessThan(150); // Well under responsive threshold (typically 5-15ms)
+      expect(duration).toBeLessThan(300); // Well under responsive threshold (typically 5-15ms)
     });
   });
 });

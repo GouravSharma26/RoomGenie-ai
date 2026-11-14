@@ -5,12 +5,14 @@ from apps.ai_agent.views import (
     AgentPromptView,
     AgentApplyRunView,
     AgentRejectRunView,
+    UserDesignPreferenceView,
 )
 
 router = DefaultRouter()
 router.register(r'sessions', AgentSessionViewSet, basename='agent-session')
 
 urlpatterns = [
+    path('preferences/', UserDesignPreferenceView.as_view(), name='agent-preferences'),
     path('sessions/<uuid:session_id>/prompt/', AgentPromptView.as_view(), name='agent-prompt'),
     path('runs/<uuid:run_id>/apply/', AgentApplyRunView.as_view(), name='agent-run-apply'),
     path('runs/<uuid:run_id>/reject/', AgentRejectRunView.as_view(), name='agent-run-reject'),

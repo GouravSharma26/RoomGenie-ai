@@ -98,3 +98,42 @@ class AgentRun(models.Model):
     def __str__(self):
         prompt_preview = str(self.user_prompt)[:40] if self.user_prompt else ''
         return f"AgentRun {self.id} [{self.status}]: {prompt_preview}"
+
+
+class UserDesignPreference(models.Model):
+    """
+    Persistent, user-owned interior design preferences for RoomGenie AI (Phase 7.1).
+    Kept strictly separate from CanonicalScene and Design models.
+    Supports versioning, controlled taxonomy tags, and explicit opt-in saving.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='design_preferences'
+    )
+    schema_version = models.IntegerField(default=1)
+    
+    # Controlled preference dimensions
+    style_preferences = models.JSONField(default=list, blank=True)
+    primary_style = models.CharField(max_length=60, blank=True, default='')
+    colour_preferences = models.JSONField(default=list, blank=True)
+    material_preferences = models.JSONField(default=list, blank=True)
+    layout_preferences = models.JSONField(default=list, blank=True)
+    functional_priorities = models.JSONField(default=list, blank=True)
+    
+    # Constraints and rules
+    budget_preferences = models.JSONField(default=dict, blank=True)
+    furniture_preferences = models.JSONField(default=dict, blank=True)
+    preservation_preferences = models.JSONField(default=dict, blank=True)
+    preference_weights = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"DesignPreferences for {self.owner.username} (v{self.schema_version})"
+

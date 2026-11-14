@@ -222,6 +222,15 @@ class ScoreBreakdown:
     weights: Dict[str, float] = field(default_factory=lambda: dict(SCORE_WEIGHTS))
     explanations: Dict[str, str] = field(default_factory=dict)
     budget_evaluated: bool = True
+    # Phase 7.1 Preference-Aware Scoring Extensions
+    base_score: float = 100.0
+    preference_score: float = 100.0
+    final_score: float = 100.0
+    lambda_weight: float = 0.0
+    preference_dimensions: Dict[str, float] = field(default_factory=dict)
+    preference_explanations: Dict[str, str] = field(default_factory=dict)
+    preference_conflicts: List[str] = field(default_factory=list)
+    unavailable_attributes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -232,6 +241,14 @@ class ScoreBreakdown:
             'utilization': round(self.utilization, 1),
             'budget': round(self.budget, 1),
             'overall': round(self.overall, 1),
+            'base_score': round(self.base_score, 1),
+            'preference_score': round(self.preference_score, 1),
+            'final_score': round(self.final_score, 1),
+            'lambda_weight': round(self.lambda_weight, 2),
+            'preference_dimensions': {k: round(v, 1) for k, v in self.preference_dimensions.items()},
+            'preference_explanations': self.preference_explanations,
+            'preference_conflicts': self.preference_conflicts,
+            'unavailable_attributes': self.unavailable_attributes,
             'weights': self.weights,
             'explanations': self.explanations,
             'budget_evaluated': self.budget_evaluated,

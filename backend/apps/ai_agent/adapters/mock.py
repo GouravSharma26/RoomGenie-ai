@@ -473,6 +473,7 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
         catalogue_context: list[dict[str, Any]] | None = None,
         spatial_context: dict[str, Any] | None = None,
         user_requirements: dict[str, Any] | None = None,
+        preferences: Any = None,
     ) -> list[DesignProposalResult]:
         """
         Generates multiple distinct candidate layout proposals for Phase 6.3.
@@ -827,6 +828,165 @@ class MockDesignLLMAdapter(BaseDesignLLMAdapter):
                 description="Aligns along the long axis; secondary alternatives are constrained by narrow clearance.",
                 trade_offs=["Single linear layout", "Constrained circulation"],
             )]
+
+        # -------------------------------------------------------------
+        # Scenario: Three Valid Bedroom / Sleeping Zone Alternatives
+        # -------------------------------------------------------------
+        if any(w in prompt_lower for w in ('bedroom', 'sleeping', 'bed', 'nightstand')) and not any(w in prompt_lower for w in ('boundary violation', 'collision', 'clearance', 'incompatible')):
+            bed_asset = pick_asset_id('bed-queen-platform', 'bed-queen-nordic-wood', category='beds')
+            nightstand_asset = pick_asset_id('table-bedside-nightstand', 'table-bedside-nightstand', category='tables')
+            wardrobe_asset = pick_asset_id('storage-wardrobe-compact', 'wardrobe-2door-compact', category='storage')
+
+            pref_colors = preferences.get('colours', []) if isinstance(preferences, dict) else getattr(preferences, 'colour_preferences', [])
+            is_cool = any(w in prompt_lower for w in ('cool', 'grey', 'gray', 'slate', 'steel', 'monochrome')) or 'cool_neutrals' in pref_colors
+            cand_color = '#64748b' if is_cool else '#d97706'
+
+            # Candidate A: Functional Sleeping Zone with Symmetrical Dual Nightstands
+            actions_a = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-bed-a',
+                    'asset_id': bed_asset,
+                    'position': [0.0, 0.475, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                    'color': cand_color,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-nightstand-left-a',
+                    'asset_id': nightstand_asset,
+                    'position': [-1.1, 0.25, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                    'color': cand_color,
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-bed-a',
+                    'child_object_id': 'mock-nightstand-left-a',
+                    'socket_id': 'bed-left-nightstand',
+                    'gap_meters': 0.08,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-nightstand-right-a',
+                    'asset_id': nightstand_asset,
+                    'position': [1.1, 0.25, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                    'color': cand_color,
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-bed-a',
+                    'child_object_id': 'mock-nightstand-right-a',
+                    'socket_id': 'bed-right-nightstand',
+                    'gap_meters': 0.08,
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'sleeping',
+                    'intent': 'Symmetrical sleeping zone with bed and dual attached nightstands',
+                    'requirements': {'required_categories': ['beds', 'tables'], 'preserve_existing_furniture': True},
+                },
+            ]
+            cand_a = DesignProposalResult(
+                text_response="Option A anchors a queen bed with dual nightstands attached symmetrically via sockets, preserving open circulation.",
+                proposed_actions=actions_a,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option A: Symmetrical Sleeping Suite",
+                description="Queen bed centered along back wall with twin attached bedside nightstands.",
+                trade_offs=["Balanced symmetrical aesthetics", "Direct side bedside access"],
+            )
+
+            # Candidate B: Bedroom with Bed, Single Nightstand & Compact Wardrobe
+            actions_b = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-bed-b',
+                    'asset_id': bed_asset,
+                    'position': [-0.5, 0.475, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-nightstand-b',
+                    'asset_id': nightstand_asset,
+                    'position': [-1.6, 0.25, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-bed-b',
+                    'child_object_id': 'mock-nightstand-b',
+                    'socket_id': 'bed-left-nightstand',
+                    'gap_meters': 0.08,
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-wardrobe-b',
+                    'asset_id': wardrobe_asset,
+                    'position': [1.3, 0.9, 0.4],
+                    'rotation_euler': [0.0, -1.5708, 0.0],
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'sleeping',
+                    'intent': 'Sleeping zone with bedside storage and wardrobe',
+                    'requirements': {'required_categories': ['beds', 'storage'], 'preserve_existing_furniture': True},
+                },
+            ]
+            cand_b = DesignProposalResult(
+                text_response="Option B pairs the bed and nightstand with a dedicated modular wardrobe for apparel storage.",
+                proposed_actions=actions_b,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option B: Storage-Integrated Sleeping Zone",
+                description="Bed arrangement combined with perimeter wardrobe storage.",
+                trade_offs=["High storage capacity", "Asymmetric floor layout"],
+            )
+
+            # Candidate C: Minimalist Open Sleeping Zone
+            actions_c = [
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-bed-c',
+                    'asset_id': bed_asset,
+                    'position': [0.0, 0.475, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'add_furniture',
+                    'object_id': 'mock-nightstand-right-c',
+                    'asset_id': nightstand_asset,
+                    'position': [1.1, 0.25, -0.6],
+                    'rotation_euler': [0.0, 0.0, 0.0],
+                },
+                {
+                    'type': 'attach_to_socket',
+                    'anchor_object_id': 'mock-bed-c',
+                    'child_object_id': 'mock-nightstand-right-c',
+                    'socket_id': 'bed-right-nightstand',
+                    'gap_meters': 0.08,
+                },
+                {
+                    'type': 'propose_zone_arrangement',
+                    'zone_type': 'sleeping',
+                    'intent': 'Minimalist open sleeping zone maximizing floor space',
+                    'requirements': {'required_categories': ['beds'], 'preserve_existing_furniture': True},
+                },
+            ]
+            cand_c = DesignProposalResult(
+                text_response="Option C maximizes open floor clearance with a streamlined bed and single nightstand layout.",
+                proposed_actions=actions_c,
+                provider='mock',
+                model='deterministic-mock-v1',
+                candidate_label="Option C: Streamlined Minimalist Bed",
+                description="Minimal footprint bed configuration maximizing usable walking space.",
+                trade_offs=["Maximum open floor area", "Single bedside surface"],
+            )
+
+            all_bed = [cand_a, cand_b, cand_c]
+            return all_bed[:candidate_count]
 
         # -------------------------------------------------------------
         # Scenario 2: Three Valid Workspace Alternatives

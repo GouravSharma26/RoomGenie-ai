@@ -5,6 +5,7 @@ import uuid
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
@@ -2689,6 +2690,394 @@ class Phase65TelemetryPrivacyTests(unittest.TestCase):
         self.assertNotIn("Arrange a desk and chair", str(event))
         self.assertIn("prompt_summary", event['data'])
         self.assertEqual(event['data']['prompt_summary']['category'], 'workspace')
+
+
+# =============================================================================
+# PHASE 7.1: PREFERENCE-AWARE DESIGN INTELLIGENCE TESTS
+# =============================================================================
+
+class Phase71PreferenceModelAndSerializerTests(TestCase):
+    """
+    Tests data modeling, taxonomic constraints, weight validation,
+    and user ownership isolation for UserDesignPreference.
+    """
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        self.user_a = User.objects.create_user(username="pref_user_a", password="password123")
+        self.user_b = User.objects.create_user(username="pref_user_b", password="password123")
+
+    def test_create_user_design_preference_defaults(self):
+        from apps.ai_agent.models import UserDesignPreference
+        pref = UserDesignPreference.objects.create(owner=self.user_a)
+        self.assertEqual(pref.style_preferences, [])
+        self.assertEqual(pref.colour_preferences, [])
+        self.assertEqual(pref.material_preferences, [])
+        self.assertEqual(pref.layout_preferences, [])
+        self.assertEqual(pref.functional_priorities, [])
+        self.assertEqual(pref.preservation_preferences, {})
+        self.assertEqual(pref.budget_preferences, {})
+        self.assertEqual(pref.schema_version, 1)
+
+    def test_serializer_validates_valid_taxonomies(self):
+        from apps.ai_agent.serializers import UserDesignPreferenceSerializer
+        data = {
+            "style_preferences": ["minimalist", "scandinavian", "japandi"],
+            "colour_preferences": ["warm_neutrals", "natural_wood"],
+            "material_preferences": ["wood", "fabric"],
+            "layout_preferences": ["open_space", "conversation"],
+            "functional_priorities": ["circulation", "natural_light"],
+            "preserve_object_ids": ["sofa-001"],
+            "budget_ceiling_paise": 15000000,
+            "preference_weights": {
+                "style": 2.0,
+                "colour": 1.5,
+                "material": 1.0,
+            },
+        }
+        serializer = UserDesignPreferenceSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["budget_ceiling_paise"], 15000000)
+
+    def test_serializer_rejects_unsupported_taxonomies(self):
+        from apps.ai_agent.serializers import UserDesignPreferenceSerializer
+        invalid_data = {
+            "style_preferences": ["cyberpunk_neon"],  # Invalid style
+            "colour_preferences": ["hot_pink"],       # Invalid colour
+            "material_preferences": ["plastic"],      # Invalid material
+            "layout_preferences": ["chaotic"],        # Invalid layout
+            "functional_priorities": ["partying"],     # Invalid priority
+        }
+        serializer = UserDesignPreferenceSerializer(data=invalid_data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("style_preferences", serializer.errors)
+        self.assertIn("colour_preferences", serializer.errors)
+        self.assertIn("material_preferences", serializer.errors)
+        self.assertIn("layout_preferences", serializer.errors)
+        self.assertIn("functional_priorities", serializer.errors)
+
+    def test_serializer_rejects_out_of_bounds_weights(self):
+        from apps.ai_agent.serializers import UserDesignPreferenceSerializer
+        invalid_weights = {
+            "preference_weights": {
+                "style": 6.5,  # Exceeds max 5.0
+                "colour": -1.0,  # Below min 0.0
+            }
+        }
+        serializer = UserDesignPreferenceSerializer(data=invalid_weights)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("preference_weights", serializer.errors)
+
+    def test_user_uniqueness_constraint(self):
+        from apps.ai_agent.models import UserDesignPreference
+        from django.db import IntegrityError
+        UserDesignPreference.objects.create(owner=self.user_a)
+        with self.assertRaises(IntegrityError):
+            UserDesignPreference.objects.create(owner=self.user_a)
+
+
+class Phase71PreferenceInterpretationTests(TestCase):
+    """
+    Tests deterministic preference signal extraction, structured override precedence,
+    and automatic contradiction detection in PreferenceEngine.
+    """
+
+    def test_extract_signals_from_user_prompt(self):
+        from apps.ai_agent.preference_engine import parse_prompt_for_preferences
+        prompt = "Create a minimalist scandinavian bedroom with warm neutral wooden furniture and high circulation priority"
+        signals = parse_prompt_for_preferences(prompt)
+
+        self.assertIn("minimalist", signals["styles"])
+        self.assertIn("scandinavian", signals["styles"])
+        self.assertIn("warm_neutrals", signals["colours"])
+        self.assertIn("wood", signals["materials"])
+        self.assertIn("circulation", signals["priorities"])
+
+    def test_structured_preferences_take_precedence_over_prompt(self):
+        from apps.ai_agent.preference_engine import normalize_preferences
+        prompt = "Design a bohemian room with dark moody colours"
+        structured = {
+            "styles": ["minimalist"],
+            "colours": ["warm_neutrals"],
+        }
+        norm = normalize_preferences(prompt_instruction=prompt, structured_preferences=structured)
+        # Structured preferences override conflicting prompt signals
+        self.assertEqual(norm.style_preferences, ["minimalist"])
+        self.assertEqual(norm.colour_preferences, ["warm_neutrals"])
+
+    def test_contradiction_detection_open_space_vs_storage(self):
+        from apps.ai_agent.preference_engine import normalize_preferences
+        structured = {
+            "layout_preferences": ["open_space"],
+            "functional_priorities": ["storage"],
+        }
+        norm = normalize_preferences(structured_preferences=structured)
+        self.assertTrue(any("open_space" in c.lower() and "storage" in c.lower() for c in norm.detected_conflicts))
+
+    def test_contradiction_detection_preserve_vs_remove(self):
+        from apps.ai_agent.preference_engine import normalize_preferences
+        prompt = "Please remove item sofa-123 and clear the area"
+        structured = {
+            "preserve_object_ids": ["sofa-123"],
+        }
+        norm = normalize_preferences(prompt_instruction=prompt, structured_preferences=structured)
+        self.assertTrue(any("sofa-123" in c and "removal" in c.lower() for c in norm.detected_conflicts))
+
+
+class Phase71PreferenceScoringTests(TestCase):
+    """
+    Tests preference scoring dimensions, formula verification,
+    empty preference backwards-compatibility, and physical validity supremacy.
+    """
+
+    def setUp(self):
+        from apps.furniture.models import FurnitureAsset
+        self.asset_sofa = FurnitureAsset.objects.create(
+            id="sofa-test-pref",
+            name="Modern Wood Trim Sofa",
+            category="seating",
+            width=2.0,
+            height=0.85,
+            depth=0.9,
+            price_paise=4000000,
+            style_tags=["modern", "minimalist"],
+            description="Contemporary wooden base sofa with textured fabric.",
+            is_active=True,
+        )
+        self.asset_table = FurnitureAsset.objects.create(
+            id="table-test-pref",
+            name="Oak Coffee Table",
+            category="tables",
+            width=1.0,
+            height=0.45,
+            depth=0.6,
+            price_paise=1500000,
+            style_tags=["scandinavian", "wood"],
+            description="Natural solid oak timber coffee table in warm sand tone.",
+            is_active=True,
+        )
+
+    def test_score_formula_when_preferences_empty_has_lambda_zero(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback
+
+        cand_scene = {
+            "room": {"width": 5.0, "length": 4.0, "height": 2.8},
+            "objects": [
+                {"id": "s1", "assetId": self.asset_sofa.id, "position": [0, 0.425, 0], "dimensions": [2, 0.85, 0.9]}
+            ],
+            "relationships": [],
+        }
+        feedback = CandidateValidationFeedback(
+            is_valid=True,
+            is_approval_eligible=True,
+            has_boundary_breaches=False,
+            has_collisions=False,
+            is_room_passable=True,
+        )
+        score = CandidateScorer.calculate_score(
+            candidate_scene=cand_scene,
+            validation_feedback=feedback,
+            budget_diff={"after_total_paise": 4000000},
+            preferences={},
+        )
+        # With empty preferences: lambda is 0.0, final score equals base score exactly
+        self.assertEqual(score.lambda_weight, 0.0)
+        self.assertEqual(score.final_score, score.base_score)
+        self.assertEqual(score.overall, score.base_score)
+
+    def test_score_formula_blends_base_and_preference_score(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback
+        from apps.ai_agent.preference_engine import normalize_preferences
+
+        cand_scene = {
+            "room": {"width": 5.0, "length": 4.0, "height": 2.8},
+            "objects": [
+                {"id": "t1", "assetId": self.asset_table.id, "position": [0, 0.225, 0], "dimensions": [1, 0.45, 0.6]}
+            ],
+            "relationships": [],
+        }
+        feedback = CandidateValidationFeedback(
+            is_valid=True,
+            is_approval_eligible=True,
+            has_boundary_breaches=False,
+            has_collisions=False,
+            is_room_passable=True,
+        )
+        norm_prefs = normalize_preferences(structured_preferences={
+            "materials": ["wood"],
+            "colours": ["warm_neutrals"],
+        })
+        score = CandidateScorer.calculate_score(
+            candidate_scene=cand_scene,
+            validation_feedback=feedback,
+            budget_diff={"after_total_paise": 1500000},
+            preferences=norm_prefs,
+        )
+        self.assertEqual(score.lambda_weight, 0.20)
+        expected_final = 0.80 * score.base_score + 0.20 * score.preference_score
+        self.assertAlmostEqual(score.final_score, expected_final, places=4)
+        self.assertAlmostEqual(score.overall, expected_final, places=4)
+
+    def test_hard_physical_violation_never_approval_eligible_despite_high_pref_score(self):
+        from apps.ai_agent.candidate_scorer import CandidateScorer
+        from apps.ai_agent.candidate_types import CandidateValidationFeedback, StructuredValidationIssue
+        from apps.ai_agent.candidate_ranker import CandidateRanker
+        from apps.ai_agent.candidate_types import LayoutCandidate
+        from apps.ai_agent.preference_engine import normalize_preferences
+
+        cand_scene = {
+            "room": {"width": 5.0, "length": 4.0, "height": 2.8},
+            "objects": [
+                {"id": "t1", "assetId": self.asset_table.id, "position": [10.0, 0.225, 0], "dimensions": [1, 0.45, 0.6]}
+            ],
+            "relationships": [],
+        }
+        # Hard failure: boundary breach
+        feedback = CandidateValidationFeedback(
+            is_valid=False,
+            is_approval_eligible=False,
+            has_boundary_breaches=True,
+            has_collisions=False,
+            is_room_passable=True,
+            fatal_errors=[StructuredValidationIssue(code="BOUNDARY_VIOLATION", message="Out of bounds", severity="fatal")],
+        )
+        norm_prefs = normalize_preferences(structured_preferences={"materials": ["wood"]})
+        score = CandidateScorer.calculate_score(
+            candidate_scene=cand_scene,
+            validation_feedback=feedback,
+            budget_diff={},
+            preferences=norm_prefs,
+        )
+        # Even with high preference score (table has wood)
+        self.assertEqual(score.preference_score, 100.0)
+
+        cand_invalid = LayoutCandidate(
+            id="cand-invalid-out-of-bounds",
+            label="Option A",
+            description="Out of bounds layout",
+            reasoning_summary="Bad layout",
+            proposed_actions=[],
+            candidate_scene=cand_scene,
+            source_scene_hash="hash-1",
+            is_valid=False,
+            is_approval_eligible=False,
+            score=score,
+            validation_feedback=feedback,
+        )
+        # Invariant check
+        self.assertFalse(cand_invalid.is_valid)
+        self.assertFalse(cand_invalid.is_approval_eligible)
+
+        ranked = CandidateRanker.rank_candidates([cand_invalid])
+        self.assertFalse(ranked[0].is_approval_eligible)
+
+
+class Phase71PreferenceApiIntegrationTests(APITestCase):
+    """
+    Tests REST API endpoints for user design preferences and prompt integration.
+    """
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from apps.designs.models import Design
+        from apps.ai_agent.models import AgentSession
+        User = get_user_model()
+        self.user_a = User.objects.create_user(username="api_user_a", password="password123")
+        self.user_b = User.objects.create_user(username="api_user_b", password="password123")
+        self.design_a = Design.objects.create(
+            owner=self.user_a,
+            title="User A Living Room",
+            scene_json={"room": {"width": 5.0, "length": 4.0, "height": 2.8}, "objects": []},
+        )
+        self.session_a = AgentSession.objects.create(
+            design=self.design_a,
+            owner=self.user_a,
+        )
+
+    def test_preferences_endpoint_requires_authentication(self):
+        url = reverse('agent-preferences')
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_preferences_returns_default_when_none_saved(self):
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-preferences')
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['style_preferences'], [])
+
+    def test_post_preferences_creates_profile(self):
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-preferences')
+        payload = {
+            "style_preferences": ["minimalist", "scandinavian"],
+            "colour_preferences": ["warm_neutrals"],
+            "material_preferences": ["wood"],
+            "layout_preferences": ["open_space"],
+            "functional_priorities": ["circulation"],
+            "budget_ceiling_paise": 20000000,
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['style_preferences'], ["minimalist", "scandinavian"])
+        self.assertEqual(res.data['budget_ceiling_paise'], 20000000)
+
+    def test_user_ownership_isolation(self):
+        # Create for user A
+        from apps.ai_agent.models import UserDesignPreference
+        UserDesignPreference.objects.create(
+            owner=self.user_a,
+            style_preferences=["japandi"],
+        )
+        # Authenticate as user B and query
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('agent-preferences')
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # User B should see empty/default, NOT user A's "japandi"
+        self.assertEqual(res.data['style_preferences'], [])
+
+    def test_delete_preferences_resets_profile(self):
+        from apps.ai_agent.models import UserDesignPreference
+        UserDesignPreference.objects.create(
+            owner=self.user_a,
+            style_preferences=["industrial"],
+        )
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('agent-preferences')
+        res = self.client.delete(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(UserDesignPreference.objects.filter(owner=self.user_a).exists())
+
+    def test_prompt_endpoint_accepts_preferences_and_returns_feedback(self):
+        self.client.force_authenticate(user=self.user_a)
+        prompt_url = reverse('agent-prompt', kwargs={'session_id': str(self.session_a.id)})
+        payload = {
+            "prompt": "Arrange a warm living room with sofa and coffee table",
+            "candidate_count": 3,
+            "preferences": {
+                "styles": ["minimalist"],
+                "materials": ["wood"],
+                "colours": ["warm_neutrals"],
+            },
+        }
+        res = self.client.post(prompt_url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("candidates", res.data)
+        self.assertIn("preferences_feedback", res.data)
+        feedback = res.data["preferences_feedback"]
+        self.assertIn("minimalist", feedback["applied_preferences"]["styles"])
+        # Candidates include preference scores
+        cands = res.data["candidates"]
+        self.assertGreaterEqual(len(cands), 1)
+        top_cand = cands[0]
+        self.assertIn("preference_score", top_cand["score"])
+        self.assertIn("base_score", top_cand["score"])
+        self.assertIn("final_score", top_cand["score"])
+
 
 
 

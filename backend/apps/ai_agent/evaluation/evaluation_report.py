@@ -47,6 +47,7 @@ def generate_markdown_report(run_output: EvaluationRunOutput) -> str:
         f"| **Mean Circulation Score** | {sm.mean_circulation_score:.1f} / 100 | >= 75.0 | {'✅ PASS' if sm.mean_circulation_score >= 75.0 else '⚠️ REVIEW'} |",
         f"| **Mean Clearance Score** | {sm.mean_clearance_score:.1f} / 100 | >= 75.0 | {'✅ PASS' if sm.mean_clearance_score >= 75.0 else '⚠️ REVIEW'} |",
         f"| **Mean Utilization Score** | {sm.mean_utilization_score:.1f} / 100 | >= 65.0 | {'✅ PASS' if sm.mean_utilization_score >= 65.0 else '⚠️ REVIEW'} |",
+        f"| **Mean Preference Match Score** | {sm.mean_preference_score:.1f} / 100 | >= 70.0 | {'✅ PASS' if sm.mean_preference_score >= 70.0 else '⚠️ REVIEW'} |",
         f"| **Preservation Compliance Rate** | {sm.preservation_compliance_rate_pct:.1f}% | 100.0% | {'✅ PASS' if sm.preservation_compliance_rate_pct == 100.0 else '❌ FAIL'} |",
         f"| **Budget Compliance Rate** | {sm.budget_compliance_rate_pct:.1f}% | 100.0% | {'✅ PASS' if sm.budget_compliance_rate_pct == 100.0 else '❌ FAIL'} |",
         f"| **Mean Candidate Diversity Index** | {sm.mean_candidate_diversity_score:.1f} / 100 | >= 40.0 | {'✅ PASS' if sm.mean_candidate_diversity_score >= 40.0 else '⚠️ REVIEW'} |",

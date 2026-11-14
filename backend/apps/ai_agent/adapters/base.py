@@ -48,6 +48,7 @@ class BaseDesignLLMAdapter(ABC):
         catalogue_context: list[dict[str, Any]] | None = None,
         spatial_context: dict[str, Any] | None = None,
         user_requirements: dict[str, Any] | None = None,
+        preferences: Any = None,
     ) -> list[DesignProposalResult]:
         """
         Generates multiple distinct candidate layout proposals for the same user request.

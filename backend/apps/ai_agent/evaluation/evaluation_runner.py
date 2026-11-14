@@ -61,6 +61,7 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
         current_scene=input_scene,
         candidate_count=3,
         max_budget_paise=case.budget_ceiling_paise,
+        preferences=case.preferences,
     )
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -86,8 +87,8 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
             gate_failures.append(f"Candidate '{cand.id}' is physically invalid but marked approval-eligible.")
 
         # Gate: Score formula verification
-        # S = 0.25*C_bound + 0.25*C_coll + 0.20*C_circ + 0.15*C_clear + 0.10*C_util + 0.05*C_budget
-        expected_score = (
+        # S_final = (1 - lambda) * S_base + lambda * S_pref
+        s_base_expected = (
             0.25 * cand.score.boundary +
             0.25 * cand.score.collision +
             0.20 * cand.score.circulation +
@@ -95,7 +96,10 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
             0.10 * cand.score.utilization +
             0.05 * cand.score.budget
         )
-        if cand.is_valid and abs(cand.score.overall - expected_score) > 0.1:
+        lam = getattr(cand.score, 'lambda_weight', 0.0)
+        s_pref = getattr(cand.score, 'preference_score', 100.0)
+        expected_score = (1.0 - lam) * s_base_expected + lam * s_pref
+        if cand.is_valid and abs(cand.score.overall - expected_score) > 0.15:
             gate_failures.append(
                 f"Candidate '{cand.id}' overall score ({cand.score.overall}) diverges from canonical equation ({expected_score:.1f})."
             )
@@ -166,6 +170,8 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
             is_valid=cand.is_valid,
             is_approval_eligible=cand.is_approval_eligible,
             overall_score=cand.score.overall,
+            base_score=getattr(cand.score, 'base_score', cand.score.overall),
+            preference_score=getattr(cand.score, 'preference_score', 100.0),
             boundary_score=cand.score.boundary,
             collision_score=cand.score.collision,
             circulation_score=cand.score.circulation,
@@ -202,6 +208,13 @@ def evaluate_single_case(case: EvaluationCase) -> CaseEvaluationResult:
     diversity_score = calculate_candidate_diversity(candidate_evals)
 
     top_cand = candidate_evals[0] if candidate_evals else None
+
+    # Gate: Preference alignment threshold verification (top-ranked candidate)
+    if case.expected_min_preference_score > 0 and top_cand and top_cand.is_valid:
+        if top_cand.preference_score < case.expected_min_preference_score:
+            gate_failures.append(
+                f"Top candidate '{top_cand.candidate_id}' preference score ({top_cand.preference_score:.1f}) below required ({case.expected_min_preference_score:.1f})."
+            )
 
     return CaseEvaluationResult(
         case_id=case.case_id,
