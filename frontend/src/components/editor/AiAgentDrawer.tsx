@@ -16,9 +16,13 @@ import {
   LogIn,
   Cpu,
   Link2,
-  LayoutGrid
+  LayoutGrid,
+  Eye,
+  ShieldCheck
 } from 'lucide-react';
 import { useEditorStore } from '../../editor3d/store/editorStore';
+import { usePreviewStore } from '../../editor3d/store/previewStore';
+import { CandidateComparisonModal } from './CandidateComparisonModal';
 import { useAuthStore } from '../../services/authStore';
 import { 
   createAgentSession, 
@@ -38,8 +42,10 @@ import { buildSpatialContext } from '../../spatial/ai/spatialContextBuilder';
 
 function checkSceneHasOutOfBounds(scene?: CanonicalScene | null): boolean {
   if (!scene || !scene.room || !Array.isArray(scene.objects)) return false;
+  const roomDims = (scene.room as any).dimensions || scene.room;
   for (const obj of scene.objects) {
-    const clamped = clampPositionToRoom(obj.position, obj.dimensions, scene.room, obj.scale, obj.rotationEuler);
+    if (!Array.isArray(obj.dimensions)) continue;
+    const clamped = clampPositionToRoom(obj.position, obj.dimensions, roomDims, obj.scale, obj.rotationEuler);
     if (Math.abs(clamped[0] - obj.position[0]) > 0.001 || Math.abs(clamped[2] - obj.position[2]) > 0.001) {
       return true;
     }
@@ -110,6 +116,13 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     scrollToBottom();
   }, [messages, isLoading]);
 
+  // Clean up any active preview when drawer unmounts
+  useEffect(() => {
+    return () => {
+      usePreviewStore.getState().exitPreview();
+    };
+  }, []);
+
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const openAuthModal = useAuthStore((state) => state.openAuthModal);
 
@@ -178,6 +191,16 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         selectedCandidateId: selectedId,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Launch interactive 3D candidate preview for top candidate without mutating canonical scene
+      if (candidatesList.length > 0) {
+        const topCand = response.selected_candidate || candidatesList[0];
+        usePreviewStore.getState().startPreview(
+          response.run.id,
+          topCand,
+          candidatesList
+        );
+      }
 
 
       // Telemetry: record AI proposal multi-tier validity & explicit room-containment violations
@@ -261,12 +284,16 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
     }
   }, [session, isLoading, scene]);
 
-  const handleSelectCandidate = useCallback((msgId: string, candId: string) => {
+  const handleSelectCandidate = useCallback((msgId: string, candId: string, candRecord?: LayoutCandidateRecord) => {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === msgId ? { ...m, selectedCandidateId: candId } : m
       )
     );
+    const targetCand = candRecord || usePreviewStore.getState().allCandidates.find(c => c.id === candId);
+    if (targetCand) {
+      usePreviewStore.getState().switchCandidate(targetCand);
+    }
   }, []);
 
   const handleApplyProposal = useCallback(async (msg: MessageItem, candidateId?: string) => {
@@ -282,11 +309,14 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         ? await applyAgentRun(targetRunId, scene, targetCandidateId)
         : await applyAgentRun(targetRunId, scene);
       
-      // Update editor 3D store
+      // Update editor 3D store (creates exactly 1 undo history step)
       loadScene(appliedResult.applied_scene);
       if (onSceneApplied) {
         onSceneApplied(appliedResult.applied_scene);
       }
+
+      // Exit candidate preview cleanly
+      usePreviewStore.getState().exitPreview();
 
       // Telemetry: record accepted proposal
       recordAgentAcceptance();
@@ -316,6 +346,8 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
 
     try {
       await rejectAgentRun(targetRunId);
+      // Discard active preview
+      usePreviewStore.getState().discardPreview();
 
       // Update message run status
       setMessages((prev) =>
@@ -331,6 +363,11 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       setActionInProgressId(null);
     }
   }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    usePreviewStore.getState().exitPreview();
+    onClose();
+  }, [onClose]);
 
   if (!isOpen) return null;
 
@@ -357,7 +394,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
         </div>
 
         <button
-          onClick={onClose}
+          onClick={handleCloseDrawer}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
           title="Close AI Assistant"
         >
@@ -503,7 +540,17 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                         <div className="space-y-1.5" data-testid="candidate-selection-section">
                           <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
                             <span>Layout Candidates ({candidates.length})</span>
-                            <span className="text-[10px] text-slate-500 font-mono">Ranked by Quality</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => usePreviewStore.getState().setComparisonOpen(true)}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 hover:underline transition"
+                                data-testid="compare-candidates-btn"
+                              >
+                                <Eye className="w-3 h-3" /> Compare Options
+                              </button>
+                              <span className="text-[10px] text-slate-500 font-mono">Ranked by Quality</span>
+                            </div>
                           </div>
                           <div className="grid grid-cols-3 gap-1.5" data-testid="candidate-selector-tabs">
                             {candidates.map((cand, candIdx) => {
@@ -513,7 +560,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                                 <button
                                   key={cand.id}
                                   type="button"
-                                  onClick={() => handleSelectCandidate(msg.id, cand.id)}
+                                  onClick={() => handleSelectCandidate(msg.id, cand.id, cand)}
                                   data-testid={`candidate-tab-${cand.id}`}
                                   className={`p-2 rounded-lg border text-left transition relative flex flex-col justify-between ${
                                     isSelected
@@ -749,6 +796,35 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                         </div>
                       )}
 
+                      {/* Confirmation Summary Before Apply (Phase 6.4) */}
+                      {msg.run.status === 'proposed' && (
+                        <div className="bg-slate-900/90 border border-indigo-500/30 rounded-lg p-2.5 space-y-1.5" data-testid="apply-confirmation-summary">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-white">
+                            <span className="flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                              Apply Confirmation Summary
+                            </span>
+                            <span className={`text-[10px] font-bold ${isApprovalEligible ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isApprovalEligible ? 'Ready to Apply' : 'Blocked by Issues'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[10px] text-slate-300">
+                            <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800 text-center">
+                              <span className="text-slate-400 block">Proposed Items</span>
+                              <span className="font-semibold text-white">{activeCand?.candidate_scene?.objects?.length ?? displayedActions.length}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800 text-center">
+                              <span className="text-slate-400 block">Actions</span>
+                              <span className="font-semibold text-white">{displayedActions.length}</span>
+                            </div>
+                            <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800 text-center">
+                              <span className="text-slate-400 block">History Impact</span>
+                              <span className="font-semibold text-emerald-400">+1 Step (Undoable)</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* 2-Phase Approval Controls */}
                       {msg.run.status === 'proposed' && (
                         <div className="flex items-center gap-2 pt-1">
@@ -847,6 +923,19 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
           </div>
         </>
       )}
+
+      {/* Candidate Side-by-Side Comparison Modal (Phase 6.4) */}
+      <CandidateComparisonModal
+        onApplyCandidate={(cand) => {
+          const proposedMsg = [...messages].reverse().find(
+            (m) => m.run && m.run.status === 'proposed'
+          );
+          if (proposedMsg) {
+            handleApplyProposal(proposedMsg, cand.id);
+            usePreviewStore.getState().setComparisonOpen(false);
+          }
+        }}
+      />
     </div>
   );
 };

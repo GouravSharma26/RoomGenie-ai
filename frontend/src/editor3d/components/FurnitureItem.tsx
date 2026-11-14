@@ -8,6 +8,8 @@ import { reconstructedAssetManager } from '../../services/reconstructedAssetMana
 
 interface FurnitureItemProps {
   placement: FurniturePlacement;
+  isPreview?: boolean;
+  isNewInPreview?: boolean;
 }
 
 interface GLTFModelProps {
@@ -61,7 +63,11 @@ class ModelErrorBoundary extends React.Component<
   }
 }
 
-export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
+export const FurnitureItem: React.FC<FurnitureItemProps> = ({
+  placement,
+  isPreview = false,
+  isNewInPreview = false,
+}) => {
   const groupRef = useRef<THREE.Group>(null);
   const selectedId = useEditorStore((state) => state.selectedId);
   const hoveredId = useEditorStore((state) => state.hoveredId);
@@ -72,10 +78,10 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   const startInteraction = useEditorStore((state) => state.startInteraction);
   const endInteraction = useEditorStore((state) => state.endInteraction);
 
-  const isSelected = selectedId === placement.id;
-  const isHovered = hoveredId === placement.id;
+  const isSelected = !isPreview && selectedId === placement.id;
+  const isHovered = !isPreview && hoveredId === placement.id;
   const validation = spatialValidations[placement.id];
-  const hasConflict = Boolean(validation && !validation.valid);
+  const hasConflict = !isPreview && Boolean(validation && !validation.valid);
 
   const isDragging = useRef(false);
   const dragPlane = useMemo(
@@ -91,10 +97,12 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
 
   const handleClick = (e: any) => {
     e.stopPropagation();
+    if (isPreview) return;
     selectObject(placement.id);
   };
 
   const handlePointerDown = (e: any) => {
+    if (isPreview) return;
     if (!isSelected) {
       selectObject(placement.id);
       return;
@@ -113,7 +121,7 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   };
 
   const handlePointerMove = (e: any) => {
-    if (!isDragging.current) return;
+    if (isPreview || !isDragging.current) return;
     e.stopPropagation();
     const intersection = new THREE.Vector3();
     if (e.ray.intersectPlane(dragPlane, intersection)) {
@@ -124,24 +132,26 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
   };
 
   const handlePointerUp = (e: any) => {
-    if (!isDragging.current) return;
+    if (isPreview || !isDragging.current) return;
     e.stopPropagation();
     isDragging.current = false;
     endInteraction();
   };
 
   const handlePointerOver = (e: any) => {
+    if (isPreview) return;
     e.stopPropagation();
     hoverObject(placement.id);
   };
 
   const handlePointerOut = () => {
+    if (isPreview) return;
     hoverObject(null);
   };
 
   // Hydrate custom reconstructed GLB model if reconstructionJobId is set and modelUrl is pending
   useEffect(() => {
-    if (!placement.reconstructionJobId) return;
+    if (isPreview || !placement.reconstructionJobId) return;
 
     let isSubscribed = true;
     const activeUrl = reconstructedAssetManager.getUrlForJob(placement.reconstructionJobId);
@@ -168,12 +178,13 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
 
     return () => {
       isSubscribed = false;
+      if (isPreview) return;
       const isStillInScene = useEditorStore.getState().scene.objects.some((o) => o.id === placement.id);
       if (!isStillInScene) {
         reconstructedAssetManager.releasePlacement(placement.id);
       }
     };
-  }, [placement.id, placement.reconstructionJobId, placement.modelUrl]);
+  }, [placement.id, placement.reconstructionJobId, placement.modelUrl, isPreview]);
 
   // Render stylized procedural geometry as native mesh or fallback
   const renderProceduralGeometry = () => {
@@ -371,6 +382,20 @@ export const FurnitureItem: React.FC<FurnitureItemProps> = ({ placement }) => {
             opacity={hasConflict ? 0.95 : isSelected ? 0.9 : 0.4}
           />
         </mesh>
+      )}
+
+      {/* Preview Highlight for Proposed Candidate Furniture */}
+      {isPreview && isNewInPreview && (
+        <>
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[width * 1.02, height * 1.02, depth * 1.02]} />
+            <meshBasicMaterial color="#818cf8" wireframe transparent opacity={0.35} />
+          </mesh>
+          <mesh position={[0, -height / 2 + 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[Math.min(width, depth) * 0.4, Math.max(width, depth) * 0.6, 32]} />
+            <meshBasicMaterial color="#818cf8" transparent opacity={0.5} side={THREE.DoubleSide} />
+          </mesh>
+        </>
       )}
 
       {/* Selection Base Indicator Disc */}

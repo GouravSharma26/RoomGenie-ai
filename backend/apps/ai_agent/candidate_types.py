@@ -60,6 +60,23 @@ def compute_canonical_scene_hash(scene: Dict[str, Any] | None) -> str:
                 if isinstance(pt, (list, tuple)) and len(pt) >= 2
             ]
 
+        # Walls (normalized and sorted by ID)
+        walls = raw_room.get('walls', [])
+        if isinstance(walls, list):
+            norm_walls = []
+            for w in walls:
+                if isinstance(w, dict):
+                    sp = w.get('startPoint', [0, 0])
+                    ep = w.get('endPoint', [0, 0])
+                    norm_walls.append({
+                        'id': str(w.get('id', '')),
+                        'startPoint': [normalize_num(sp[0]), normalize_num(sp[1])],
+                        'endPoint': [normalize_num(ep[0]), normalize_num(ep[1])],
+                        'thickness': normalize_num(w.get('thickness', 0.15)),
+                    })
+            norm_walls.sort(key=lambda x: x['id'])
+            room_dict['walls'] = norm_walls
+
         # Openings
         openings = raw_room.get('openings', [])
         if isinstance(openings, list):

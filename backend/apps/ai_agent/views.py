@@ -219,9 +219,14 @@ class AgentApplyRunView(APIView):
                 design = (
                     Design.objects  # pyrefly: ignore[missing-attribute]
                     .select_for_update()
-                    .filter(id=run.session.design_id)
+                    .filter(id=run.session.design_id, owner=request.user)
                     .first()
                 )
+                if not design:
+                    return Response(
+                        {"detail": "Design not found or access denied."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
 
             # For sessions attached to saved designs, use the authoritative locked saved scene as the apply base.
             if design:
@@ -271,16 +276,20 @@ class AgentApplyRunView(APIView):
             if selected_cand_id and isinstance(run.validation_results, dict):
                 candidates_list = run.validation_results.get('candidates', [])
                 matched_cand = next((c for c in candidates_list if c.get('id') == selected_cand_id), None)
-                if matched_cand:
-                    if not matched_cand.get('is_valid', True) or not matched_cand.get('is_approval_eligible', True):
-                        return Response(
-                            {
-                                "detail": "Cannot apply invalid or ineligible candidate.",
-                                "errors": matched_cand.get('validation_feedback', {}).get('errors', []),
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-                    candidate_actions = matched_cand.get('proposed_actions', candidate_actions)
+                if not matched_cand:
+                    return Response(
+                        {"detail": f"Candidate with id '{selected_cand_id}' not found in this proposal run."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if not matched_cand.get('is_valid', True) or not matched_cand.get('is_approval_eligible', True):
+                    return Response(
+                        {
+                            "detail": "Cannot apply invalid or ineligible candidate.",
+                            "errors": matched_cand.get('validation_feedback', {}).get('errors', []),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                candidate_actions = matched_cand.get('proposed_actions', candidate_actions)
 
             max_budget = design.budget if (design and design.budget) else None
             sim_result = validate_and_simulate_actions(base_scene, candidate_actions, max_budget_paise=max_budget)

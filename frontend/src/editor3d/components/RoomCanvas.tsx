@@ -7,12 +7,21 @@ import { AlignmentGuides } from './AlignmentGuides';
 import { SocketOverlay } from './SocketOverlay';
 import { RelationshipOverlay } from './RelationshipOverlay';
 import { WalkabilityOverlay } from './WalkabilityOverlay';
+import { PreviewViewportBanner } from './PreviewViewportBanner';
 import { useEditorStore } from '../store/editorStore';
+import { usePreviewStore } from '../store/previewStore';
 
 export const RoomCanvas: React.FC = () => {
   const objects = useEditorStore((state) => state.scene.objects);
   const deleteSelected = useEditorStore((state) => state.deleteSelected);
   const selectObject = useEditorStore((state) => state.selectObject);
+
+  const previewStatus = usePreviewStore((state) => state.status);
+  const isPreviewActive = previewStatus === 'active' || previewStatus === 'switching';
+  const previewScene = usePreviewStore((state) => state.previewScene);
+  const exitPreview = usePreviewStore((state) => state.exitPreview);
+
+  const displayedObjects = isPreviewActive && previewScene ? previewScene.objects : objects;
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -22,14 +31,11 @@ export const RoomCanvas: React.FC = () => {
         return;
       }
 
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const storeState = useEditorStore.getState();
-        if (storeState.selectedOpeningId) {
-          storeState.deleteWallOpening(storeState.selectedOpeningId);
-        } else {
-          deleteSelected();
+      if (e.key === 'Escape') {
+        if (usePreviewStore.getState().status === 'active') {
+          exitPreview();
+          return;
         }
-      } else if (e.key === 'Escape') {
         const storeState = useEditorStore.getState();
         if (storeState.activeGestureSnapshot) {
           storeState.cancelInteraction();
@@ -40,8 +46,17 @@ export const RoomCanvas: React.FC = () => {
         } else {
           selectObject(null);
         }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (usePreviewStore.getState().status === 'active') return;
+        const storeState = useEditorStore.getState();
+        if (storeState.selectedOpeningId) {
+          storeState.deleteWallOpening(storeState.selectedOpeningId);
+        } else {
+          deleteSelected();
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
+        if (usePreviewStore.getState().status === 'active') return;
         if (e.shiftKey) {
           useEditorStore.getState().redo();
         } else {
@@ -49,16 +64,18 @@ export const RoomCanvas: React.FC = () => {
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
+        if (usePreviewStore.getState().status === 'active') return;
         useEditorStore.getState().redo();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelected, selectObject]);
+  }, [deleteSelected, selectObject, exitPreview]);
 
   return (
     <div className="w-full h-full relative select-none bg-radial from-[#131926] via-[#0b0e17] to-[#06080d]">
+      <PreviewViewportBanner />
       <Canvas
         shadows
         camera={{ position: [5, 4.5, 6], fov: 45 }}
@@ -85,9 +102,17 @@ export const RoomCanvas: React.FC = () => {
 
         <Suspense fallback={null}>
           <RoomEnvironment />
-          {objects.map((obj) => (
-            <FurnitureItem key={obj.id} placement={obj} />
-          ))}
+          {displayedObjects.map((obj) => {
+            const isNew = isPreviewActive && !objects.some((c) => c.id === obj.id);
+            return (
+              <FurnitureItem
+                key={obj.id}
+                placement={obj}
+                isPreview={isPreviewActive}
+                isNewInPreview={isNew}
+              />
+            );
+          })}
           <AlignmentGuides />
           <SocketOverlay />
           <RelationshipOverlay />

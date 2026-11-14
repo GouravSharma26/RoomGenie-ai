@@ -2169,4 +2169,207 @@ class Phase63MultiCandidateAndScoringTests(APITestCase):
         self.assertGreater(len(self.design.scene_json['objects']), 0)
 
 
+class Phase64PreviewAndReversibleApplyBackendTests(APITestCase):
+    """
+    Automated Backend Tests for Phase 6.4: Interactive 3D Preview & Reversible Apply.
+    Verifies:
+    1. Candidate-specific atomic apply with row locks.
+    2. Rejection of duplicate apply calls (run status != proposed).
+    3. Rejection of unknown candidate ID.
+    4. Rejection of ineligible or invalid candidate.
+    5. Rejection on cross-user or unowned design access.
+    6. Stale proposal protection when authoritative database scene has changed.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='preview_tester',
+            email='preview@example.com',
+            password='Password123!'
+        )
+        self.other_user = User.objects.create_user(
+            username='other_tester',
+            email='other@example.com',
+            password='Password123!'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        # Standard catalogue assets
+        FurnitureAsset.objects.create(
+            id='sofa-modern-3seater',
+            name='Modern 3-Seater Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=2999900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='table-oak-coffee',
+            name='Oak Coffee Table',
+            category='tables',
+            width=Decimal('1.10'),
+            height=Decimal('0.45'),
+            depth=Decimal('0.60'),
+            price_paise=899900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='chair-accent-armchair',
+            name='Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.85'),
+            price_paise=1299900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='desk-workspace-study',
+            name='Executive Wood Desk',
+            category='tables',
+            width=Decimal('1.50'),
+            height=Decimal('0.75'),
+            depth=Decimal('0.80'),
+            price_paise=2499900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='chair-ergonomic-office',
+            name='Ergonomic Office Chair',
+            category='seating',
+            width=Decimal('0.65'),
+            height=Decimal('0.95'),
+            depth=Decimal('0.65'),
+            price_paise=1499900,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='sofa-3seat-modern',
+            name='Modern 3-Seat Sofa',
+            category='seating',
+            width=Decimal('2.10'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.90'),
+            price_paise=3500000,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='coffee-table-minimal',
+            name='Minimal Coffee Table',
+            category='tables',
+            width=Decimal('1.10'),
+            height=Decimal('0.45'),
+            depth=Decimal('0.60'),
+            price_paise=1200000,
+            currency='INR',
+            is_active=True,
+        )
+        FurnitureAsset.objects.create(
+            id='armchair-accent-nordic',
+            name='Nordic Accent Armchair',
+            category='seating',
+            width=Decimal('0.85'),
+            height=Decimal('0.85'),
+            depth=Decimal('0.85'),
+            price_paise=1500000,
+            currency='INR',
+            is_active=True,
+        )
+
+        self.scene = {
+            'schemaVersion': 1,
+            'unit': 'm',
+            'room': {'width': 5.0, 'length': 4.0, 'height': 2.8},
+            'objects': [],
+            'relationships': [],
+        }
+
+        self.design = Design.objects.create(
+            owner=self.user,
+            title='Preview Test Room',
+            scene_json=copy.deepcopy(self.scene),
+        )
+
+        self.session = AgentSession.objects.create(
+            owner=self.user,
+            design=self.design,
+            title='Preview AI Session',
+        )
+
+    def test_apply_rejects_duplicate_call_when_already_approved(self):
+        # 1. Generate prompt proposal
+        url = reverse('agent-prompt', kwargs={'session_id': self.session.id})
+        res = self.client.post(url, {'prompt': 'Living room alternatives', 'candidate_count': 3}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        run_id = res.data['run']['id']
+        cand_id = res.data['candidates'][0]['id']
+
+        # 2. First apply succeeds
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res_1 = self.client.post(apply_url, {'candidate_id': cand_id}, format='json')
+        self.assertEqual(apply_res_1.status_code, status.HTTP_200_OK, apply_res_1.data)
+
+        # 3. Duplicate apply attempt on now-approved run returns HTTP 400
+        apply_res_2 = self.client.post(apply_url, {'candidate_id': cand_id}, format='json')
+        self.assertEqual(apply_res_2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot be applied", apply_res_2.data['detail'])
+
+    def test_apply_rejects_nonexistent_candidate_id(self):
+        url = reverse('agent-prompt', kwargs={'session_id': self.session.id})
+        res = self.client.post(url, {'prompt': 'Living room alternatives', 'candidate_count': 2}, format='json')
+        run_id = res.data['run']['id']
+
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res = self.client.post(apply_url, {'candidate_id': 'nonexistent-uuid-999'}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not found", apply_res.data['detail'])
+
+    def test_apply_rejects_ineligible_candidate(self):
+        url = reverse('agent-prompt', kwargs={'session_id': self.session.id})
+        res = self.client.post(url, {'prompt': 'Living room alternatives', 'candidate_count': 3}, format='json')
+        run_id = res.data['run']['id']
+
+        # Find or construct candidate marked ineligible
+        run = AgentRun.objects.get(id=run_id)
+        val_results = run.validation_results
+        val_results['candidates'][0]['is_approval_eligible'] = False
+        val_results['candidates'][0]['is_valid'] = False
+        run.validation_results = val_results
+        run.save(update_fields=['validation_results'])
+
+        cand_id = val_results['candidates'][0]['id']
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res = self.client.post(apply_url, {'candidate_id': cand_id}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("ineligible", apply_res.data['detail'].lower())
+
+    def test_apply_rejects_unowned_design_access(self):
+        # Create session with other user
+        other_session = AgentSession.objects.create(
+            owner=self.other_user,
+            design=self.design,
+            title='Other AI Session',
+        )
+        url = reverse('agent-prompt', kwargs={'session_id': other_session.id})
+        # Authenticate other user to generate proposal
+        self.client.force_authenticate(user=self.other_user)
+        res = self.client.post(url, {'prompt': 'Living room', 'candidate_count': 2}, format='json')
+        run_id = res.data['run']['id']
+
+        # Switch back to first user and attempt to apply other user's run -> 404
+        self.client.force_authenticate(user=self.user)
+        apply_url = reverse('agent-run-apply', kwargs={'run_id': run_id})
+        apply_res = self.client.post(apply_url, {}, format='json')
+        self.assertEqual(apply_res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+
 

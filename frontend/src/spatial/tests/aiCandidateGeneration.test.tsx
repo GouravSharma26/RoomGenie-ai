@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AiAgentDrawer } from '../../components/editor/AiAgentDrawer';
 import * as agentApi from '../../services/agentApi';
@@ -287,20 +286,17 @@ describe('Phase 6.3 — Multi-Candidate Layout Generation & Deterministic Scorin
     vi.mocked(agentApi.createAgentSession).mockResolvedValue({
       id: 'session-multi-1',
       title: 'Multi-Candidate Session',
-      status: 'active',
+      owner_username: 'tester',
+      design: null,
       created_at: '2026-11-14T08:00:00Z',
       updated_at: '2026-11-14T08:00:00Z',
     });
 
     vi.mocked(agentApi.sendAgentPrompt).mockResolvedValue({
-      session_id: 'session-multi-1',
-      user_message: 'Arrange living room seating',
-      ai_response_text: 'I have generated 3 candidate layouts evaluated with deterministic scoring.',
-      candidate_count: 3,
-      recommended_candidate_id: 'cand-opt-a',
-      candidates: [candidateA, candidateB, candidateC],
       run: {
         id: 'run-multi-1',
+        session: 'session-multi-1',
+        user_prompt: 'Arrange living room seating',
         status: 'proposed',
         ai_response_text: 'I have generated 3 candidate layouts evaluated with deterministic scoring.',
         proposed_actions: candidateA.proposed_actions,
@@ -308,6 +304,7 @@ describe('Phase 6.3 — Multi-Candidate Layout Generation & Deterministic Scorin
           is_valid: true,
           errors: [],
           warnings: ['Minor clearance advisory: 0.55m to coffee table edge.'],
+          budget_diff: candidateA.budget_diff!,
           candidates: [candidateA, candidateB, candidateC],
         },
         provider_metadata: {
@@ -315,9 +312,13 @@ describe('Phase 6.3 — Multi-Candidate Layout Generation & Deterministic Scorin
           model: 'mock-spatial-planner',
           latency_ms: 12,
         },
+        created_at: '2026-11-14T08:00:00Z',
       },
       candidate_scene: candidateA.candidate_scene,
-      budget_diff: candidateA.budget_diff,
+      budget_diff: candidateA.budget_diff!,
+      candidates: [candidateA, candidateB, candidateC],
+      selected_candidate: candidateA,
+      requires_approval: true,
     });
   });
 
@@ -421,10 +422,25 @@ describe('Phase 6.3 — Multi-Candidate Layout Generation & Deterministic Scorin
 
   it('applies the specifically selected candidate when user approves', async () => {
     vi.mocked(agentApi.applyAgentRun).mockResolvedValue({
-      run_id: 'run-multi-1',
-      status: 'approved',
+      detail: 'Candidate Option B applied successfully.',
+      run: {
+        id: 'run-multi-1',
+        session: 'session-multi-1',
+        user_prompt: 'Arrange living room',
+        status: 'approved',
+        ai_response_text: 'Done',
+        proposed_actions: candidateB.proposed_actions,
+        validation_results: {
+          is_valid: true,
+          errors: [],
+          warnings: [],
+          budget_diff: candidateB.budget_diff!,
+        },
+        provider_metadata: { provider: 'mock', model: 'mock' },
+        created_at: '2026-11-14T08:00:00Z',
+      },
       applied_scene: candidateB.candidate_scene,
-      message: 'Candidate Option B applied successfully.',
+      budget_diff: candidateB.budget_diff!,
     });
 
     const onSceneApplied = vi.fn();
