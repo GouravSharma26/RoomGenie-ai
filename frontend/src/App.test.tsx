@@ -221,7 +221,6 @@ describe('RoomGenie AI App Component', () => {
 
     render(<App />);
     expect(screen.getByText('RoomGenie AI')).toBeInTheDocument();
-    expect(screen.getByText('Phase 7 Active')).toBeInTheDocument();
     expect(screen.getByText('Furniture Catalogue')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Room Photo/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Photo to 3D/i })).toBeInTheDocument();
@@ -349,7 +348,7 @@ describe('RoomGenie AI App Component', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Save & Load/i }));
     expect(screen.getByText('Save & Load Room Designs')).toBeInTheDocument();
-    expect(screen.getByText('PostgreSQL Cloud Persistence (Phase 2)')).toBeInTheDocument();
+    expect(screen.getByText('PostgreSQL Cloud Persistence')).toBeInTheDocument();
   });
 
   it('opens Budget Breakdown modal when Breakdown button is clicked', async () => {

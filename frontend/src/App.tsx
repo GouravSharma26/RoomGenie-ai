@@ -126,9 +126,6 @@ export default function App() {
               <span className="font-bold text-base tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
                 RoomGenie AI
               </span>
-              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-medium">
-                Phase 7 Active
-              </span>
             </div>
           </div>
 
@@ -235,7 +232,7 @@ export default function App() {
             <div className="relative z-10 max-w-3xl space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold uppercase tracking-wider">
                 <Sparkles className="w-3.5 h-3.5" />
-                Phase 0 & 1 Verification
+                System Infrastructure & Verification
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
                 AI-Agent-Assisted 3D Interior Design System
@@ -368,11 +365,11 @@ export default function App() {
             </div>
           </div>
 
-          {/* Phase 1 Overview */}
+          {/* 3D Editor Overview */}
           <div className="rounded-2xl bg-slate-900/40 border border-slate-800 p-6 sm:p-8 space-y-4">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Layers className="w-5 h-5 text-indigo-400" />
-              Phase 1 — Interactive 3D Room Editor Active
+              Interactive 3D Room Editor Active
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
               Switch to the <strong>3D Room Editor</strong> tab to interactively customize room dimensions in metres, place furniture from the curated catalogue, rotate, move, and scale objects with real-time room boundary clamping.

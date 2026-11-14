@@ -137,7 +137,7 @@ export const DesignPersistenceModal: React.FC<DesignPersistenceModalProps> = ({ 
             </div>
             <div>
               <h3 className="font-semibold text-white text-sm">Save & Load Room Designs</h3>
-              <p className="text-[11px] text-slate-400">PostgreSQL Cloud Persistence (Phase 2)</p>
+              <p className="text-[11px] text-slate-400">PostgreSQL Cloud Persistence</p>
             </div>
           </div>
           <button

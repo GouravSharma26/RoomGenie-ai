@@ -260,7 +260,7 @@ export const ArPlacementModal: React.FC<ArPlacementModalProps> = ({ isOpen, onCl
                   Augmented Reality (AR) Furniture Placement
                 </h2>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-medium">
-                  Phase 7 WebXR
+                  WebXR / ARCore
                 </span>
               </div>
               <p className="text-xs text-slate-400">

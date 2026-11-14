@@ -612,9 +612,6 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-sm text-white tracking-tight">AI Design Assistant</h2>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                Phase 4
-              </span>
             </div>
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
@@ -957,7 +954,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
                           {activeCand.optimization_metadata && (
                             <div className="pt-1.5 border-t border-slate-800/80" data-testid="optimization-telemetry-block">
                               <div className="flex items-center justify-between text-[10px] mb-1">
-                                <span className="font-semibold text-slate-400 uppercase tracking-wider">Spatial Optimization (Phase 7.2)</span>
+                                <span className="font-semibold text-slate-400 uppercase tracking-wider">Spatial Optimization</span>
                                 <span className="text-[9px] text-slate-400 font-mono">
                                   {activeCand.optimization_metadata.iterations} iters · {activeCand.optimization_metadata.durationMs.toFixed(0)}ms
                                 </span>

@@ -382,7 +382,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
               ? 'bg-indigo-600/30 border-indigo-500/80 text-indigo-300 shadow-indigo-900/30'
               : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
           }`}
-          title="Toggle Flow Check & Walkability Analysis (Phase 4)"
+          title="Toggle Flow Check & Walkability Analysis"
         >
           <Footprints className="w-3.5 h-3.5 text-cyan-400" />
           <span>Flow Check</span>
